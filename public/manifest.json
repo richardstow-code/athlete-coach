@@ -1,0 +1,13 @@
+{
+  "name": "Coach — Munich Marathon",
+  "short_name": "COACH",
+  "description": "Personal AI fitness coaching for Munich Marathon 2026",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

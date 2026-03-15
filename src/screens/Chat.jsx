@@ -1,0 +1,158 @@
+import { useSettings, buildSystemPrompt } from '../lib/useSettings'
+import { useState, useRef, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+
+const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
+
+const QUICK_QUESTIONS = [
+  "How did my last run look?",
+  "Am I on track for Munich sub-3:10?",
+  "What should Sunday's long run look like?",
+  "Should I do Untersberg this week?",
+]
+
+export default function Chat() {
+  const settings = useSettings()
+  const [messages, setMessages] = useState([])
+  const [greeting, setGreeting] = useState('Loading...')
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [recentActivities, setRecentActivities] = useState([])
+  const messagesEndRef = useRef(null)
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    // Fetch last briefing for a dynamic greeting
+    supabase.from('daily_briefings').select('briefing_text').order('date', { ascending: false }).limit(1)
+      .then(({ data }) => {
+        const snippet = data?.[0]?.briefing_text?.split('\n').find(l => l.trim().startsWith('→'))?.replace(/^→\s*/, '').slice(0, 100)
+        const g = snippet ? snippet + "... What's on your mind?" : "Ready to coach. What's on your mind?"
+        setGreeting(g)
+        setMessages([{ role: 'assistant', content: g }])
+      })
+    supabase.from('activities').select('*').order('date', { ascending: false }).limit(5)
+      .then(({ data }) => { if (data) setRecentActivities(data) })
+  }, [])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  async function sendMessage(text) {
+    const userText = text || input.trim()
+    if (!userText || loading) return
+    setInput('')
+
+    const activityContext = recentActivities.length > 0
+      ? `\n\nRecent activities from Supabase:\n${recentActivities.map(a =>
+          `- ${a.name} (${a.date?.slice(0, 10)}): ${a.distance_km}km, ${a.duration_min}min, HR avg ${a.avg_hr}, elev ${a.elevation_m}m, type: ${a.type}`
+        ).join('\n')}`
+      : ''
+
+    const newMessages = [...messages, { role: 'user', content: userText }]
+    setMessages(newMessages)
+    setLoading(true)
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': ANTHROPIC_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5',
+          max_tokens: 500,
+          system: buildSystemPrompt(settings, 'chat') + activityContext,
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+        }),
+      })
+      const data = await response.json()
+      const reply = data.content?.[0]?.text || 'Something went wrong.'
+      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
+
+      // Save to coaching_memory
+      supabase.from('coaching_memory').insert({
+        source: 'app-chat',
+        category: 'chat',
+        content: `Q: ${userText}\nA: ${reply}`,
+      }).then(() => {})
+
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Check your API key or network.' }])
+    }
+    setLoading(false)
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* MESSAGES */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '100%' }}>
+            <div style={{ maxWidth: '85%' }}>
+              <div style={{
+                padding: '12px 14px', borderRadius: '12px', fontSize: '13px', lineHeight: 1.6,
+                background: m.role === 'user' ? '#e8ff47' : '#111111',
+                color: m.role === 'user' ? '#0a0a0a' : '#f0ede8',
+                border: m.role === 'assistant' ? '1px solid rgba(255,255,255,0.14)' : 'none',
+                borderBottomRightRadius: m.role === 'user' ? '4px' : '12px',
+                borderBottomLeftRadius: m.role === 'assistant' ? '4px' : '12px',
+                whiteSpace: 'pre-wrap',
+              }}>
+                {m.content}
+              </div>
+              <div style={{ fontSize: '10px', color: '#888580', marginTop: '4px', padding: '0 4px', textAlign: m.role === 'user' ? 'right' : 'left' }}>
+                {m.role === 'user' ? 'You' : 'Coach'}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {loading && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <div style={{ padding: '12px 14px', background: '#111111', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '12px', borderBottomLeftRadius: '4px' }}>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#888580', animation: `bounce-dot 1.2s ${i * 0.2}s infinite` }} className="typing-dot" />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* QUICK PILLS */}
+      <div style={{ padding: '0 20px 12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        {QUICK_QUESTIONS.map((q, i) => (
+          <button key={i} onClick={() => sendMessage(q)} style={{ fontSize: '11px', padding: '5px 12px', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '20px', color: '#888580', background: 'transparent', cursor: 'pointer', fontFamily: "'DM Mono', monospace', transition: 'all 0.15s'" }}>
+            {q}
+          </button>
+        ))}
+      </div>
+
+      {/* INPUT */}
+      <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', gap: '10px', alignItems: 'flex-end', background: '#0a0a0a' }}>
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask your coach..."
+          rows={1}
+          style={{ flex: 1, background: '#111111', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px', padding: '10px 14px', color: '#f0ede8', fontFamily: "'DM Mono', monospace", fontSize: '13px', resize: 'none', outline: 'none', minHeight: '40px', maxHeight: '120px' }}
+        />
+        <button onClick={() => sendMessage()} disabled={loading || !input.trim()} style={{ width: '40px', height: '40px', background: '#e8ff47', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: loading || !input.trim() ? 0.4 : 1 }}>
+          ↑
+        </button>
+      </div>
+    </div>
+  )
+}
