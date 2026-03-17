@@ -52,17 +52,42 @@ function RaceItem({ race, onRemove }) {
   )
 }
 
+const STRAVA_CLIENT_ID = import.meta.env.VITE_STRAVA_CLIENT_ID
+
 export default function Settings({ onClose }) {
   const [settings, setSettings] = useState({ tone:50, consequences:50, detail_level:50, coaching_reach:50, name:'', races:[] })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [newRace, setNewRace] = useState({ name:'', date:'', distance:'42.2', target:'3:10:00' })
   const [showRaceForm, setShowRaceForm] = useState(false)
+  const [stravaToken, setStravaToken] = useState(null)   // null = loading, false = not connected
+  const [stravaStatus, setStravaStatus] = useState(null) // 'syncing' | 'synced' | 'error' | null
 
   useEffect(() => {
     supabase.from('athlete_settings').select('*').eq('id', 1).single()
       .then(({ data }) => { if (data) setSettings(s => ({ ...s, ...data, races: data.races || [] })) })
+    supabase.from('strava_tokens').select('athlete_id, athlete_name').maybeSingle()
+      .then(({ data }) => setStravaToken(data || false))
   }, [])
+
+  function connectStrava() {
+    const redirectUri = window.location.origin
+    const url = `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&approval_prompt=auto&scope=activity:read_all`
+    window.location.href = url
+  }
+
+  async function syncStrava() {
+    setStravaStatus('syncing')
+    const { data, error } = await supabase.functions.invoke('strava-sync', {})
+    if (error) { setStravaStatus('error'); return }
+    setStravaStatus(`synced ${data.synced} activities`)
+    setTimeout(() => setStravaStatus(null), 4000)
+  }
+
+  async function disconnectStrava() {
+    await supabase.from('strava_tokens').delete().eq('user_id', (await supabase.auth.getUser()).data.user.id)
+    setStravaToken(false)
+  }
 
   async function save() {
     setSaving(true)
@@ -139,6 +164,45 @@ export default function Settings({ onClose }) {
               <Slider key={s.key} config={s} value={settings[s.key] || 50}
                 onChange={v => setSettings(prev => ({...prev, [s.key]: v}))} />
             ))}
+          </div>
+        </div>
+
+        {/* Strava */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontSize: 11, color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>Strava</div>
+          <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: 16 }}>
+            {stravaToken === null ? (
+              <div style={{ fontSize: 12, color: Z.muted }}>Checking...</div>
+            ) : stravaToken ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, color: Z.green, fontWeight: 500 }}>✓ Connected</div>
+                    <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>{stravaToken.athlete_name} · ID {stravaToken.athlete_id}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={syncStrava} disabled={stravaStatus === 'syncing'} style={{ flex: 1, background: stravaStatus === 'syncing' ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 7, padding: '9px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: stravaStatus === 'syncing' ? 'wait' : 'pointer', color: Z.bg, fontWeight: 600 }}>
+                    {stravaStatus === 'syncing' ? '⏳ Syncing...' : stravaStatus?.startsWith('synced') ? `✓ ${stravaStatus}` : '↓ Sync activities'}
+                  </button>
+                  <button onClick={disconnectStrava} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 7, padding: '9px 14px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.muted }}>
+                    Disconnect
+                  </button>
+                </div>
+                {stravaStatus === 'error' && <div style={{ fontSize: 11, color: Z.red, marginTop: 8 }}>Sync failed — check your connection.</div>}
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: Z.muted, marginBottom: 12, lineHeight: 1.5 }}>Connect Strava to sync your activities automatically.</div>
+                {!STRAVA_CLIENT_ID ? (
+                  <div style={{ fontSize: 11, color: Z.amber }}>Set VITE_STRAVA_CLIENT_ID in .env to enable.</div>
+                ) : (
+                  <button onClick={connectStrava} style={{ width: '100%', background: '#FC4C02', border: 'none', borderRadius: 7, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: '#fff', fontWeight: 600 }}>
+                    Connect with Strava
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </div>
 

@@ -1,5 +1,44 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
+
+function Login() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function signIn(e) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) setError(error.message)
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', padding: '0 32px', fontFamily: "'DM Mono', monospace" }}>
+      <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 28, color: '#e8ff47', letterSpacing: '-1px', marginBottom: 48 }}>COACH</div>
+      <form onSubmit={signIn} style={{ width: '100%', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <input
+          type="email" value={email} onChange={e => setEmail(e.target.value)}
+          placeholder="Email" required autoComplete="email"
+          style={{ background: '#111', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 8, padding: '12px 14px', color: '#f0ede8', fontFamily: "'DM Mono', monospace", fontSize: 13, outline: 'none' }}
+        />
+        <input
+          type="password" value={password} onChange={e => setPassword(e.target.value)}
+          placeholder="Password" required autoComplete="current-password"
+          style={{ background: '#111', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 8, padding: '12px 14px', color: '#f0ede8', fontFamily: "'DM Mono', monospace", fontSize: 13, outline: 'none' }}
+        />
+        {error && <div style={{ fontSize: 11, color: '#ff5c5c' }}>{error}</div>}
+        <button type="submit" disabled={loading} style={{ marginTop: 4, background: loading ? '#1a1a1a' : '#e8ff47', border: 'none', borderRadius: 8, padding: '13px', fontFamily: "'DM Mono', monospace", fontSize: 13, fontWeight: 600, color: '#0a0a0a', cursor: loading ? 'wait' : 'pointer' }}>
+          {loading ? 'Signing in...' : 'Sign in'}
+        </button>
+      </form>
+    </div>
+  )
+}
+
 import Home from './screens/Home'
 import Chat from './screens/Chat'
 import Plan from './screens/Plan'
@@ -43,10 +82,36 @@ const Z = {
 }
 
 export default function App() {
+  const [session, setSession] = useState(undefined)
   const [activeTab, setActiveTab] = useState('home')
   const [detailId, setDetailId] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [pendingChanges, setPendingChanges] = useState(0)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // Handle Strava OAuth callback (?code=...&scope=activity:read_all)
+  useEffect(() => {
+    if (!session) return
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const scope = params.get('scope')
+    if (!code || !scope?.includes('activity')) return
+
+    // Clean the URL immediately so a refresh doesn't re-trigger
+    window.history.replaceState({}, '', window.location.pathname)
+
+    supabase.functions.invoke('strava-exchange', {
+      body: { code, redirect_uri: window.location.origin },
+    }).then(({ error }) => {
+      if (error) console.error('Strava exchange failed:', error)
+      setShowSettings(true) // Return user to Settings to see the connected state
+    })
+  }, [session])
 
   // Check for pending schedule changes (badge on Plan tab)
   useEffect(() => {
@@ -69,6 +134,11 @@ export default function App() {
     setActiveTab(tabId)
     setDetailId(null)
   }
+
+  if (session === undefined) return (
+    <div style={{ height: '100dvh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 28, color: '#e8ff47', letterSpacing: '-1px' }}>COACH</div>
+  )
+  if (session === null) return <Login />
 
   return (
     <div style={{

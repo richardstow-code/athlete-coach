@@ -3,10 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
 import { buildSystemPrompt, fetchAndBuildPrompt } from '../lib/coachingPrompt'
-
-const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
-const SB_URL = 'https://yjuhzmknabedjklsgbje.supabase.co'
-const SB_KEY = 'sb_publishable_n2FICu9sGG3FTURxNPUwOw__bbpv_JY'
+import { callClaude } from '../lib/claudeProxy'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -448,17 +445,12 @@ export default function Plan({ onActivityClick }) {
         `${a.name} (${a.type}, ${parseFloat(a.distance_km||0).toFixed(1)}km, ${a.duration_sec ? Math.round(a.duration_sec/60)+'min' : 'N/A'}, avg HR ${Math.round(a.avg_hr||0)}, elev ${Math.round(a.elevation_m||0)}m)`
       ).join('; ')
       const upcoming = allSessions.filter(s => s.planned_date > today).slice(0, 5).map(s => `${s.planned_date}: ${s.name} (${s.session_type}, ${s.zone || s.intensity})`).join('\n')
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5',
-          max_tokens: 600,
-          system: systemPrompt + '\n\nTask: analyse a training mismatch. Respond ONLY with valid JSON: {"summary": "one sentence", "what_changed": "what was planned vs what actually happened, including intensity and duration differences", "week_impact": "how this affects the rest of the week and Munich prep", "proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence"}]}',
-          messages: [{ role: 'user', content: `Planned today: ${planned}\nActual done: ${actual}\n\nUpcoming sessions this week:\n${upcoming}\n\nAnalyse the mismatch — consider type, intensity (HR vs zone), and duration differences. Propose adjustments if needed.` }]
-        })
+      const data = await callClaude({
+        model: 'claude-haiku-4-5',
+        max_tokens: 600,
+        system: systemPrompt + '\n\nTask: analyse a training mismatch. Respond ONLY with valid JSON: {"summary": "one sentence", "what_changed": "what was planned vs what actually happened, including intensity and duration differences", "week_impact": "how this affects the rest of the week and Munich prep", "proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence"}]}',
+        messages: [{ role: 'user', content: `Planned today: ${planned}\nActual done: ${actual}\n\nUpcoming sessions this week:\n${upcoming}\n\nAnalyse the mismatch — consider type, intensity (HR vs zone), and duration differences. Propose adjustments if needed.` }],
       })
-      const data = await resp.json()
       const raw = data.content[0].text.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(raw)
       setMismatch(parsed)
@@ -468,6 +460,8 @@ export default function Plan({ onActivityClick }) {
 
   async function applyMismatchProposals() {
     if (!mismatch?.proposals?.length) return
+    const { data: { session } } = await supabase.auth.getSession()
+    const userId = session?.user?.id
     for (const p of mismatch.proposals) {
       let origId = null
       if (p.original_date) {
@@ -485,6 +479,7 @@ export default function Plan({ onActivityClick }) {
         new_notes: p.new_notes || null,
         new_intensity: p.new_intensity || null,
         context: { race_impact: p.race_impact || null },
+        user_id: userId,
       })
     }
     const { data: newChanges } = await supabase.from('schedule_changes').select('*').eq('status', 'pending').order('created_at', { ascending: false })
@@ -520,7 +515,8 @@ export default function Plan({ onActivityClick }) {
     }
     // If it's a new session proposal, insert it
     if (change.change_type === 'add_session' && change.context?.new_session) {
-      await supabase.from('scheduled_sessions').insert(change.context.new_session)
+      const { data: { session } } = await supabase.auth.getSession()
+      await supabase.from('scheduled_sessions').insert({ ...change.context.new_session, user_id: session?.user?.id })
     }
     await supabase.from('schedule_changes').update({ status: 'approved', resolved_at: new Date().toISOString(), resolved_by: 'athlete' }).eq('id', changeId)
     setChanges(prev => prev.filter(c => c.id !== changeId))
@@ -544,20 +540,17 @@ export default function Plan({ onActivityClick }) {
   async function handleProactiveChange(text) {
     const upcomingSess = sessions.map(s => `${s.planned_date} (${new Date(s.planned_date + 'T12:00:00').toLocaleDateString('en-GB', {weekday:'short'})}): ${s.name} — ${s.notes || ''}`).join('\n')
 
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 1000,
-        system: buildSystemPrompt(settings) + '\n\nTask: propose schedule adjustments for the change described. Respond ONLY with valid JSON, no other text: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence on how this affects Munich preparation"}]}',
-        messages: [{ role: 'user', content: `Athlete says: "${text}"\n\nCurrent week schedule:\n${upcomingSess}\n\nPropose schedule changes to accommodate this.` }]
-      })
+    const data = await callClaude({
+      model: 'claude-haiku-4-5',
+      max_tokens: 1000,
+      system: buildSystemPrompt(settings) + '\n\nTask: propose schedule adjustments for the change described. Respond ONLY with valid JSON, no other text: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence on how this affects Munich preparation"}]}',
+      messages: [{ role: 'user', content: `Athlete says: "${text}"\n\nCurrent week schedule:\n${upcomingSess}\n\nPropose schedule changes to accommodate this.` }],
     })
-    const data = await resp.json()
     const raw = data.content[0].text.replace(/```json|```/g, '').trim()
     try {
       const parsed = JSON.parse(raw)
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id
       for (const p of parsed.proposals || []) {
         let origId = null
         if (p.original_date) {
@@ -575,6 +568,7 @@ export default function Plan({ onActivityClick }) {
           new_notes: p.new_notes || null,
           new_intensity: p.new_intensity || null,
           context: { race_impact: p.race_impact || null },
+          user_id: userId,
         })
       }
       const { data: newChanges } = await supabase.from('schedule_changes').select('*').eq('status', 'pending').order('created_at', { ascending: false })

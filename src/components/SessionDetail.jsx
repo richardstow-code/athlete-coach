@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { fetchAndBuildPrompt } from '../lib/coachingPrompt'
-
-const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
+import { callClaude } from '../lib/claudeProxy'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -120,14 +119,11 @@ export default function SessionDetail({ session, onClose }) {
       const system = await fetchAndBuildPrompt(supabase)
 
       if (isStrength) {
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-          body: JSON.stringify({
-            model: 'claude-haiku-4-5',
-            max_tokens: 900,
-            system: system + '\n\nTask: generate a complete strength workout. Respond ONLY with valid JSON, no other text.',
-            messages: [{ role: 'user', content: `Generate a complete strength session for:
+        const data = await callClaude({
+          model: 'claude-haiku-4-5',
+          max_tokens: 900,
+          system: system + '\n\nTask: generate a complete strength workout. Respond ONLY with valid JSON, no other text.',
+          messages: [{ role: 'user', content: `Generate a complete strength session for:
 Session: ${session.name}
 Duration: ${session.duration_min_low}–${session.duration_min_high} min
 Intensity: ${session.intensity}
@@ -143,21 +139,16 @@ Return JSON exactly:
   "cooldown": "specific cooldown"
 }
 
-Include 4-6 exercises relevant to marathon strength training. Use RPE or % 1RM for weight guidance, not absolute kg unless directly relevant.` }]
-          })
+Include 4-6 exercises relevant to marathon strength training. Use RPE or % 1RM for weight guidance, not absolute kg unless directly relevant.` }],
         })
-        const data = await resp.json()
         const raw = data.content[0].text.replace(/```json|```/g, '').trim()
         setCoaching({ type: 'strength', data: JSON.parse(raw) })
       } else {
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-          body: JSON.stringify({
-            model: 'claude-haiku-4-5',
-            max_tokens: 500,
-            system: system + '\n\nTask: pre-session run brief. Be specific with numbers. No generic advice.',
-            messages: [{ role: 'user', content: `Session brief for:
+        const data = await callClaude({
+          model: 'claude-haiku-4-5',
+          max_tokens: 500,
+          system: system + '\n\nTask: pre-session run brief. Be specific with numbers. No generic advice.',
+          messages: [{ role: 'user', content: `Session brief for:
 Session: ${session.name}
 Type: ${session.session_type}
 Zone: ${session.zone || 'N/A'}
@@ -171,10 +162,8 @@ Provide 4 lines:
 STRUCTURE: Warmup/main/cooldown breakdown with durations
 PACING: Exact pace range and HR cap/target for this zone
 KEY FOCUS: The one thing to nail today
-DONE RIGHT: How you'll know it was a good session` }]
-          })
+DONE RIGHT: How you'll know it was a good session` }],
         })
-        const data = await resp.json()
         setCoaching({ type: 'run', data: data.content[0].text })
       }
     } catch(e) { console.error('SessionDetail coaching failed', e) }

@@ -3,8 +3,7 @@ import { buildSystemPrompt } from '../lib/coachingPrompt'
 import { buildContext, formatContext } from '../lib/buildContext'
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-
-const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
+import { callClaude } from '../lib/claudeProxy'
 
 const QUICK_QUESTIONS = [
   "How did my last run look?",
@@ -50,31 +49,24 @@ export default function Chat() {
     setLoading(true)
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': ANTHROPIC_KEY,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5',
-          max_tokens: 500,
-          system: systemPrompt,
-          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
-        }),
+      const data = await callClaude({
+        model: 'claude-haiku-4-5',
+        max_tokens: 500,
+        system: systemPrompt,
+        messages: newMessages.map(m => ({ role: m.role, content: m.content })),
       })
-      const data = await response.json()
       const reply = data.content?.[0]?.text || 'Something went wrong.'
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
 
       // Save to coaching_memory
-      supabase.from('coaching_memory').insert({
-        source: 'app-chat',
-        category: 'chat',
-        content: `Q: ${userText}\nA: ${reply}`,
-      }).then(() => {})
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        supabase.from('coaching_memory').insert({
+          source: 'app-chat',
+          category: 'chat',
+          content: `Q: ${userText}\nA: ${reply}`,
+          user_id: session?.user?.id,
+        }).then(() => {})
+      })
 
     } catch (err) {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Check your API key or network.' }])

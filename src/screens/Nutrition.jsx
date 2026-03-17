@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
 import { buildSystemPrompt } from '../lib/coachingPrompt'
-
-const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
+import { callClaude } from '../lib/claudeProxy'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -261,22 +260,17 @@ export default function Nutrition() {
           ]
         : `Estimate this meal: ${context}. Eaten today so far: ${todayKcal} kcal. Respond ONLY in JSON: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence reason"}`
 
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 300,
-          system: buildSystemPrompt(settings) + '\n\nTask: estimate meal nutrition. Return ONLY valid JSON, no markdown, no other text: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence"}',
-          messages: [{ role: 'user', content: userContent }]
-        })
+      const data = await callClaude({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 300,
+        system: buildSystemPrompt(settings) + '\n\nTask: estimate meal nutrition. Return ONLY valid JSON, no markdown, no other text: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence"}',
+        messages: [{ role: 'user', content: userContent }],
       })
-      if (!resp.ok) throw new Error('API error ' + resp.status)
-      const data = await resp.json()
       const raw = data.content?.[0]?.text
       if (!raw) throw new Error('No response')
       const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim())
-      await supabase.from('nutrition_logs').insert({ date: logDate, meal_name: parsed.meal_name, calories: parsed.calories, protein_g: parsed.protein_g, carbs_g: parsed.carbs_g, fat_g: parsed.fat_g, rating: parsed.rating, notes: parsed.notes, logged_at: new Date().toISOString(), meal_type: 'food' })
+      const { data: { session } } = await supabase.auth.getSession()
+      await supabase.from('nutrition_logs').insert({ date: logDate, meal_name: parsed.meal_name, calories: parsed.calories, protein_g: parsed.protein_g, carbs_g: parsed.carbs_g, fat_g: parsed.fat_g, rating: parsed.rating, notes: parsed.notes, logged_at: new Date().toISOString(), meal_type: 'food', user_id: session?.user?.id })
       setPreview(null); setImageData(null); setContext('')
       load()
     } catch(e) {
@@ -287,7 +281,8 @@ export default function Nutrition() {
   }
 
   async function logAlcohol({ drink, quantity, units }) {
-    await supabase.from('nutrition_logs').insert({ date: logDate, meal_name: `${quantity}x ${drink}`, alcohol_units: units, logged_at: new Date().toISOString(), meal_type: 'alcohol' })
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('nutrition_logs').insert({ date: logDate, meal_name: `${quantity}x ${drink}`, alcohol_units: units, logged_at: new Date().toISOString(), meal_type: 'alcohol', user_id: session?.user?.id })
     load()
   }
 
