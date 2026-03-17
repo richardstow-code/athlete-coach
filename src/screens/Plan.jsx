@@ -346,6 +346,7 @@ export default function Plan({ onActivityClick }) {
   const [mismatch, setMismatch] = useState(null)
   const [mismatchLoading, setMismatchLoading] = useState(false)
   const mismatchRef = useRef(false)
+  const [selectedSession, setSelectedSession] = useState(null)
   const today = localDateStr(new Date())
 
   // Week date range
@@ -626,9 +627,12 @@ export default function Plan({ onActivityClick }) {
         {sessions.length === 0 ? (
           <div style={{ padding: '20px 0', color: Z.muted, fontSize: 13 }}>No sessions scheduled for this week.</div>
         ) : sessions.map(s => (
-          <SessionRow key={s.id} session={s} activity={matchActivity(s)} isToday={s.planned_date === today} onActivityClick={onActivityClick} />
+          <SessionRow key={s.id} session={s} activity={matchActivity(s)} isToday={s.planned_date === today} onActivityClick={onActivityClick} onSessionClick={setSelectedSession} />
         ))}
       </div>
+
+      {/* SESSION DETAIL */}
+      {selectedSession && <SessionDetail session={selectedSession} onClose={() => setSelectedSession(null)} />}
 
       {/* CHANGE APPROVAL MODAL */}
       {showApprovalModal && (
