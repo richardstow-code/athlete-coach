@@ -42,6 +42,99 @@ function targetPace(timeStr, dist) {
   return `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}/km`
 }
 
+// ── Change Approval Modal ─────────────────────────────────────
+function ChangeApprovalModal({ changes, onApprove, onReject, onClose }) {
+  const [loadingId, setLoadingId] = useState(null)
+  const typeColors = { reschedule: Z.amber, intensity_adjust: Z.accent2, rest_day: Z.green, skip: Z.muted, trip: Z.accent }
+  const typeLabels = { reschedule: 'Reschedule', intensity_adjust: 'Intensity adjust', rest_day: 'Rest day', skip: 'Skip session', trip: 'Trip' }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.75)' }} />
+      <div style={{ position: 'relative', background: Z.bg, borderRadius: '16px 16px 0 0', border: `1px solid ${Z.border2}`, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        {/* Handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0', flexShrink: 0 }}>
+          <div style={{ width: 36, height: 4, background: Z.border2, borderRadius: 2 }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 20px 12px', flexShrink: 0, borderBottom: `1px solid ${Z.border}` }}>
+          <div>
+            <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 20, fontWeight: 800 }}>Coach Proposals</div>
+            <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>
+              {changes.length > 0 ? `${changes.length} adjustment${changes.length > 1 ? 's' : ''} to review` : 'All proposals reviewed'}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 22, cursor: 'pointer', padding: 4, lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Proposals */}
+        <div style={{ overflowY: 'auto', padding: '16px 20px 32px' }}>
+          {changes.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 13, color: Z.muted }}>
+              All done — schedule updated.
+            </div>
+          ) : changes.map(c => {
+            const col = typeColors[c.change_type] || Z.accent
+            const isLoading = loadingId === c.id
+            return (
+              <div key={c.id} style={{ background: Z.surface, border: `1px solid ${col}35`, borderRadius: 12, padding: 16, marginBottom: 12 }}>
+                {/* Type badge */}
+                <div style={{ display: 'inline-block', fontSize: 9, color: col, border: `1px solid ${col}50`, borderRadius: 4, padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
+                  {typeLabels[c.change_type] || c.change_type}
+                </div>
+
+                {/* Title */}
+                <div style={{ fontSize: 15, fontWeight: 600, color: Z.text, marginBottom: 6, lineHeight: 1.3 }}>{c.title}</div>
+
+                {/* Reasoning */}
+                <div style={{ fontSize: 12, color: '#a8a5a0', lineHeight: 1.6, marginBottom: 10 }}>{c.reasoning}</div>
+
+                {/* Change details */}
+                {(c.new_date || c.new_notes || c.new_intensity) && (
+                  <div style={{ background: '#161616', borderRadius: 8, padding: '8px 12px', marginBottom: 10 }}>
+                    {c.new_date && (
+                      <div style={{ fontSize: 11, color: col, marginBottom: c.new_notes || c.new_intensity ? 4 : 0 }}>
+                        → {new Date(c.new_date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
+                      </div>
+                    )}
+                    {c.new_intensity && (
+                      <div style={{ fontSize: 11, color: Z.muted, marginBottom: c.new_notes ? 4 : 0 }}>Intensity: {c.new_intensity}</div>
+                    )}
+                    {c.new_notes && (
+                      <div style={{ fontSize: 11, color: Z.muted }}>{c.new_notes}</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Race impact */}
+                {c.context?.race_impact && (
+                  <div style={{ borderLeft: `2px solid ${Z.accent2}`, paddingLeft: 10, marginBottom: 14 }}>
+                    <div style={{ fontSize: 10, color: Z.accent2, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Munich impact</div>
+                    <div style={{ fontSize: 12, color: '#a8a5a0', lineHeight: 1.5 }}>{c.context.race_impact}</div>
+                  </div>
+                )}
+
+                {/* Approve / Reject */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button disabled={isLoading} onClick={async () => { setLoadingId(c.id); await onApprove(c.id); setLoadingId(null) }}
+                    style={{ flex: 1, background: isLoading ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 8, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: isLoading ? 'wait' : 'pointer', color: isLoading ? Z.muted : Z.bg, fontWeight: 600 }}>
+                    {isLoading ? '...' : '✓ Approve'}
+                  </button>
+                  <button disabled={isLoading} onClick={async () => { setLoadingId(c.id); await onReject(c.id); setLoadingId(null) }}
+                    style={{ flex: 1, background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: isLoading ? 'wait' : 'pointer', color: Z.muted }}>
+                    ✕ Reject
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Change Card ──────────────────────────────────────────────
 function ChangeCard({ change, onApprove, onReject }) {
   const [loading, setLoading] = useState(false)
@@ -208,6 +301,7 @@ export default function Plan({ onActivityClick }) {
   const [sessions, setSessions] = useState([])
   const [activities, setActivities] = useState([])
   const [changes, setChanges] = useState([])
+  const [showApprovalModal, setShowApprovalModal] = useState(false)
   const [weekOffset, setWeekOffset] = useState(0)
   const [weekStats, setWeekStats] = useState({ km: 0, elev: 0, runs: 0, strength: 0 })
   const today = new Date().toISOString().slice(0, 10)
@@ -285,8 +379,17 @@ export default function Plan({ onActivityClick }) {
     setChanges(prev => prev.filter(c => c.id !== changeId))
   }
 
+  // Modal-aware wrappers — auto-close when last proposal is resolved
+  async function modalApprove(id) {
+    await approveChange(id)
+    if (changes.length <= 1) setShowApprovalModal(false)
+  }
+  async function modalReject(id) {
+    await rejectChange(id)
+    if (changes.length <= 1) setShowApprovalModal(false)
+  }
+
   async function handleProactiveChange(text) {
-    // Get upcoming week sessions for context
     const upcomingSess = sessions.map(s => `${s.planned_date} (${new Date(s.planned_date + 'T12:00:00').toLocaleDateString('en-GB', {weekday:'short'})}): ${s.name} — ${s.notes || ''}`).join('\n')
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -294,8 +397,8 @@ export default function Plan({ onActivityClick }) {
       headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
         model: 'claude-haiku-4-5',
-        max_tokens: 800,
-        system: buildSystemPrompt(settings) + '\n\nTask: propose schedule adjustments for the change described. Respond ONLY with valid JSON, no other text: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null"}]}',
+        max_tokens: 1000,
+        system: buildSystemPrompt(settings) + '\n\nTask: propose schedule adjustments for the change described. Respond ONLY with valid JSON, no other text: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence on how this affects Munich preparation"}]}',
         messages: [{ role: 'user', content: `Athlete says: "${text}"\n\nCurrent week schedule:\n${upcomingSess}\n\nPropose schedule changes to accommodate this.` }]
       })
     })
@@ -304,7 +407,6 @@ export default function Plan({ onActivityClick }) {
     try {
       const parsed = JSON.parse(raw)
       for (const p of parsed.proposals || []) {
-        // Find matching session if original_date given
         let origId = null
         if (p.original_date) {
           const match = sessions.find(s => s.planned_date === p.original_date)
@@ -320,11 +422,12 @@ export default function Plan({ onActivityClick }) {
           new_date: p.new_date || null,
           new_notes: p.new_notes || null,
           new_intensity: p.new_intensity || null,
+          context: { race_impact: p.race_impact || null },
         })
       }
-      // Refresh
       const { data: newChanges } = await supabase.from('schedule_changes').select('*').eq('status', 'pending').order('created_at', { ascending: false })
       setChanges(newChanges || [])
+      setShowApprovalModal(true)
     } catch(e) { console.error('Parse error', e) }
   }
 
@@ -345,14 +448,18 @@ export default function Plan({ onActivityClick }) {
         {races.length === 0 && <div style={{ fontSize: 11, color: Z.muted, marginTop: -4, marginBottom: 10 }}>Add your races in Settings 👤</div>}
       </div>
 
-      {/* PENDING CHANGES */}
+      {/* PENDING CHANGES — tap to open approval modal */}
       {changes.length > 0 && (
-        <div style={{ padding: '0 20px', marginBottom: 4 }}>
-          <div style={{ fontSize: 11, color: Z.red, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: Z.red, display: 'inline-block' }} />
-            {changes.length} coach proposal{changes.length > 1 ? 's' : ''} pending
-          </div>
-          {changes.map(c => <ChangeCard key={c.id} change={c} onApprove={approveChange} onReject={rejectChange} />)}
+        <div style={{ padding: '0 20px 4px' }}>
+          <button onClick={() => setShowApprovalModal(true)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,92,92,0.07)', border: '1px solid rgba(255,92,92,0.25)', borderRadius: 10, padding: '11px 14px', cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: Z.red, display: 'inline-block', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: Z.text, fontWeight: 500 }}>
+                {changes.length} coach proposal{changes.length > 1 ? 's' : ''} pending
+              </span>
+            </div>
+            <span style={{ fontSize: 11, color: Z.muted }}>Review →</span>
+          </button>
         </div>
       )}
 
@@ -396,6 +503,16 @@ export default function Plan({ onActivityClick }) {
           <SessionRow key={s.id} session={s} activity={matchActivity(s)} isToday={s.planned_date === today} onActivityClick={onActivityClick} />
         ))}
       </div>
+
+      {/* CHANGE APPROVAL MODAL */}
+      {showApprovalModal && (
+        <ChangeApprovalModal
+          changes={changes}
+          onApprove={modalApprove}
+          onReject={modalReject}
+          onClose={() => setShowApprovalModal(false)}
+        />
+      )}
     </div>
   )
 }
