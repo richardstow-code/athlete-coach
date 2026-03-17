@@ -1,4 +1,6 @@
-import { useSettings, buildSystemPrompt } from '../lib/useSettings'
+import { useSettings } from '../lib/useSettings'
+import { buildSystemPrompt } from '../lib/coachingPrompt'
+import { buildContext, formatContext } from '../lib/buildContext'
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -17,21 +19,18 @@ export default function Chat() {
   const [greeting, setGreeting] = useState('Loading...')
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [recentActivities, setRecentActivities] = useState([])
+  const [ctx, setCtx] = useState(null)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
 
   useEffect(() => {
-    // Fetch last briefing for a dynamic greeting
-    supabase.from('daily_briefings').select('briefing_text').order('date', { ascending: false }).limit(1)
-      .then(({ data }) => {
-        const snippet = data?.[0]?.briefing_text?.split('\n').find(l => l.trim().startsWith('→'))?.replace(/^→\s*/, '').slice(0, 100)
-        const g = snippet ? snippet + "... What's on your mind?" : "Ready to coach. What's on your mind?"
-        setGreeting(g)
-        setMessages([{ role: 'assistant', content: g }])
-      })
-    supabase.from('activities').select('*').order('date', { ascending: false }).limit(5)
-      .then(({ data }) => { if (data) setRecentActivities(data) })
+    buildContext().then(c => {
+      setCtx(c)
+      const snippet = c.briefing?.briefing_text?.split('\n').find(l => l.trim().startsWith('→'))?.replace(/^→\s*/, '').slice(0, 100)
+      const g = snippet ? snippet + "... What's on your mind?" : "Ready to coach. What's on your mind?"
+      setGreeting(g)
+      setMessages([{ role: 'assistant', content: g }])
+    })
   }, [])
 
   useEffect(() => {
@@ -43,11 +42,8 @@ export default function Chat() {
     if (!userText || loading) return
     setInput('')
 
-    const activityContext = recentActivities.length > 0
-      ? `\n\nRecent activities from Supabase:\n${recentActivities.map(a =>
-          `- ${a.name} (${a.date?.slice(0, 10)}): ${a.distance_km}km, ${a.duration_min}min, HR avg ${a.avg_hr}, elev ${a.elevation_m}m, type: ${a.type}`
-        ).join('\n')}`
-      : ''
+    const contextBlock = ctx ? formatContext(ctx) : ''
+    const systemPrompt = buildSystemPrompt(settings) + (contextBlock ? '\n\n' + contextBlock : '')
 
     const newMessages = [...messages, { role: 'user', content: userText }]
     setMessages(newMessages)
@@ -65,7 +61,7 @@ export default function Chat() {
         body: JSON.stringify({
           model: 'claude-haiku-4-5',
           max_tokens: 500,
-          system: buildSystemPrompt(settings, 'chat') + activityContext,
+          system: systemPrompt,
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
         }),
       })

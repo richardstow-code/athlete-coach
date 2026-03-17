@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSettings } from '../lib/useSettings'
+import { buildSystemPrompt } from '../lib/coachingPrompt'
 
 const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
 
@@ -187,6 +189,7 @@ function MealCard({ entry, onDelete }) {
 
 // ── Main Screen ───────────────────────────────────────────────
 export default function Nutrition() {
+  const settings = useSettings()
   const cameraRef = useRef(null)
   const libraryRef = useRef(null)
   const [entries, setEntries] = useState([])
@@ -261,7 +264,7 @@ export default function Nutrition() {
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
           max_tokens: 300,
-          system: 'Sports nutritionist for a marathon athlete. Estimate calories and macros accurately. Return valid JSON only, no markdown, no explanation.',
+          system: buildSystemPrompt(settings) + '\n\nTask: estimate meal nutrition. Return ONLY valid JSON, no markdown, no other text: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence"}',
           messages: [{ role: 'user', content: userContent }]
         })
       })

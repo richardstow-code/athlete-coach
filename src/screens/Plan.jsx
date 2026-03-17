@@ -2,6 +2,7 @@ import SessionDetail from '../components/SessionDetail'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
+import { buildSystemPrompt } from '../lib/coachingPrompt'
 
 const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
 const SB_URL = 'https://yjuhzmknabedjklsgbje.supabase.co'
@@ -290,11 +291,11 @@ export default function Plan({ onActivityClick }) {
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
         model: 'claude-haiku-4-5',
         max_tokens: 800,
-        system: 'You are a running coach managing a training schedule for a Munich Marathon athlete (target sub-3:10, base build phase). Given a schedule change request, propose specific adjustments. Respond ONLY with valid JSON: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null"}]}',
+        system: buildSystemPrompt(settings) + '\n\nTask: propose schedule adjustments for the change described. Respond ONLY with valid JSON, no other text: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null"}]}',
         messages: [{ role: 'user', content: `Athlete says: "${text}"\n\nCurrent week schedule:\n${upcomingSess}\n\nPropose schedule changes to accommodate this.` }]
       })
     })

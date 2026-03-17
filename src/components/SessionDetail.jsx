@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
+import { buildSystemPrompt } from '../lib/coachingPrompt'
 
 const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
 
@@ -50,7 +51,7 @@ export default function SessionDetail({ session, onClose }) {
         body: JSON.stringify({
           model: 'claude-haiku-4-5',
           max_tokens: 500,
-          system: `You are a running coach for a 38yo male athlete targeting sub-3:10 Munich Marathon Oct 2026. Z2=125-140bpm. Be direct and specific. Tone: ${settings.tone < 50 ? 'direct and honest' : 'encouraging'}.`,
+          system: buildSystemPrompt(settings) + '\n\nTask: pre-session coaching brief. Keep each section to 1-2 sentences max.',
           messages: [{ role: 'user', content: `Give me a detailed coaching brief for this session:
 Session: ${session.name}
 Type: ${session.session_type}
