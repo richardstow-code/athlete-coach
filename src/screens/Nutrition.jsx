@@ -199,6 +199,7 @@ export default function Nutrition() {
   const [context, setContext] = useState('')
   const [logDate, setLogDate] = useState(new Date().toISOString().slice(0, 10))
   const [activeMetrics, setActiveMetrics] = useState(['kcal', 'protein', 'units'])
+  const [todaySession, setTodaySession] = useState(null)
 
   const todayKcal = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + (e.calories || 0), 0)
   const todayProtein = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + parseFloat(e.protein_g || 0), 0)
@@ -209,12 +210,15 @@ export default function Nutrition() {
 
   async function load() {
     const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString().slice(0,10)
-    const [{ data: all }, { data: w7 }] = await Promise.all([
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const [{ data: all }, { data: w7 }, { data: sessions }] = await Promise.all([
       supabase.from('nutrition_logs').select('*').eq('date', logDate).order('logged_at', { ascending: false }),
-      supabase.from('nutrition_logs').select('*').gte('date', sevenDaysAgo).order('date')
+      supabase.from('nutrition_logs').select('*').gte('date', sevenDaysAgo).order('date'),
+      supabase.from('scheduled_sessions').select('session_type,name,zone,duration_min_low,duration_min_high').eq('planned_date', todayStr).limit(3)
     ])
     setEntries(all || [])
     setEntries7(w7 || [])
+    setTodaySession(sessions?.[0] || null)
     setLoading(false)
   }
 
@@ -227,6 +231,7 @@ export default function Nutrition() {
   function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
+    e.target.value = ''
     const mime = file.type || 'image/jpeg'
     setImageMime(mime)
     const reader = new FileReader()
@@ -300,6 +305,20 @@ export default function Nutrition() {
           {!isToday && <span style={{ color: Z.amber }}> · Historical entry</span>}
         </div>
       </div>
+
+      {/* Training context banner */}
+      {isToday && todaySession && (
+        <div style={{ margin: '10px 20px 0', padding: '10px 14px', background: todaySession.session_type === 'rest' ? 'rgba(136,133,128,0.1)' : todaySession.session_type === 'strength' ? 'rgba(255,179,71,0.1)' : 'rgba(232,255,71,0.08)', border: `1px solid ${todaySession.session_type === 'rest' ? 'rgba(136,133,128,0.25)' : todaySession.session_type === 'strength' ? 'rgba(255,179,71,0.3)' : 'rgba(232,255,71,0.2)'}`, borderRadius: 10 }}>
+          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Today's session</div>
+          <div style={{ fontSize: 13, color: Z.text, fontWeight: 500 }}>
+            {todaySession.session_type === 'run' ? '🏃' : todaySession.session_type === 'trail' ? '⛰️' : todaySession.session_type === 'strength' ? '🏋️' : '😴'} {todaySession.name}
+            {todaySession.zone && <span style={{ fontSize: 11, color: Z.muted }}> · {todaySession.zone} · {todaySession.duration_min_low}{todaySession.duration_min_high !== todaySession.duration_min_low ? `–${todaySession.duration_min_high}` : ''}min</span>}
+          </div>
+          <div style={{ fontSize: 11, color: Z.muted, marginTop: 4 }}>
+            {todaySession.session_type === 'rest' ? 'Rest day · protein focus, modest calorie deficit is fine' : todaySession.session_type === 'strength' ? 'Strength day · hit protein target, moderate carbs pre-session' : 'Training day · prioritise carbs & hit calorie target'}
+          </div>
+        </div>
+      )}
 
       {/* Clickable stat cards + graph */}
       <div style={{ padding: '12px 20px', borderBottom: `1px solid ${Z.border}` }}>

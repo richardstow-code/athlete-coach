@@ -67,15 +67,26 @@ export default function Home({ onActivityClick }) {
   const [activities, setActivities] = useState([])
   const [briefing, setBriefing] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [todayNutrition, setTodayNutrition] = useState({ kcal: 0, protein: 0, logged: false })
 
   useEffect(() => {
     async function load() {
-      const [{ data: acts }, { data: brief }] = await Promise.all([
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const [{ data: acts }, { data: brief }, { data: nutri }] = await Promise.all([
         supabase.from('activities').select('*').order('date', { ascending: false }).limit(5),
         supabase.from('daily_briefings').select('id, date, briefing_text, created_at').order('created_at', { ascending: false }).limit(1),
+        supabase.from('nutrition_logs').select('calories,protein_g,meal_type').eq('date', todayStr),
       ])
       if (acts) setActivities(acts)
       if (brief && brief[0]) setBriefing(brief[0])
+      if (nutri) {
+        const food = nutri.filter(n => n.meal_type !== 'alcohol')
+        setTodayNutrition({
+          kcal: food.reduce((s, n) => s + (n.calories || 0), 0),
+          protein: Math.round(food.reduce((s, n) => s + parseFloat(n.protein_g || 0), 0)),
+          logged: nutri.length > 0,
+        })
+      }
       setLoading(false)
     }
     load()
@@ -170,6 +181,32 @@ export default function Home({ onActivityClick }) {
             </>
           )}
         </div>
+      </div>
+
+      {/* NUTRITION SNAPSHOT */}
+      <div style={S.section}>
+        <div style={S.sectionHeader}>
+          <div style={S.sectionTitle}>Today's Fuel</div>
+          <div style={{ fontSize: '11px', color: '#888580' }}>2800 kcal · 150g target</div>
+        </div>
+        {!todayNutrition.logged ? (
+          <div style={{ color: '#888580', fontSize: '13px' }}>Nothing logged yet today.</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            {[
+              { val: todayNutrition.kcal, lbl: 'kcal logged', target: 2800, col: '#e8ff47' },
+              { val: `${todayNutrition.protein}g`, lbl: 'protein', target: 150, numVal: todayNutrition.protein, col: '#47d4ff' },
+            ].map(({ val, lbl, target, numVal, col }) => (
+              <div key={lbl} style={{ background: '#111111', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '10px', padding: '12px 14px' }}>
+                <div style={{ fontFamily: 'Syne, sans-serif', fontSize: '22px', fontWeight: 700, lineHeight: 1, color: col }}>{val}</div>
+                <div style={{ fontSize: '10px', color: '#888580', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 6px' }}>{lbl}</div>
+                <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px' }}>
+                  <div style={{ height: '100%', width: `${Math.min(100, ((numVal ?? val) / target) * 100)}%`, background: col, borderRadius: '2px', transition: 'width 0.4s' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* RECENT ACTIVITIES */}

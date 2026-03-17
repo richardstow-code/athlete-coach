@@ -16,6 +16,10 @@ const Z = {
 const typeColor = { run:'#e8ff47', trail:'#47d4ff', strength:'#ffb347', rest:'#888580' }
 const typeIcon  = { run:'🏃', trail:'⛰️', strength:'🏋️', rest:'😴' }
 
+function localDateStr(d) {
+  return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
+}
+
 function daysUntil(d) {
   const diff = new Date(d) - new Date()
   return Math.ceil(diff / 86400000)
@@ -220,12 +224,12 @@ export default function Plan({ onActivityClick }) {
   weekEnd.setHours(23,59,59,999)
 
   useEffect(() => {
-    const ws = weekStart.toISOString().slice(0,10)
-    const we = weekEnd.toISOString().slice(0,10)
+    const ws = localDateStr(weekStart)
+    const we = localDateStr(weekEnd)
 
     Promise.all([
       supabase.from('scheduled_sessions').select('*').gte('planned_date', ws).lte('planned_date', we).order('planned_date'),
-      supabase.from('activities').select('*').gte('date', weekStart.toISOString()).lte('date', weekEnd.toISOString()).order('date'),
+      supabase.from('activities').select('*').gte('date', ws).lte('date', we).order('date'),
       supabase.from('schedule_changes').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
     ]).then(([{data: sess}, {data: acts}, {data: chg}]) => {
       setSessions(sess || [])
