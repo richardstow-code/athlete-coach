@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useSettings } from '../lib/useSettings'
-import { buildSystemPrompt } from '../lib/coachingPrompt'
+import { supabase } from '../lib/supabase'
+import { fetchAndBuildPrompt } from '../lib/coachingPrompt'
 
 const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
 
@@ -103,7 +103,6 @@ function RunBrief({ brief, loading }) {
 }
 
 export default function SessionDetail({ session, onClose }) {
-  const settings = useSettings()
   const [coaching, setCoaching] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -118,7 +117,7 @@ export default function SessionDetail({ session, onClose }) {
   async function fetchCoaching() {
     setLoading(true)
     try {
-      const system = buildSystemPrompt(settings)
+      const system = await fetchAndBuildPrompt(supabase)
 
       if (isStrength) {
         const resp = await fetch('https://api.anthropic.com/v1/messages', {

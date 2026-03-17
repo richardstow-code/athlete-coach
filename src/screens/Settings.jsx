@@ -71,11 +71,16 @@ export default function Settings({ onClose }) {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  function addRace() {
+  async function addRace() {
     if (!newRace.name || !newRace.date) return
-    setSettings(s => ({ ...s, races: [...(s.races || []), newRace] }))
+    const updated = { ...settings, races: [...(settings.races || []), newRace] }
+    setSettings(updated)
     setNewRace({ name:'', date:'', distance:'42.2', target:'3:10:00' })
     setShowRaceForm(false)
+    // Auto-save immediately so the race isn't lost if the user closes Settings
+    await supabase.from('athlete_settings').upsert({ id: 1, ...updated, updated_at: new Date().toISOString() })
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
   }
 
   function removeRace(i) {

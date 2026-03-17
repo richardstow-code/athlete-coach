@@ -271,13 +271,19 @@ function ProactiveChange({ onSubmit }) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   async function submit() {
     if (!text.trim()) return
     setLoading(true)
-    await onSubmit(text)
-    setText('')
-    setOpen(false)
+    setError(null)
+    try {
+      await onSubmit(text)
+      setText('')
+      setOpen(false)
+    } catch(e) {
+      setError('Something went wrong — try again.')
+    }
     setLoading(false)
   }
 
@@ -289,13 +295,18 @@ function ProactiveChange({ onSubmit }) {
 
   return (
     <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: 14 }}>
-      <div style={{ fontSize: 11, color: Z.muted, marginBottom: 8 }}>What's changing? Be specific.</div>
-      <textarea value={text} onChange={e => setText(e.target.value)} rows={2} placeholder="e.g. I have a work trip Monday to Wednesday, back Thursday evening. Tuesday's quality session will be missed." style={{ width: '100%', background: '#1a1a1a', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '8px 10px', color: Z.text, fontFamily: "'DM Mono', monospace", fontSize: 12, resize: 'none', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
+      <div style={{ fontSize: 11, color: Z.muted, marginBottom: 8 }}>What's changing? Be specific — schedule, workout done, anything.</div>
+      <textarea value={text} onChange={e => setText(e.target.value)} rows={4} placeholder="e.g. Did an easy 35min run instead of the Z4 intervals — legs were dead. Or: work trip Mon–Wed, Tuesday session missed." style={{ width: '100%', background: '#1a1a1a', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '8px 10px', color: Z.text, fontFamily: "'DM Mono', monospace", fontSize: 12, resize: 'vertical', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
+      {error && <div style={{ fontSize: 11, color: Z.red, marginBottom: 8 }}>{error}</div>}
       <div style={{ display: 'flex', gap: 8 }}>
-        <button disabled={loading || !text.trim()} onClick={submit} style={{ flex: 1, background: loading ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 8, padding: '9px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: loading ? 'wait' : 'pointer', color: Z.bg, fontWeight: 600 }}>
+        <button
+          disabled={loading || !text.trim()}
+          onMouseDown={e => e.preventDefault()}
+          onClick={submit}
+          style={{ flex: 1, background: loading ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 8, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: loading ? 'wait' : 'pointer', color: Z.bg, fontWeight: 600 }}>
           {loading ? '⏳ Thinking...' : '→ Ask coach'}
         </button>
-        <button onClick={() => setOpen(false)} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '9px 14px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.muted }}>
+        <button onMouseDown={e => e.preventDefault()} onClick={() => setOpen(false)} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '10px 14px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.muted }}>
           Cancel
         </button>
       </div>
@@ -569,7 +580,7 @@ export default function Plan({ onActivityClick }) {
       const { data: newChanges } = await supabase.from('schedule_changes').select('*').eq('status', 'pending').order('created_at', { ascending: false })
       setChanges(newChanges || [])
       setShowApprovalModal(true)
-    } catch(e) { console.error('Parse error', e) }
+    } catch(e) { console.error('Parse error', e); throw e }
   }
 
   const races = settings.races || []
