@@ -1,8 +1,8 @@
 import SessionDetail from '../components/SessionDetail'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
-import { buildSystemPrompt } from '../lib/coachingPrompt'
+import { buildSystemPrompt, fetchAndBuildPrompt } from '../lib/coachingPrompt'
 
 const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY
 const SB_URL = 'https://yjuhzmknabedjklsgbje.supabase.co'
@@ -130,6 +130,45 @@ function ChangeApprovalModal({ changes, onApprove, onReject, onClose }) {
             )
           })}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Mismatch Prompt ───────────────────────────────────────────
+function MismatchPrompt({ analysis, loading, onAdjust, onDismiss }) {
+  if (loading) return (
+    <div style={{ margin: '0 20px 12px', background: 'rgba(255,179,71,0.07)', border: '1px solid rgba(255,179,71,0.25)', borderRadius: 10, padding: '11px 14px' }}>
+      <div style={{ fontSize: 12, color: Z.amber }}>⏳ Coach reviewing today's workout...</div>
+    </div>
+  )
+  if (!analysis) return null
+  return (
+    <div style={{ margin: '0 20px 12px', background: 'rgba(255,179,71,0.07)', border: '1px solid rgba(255,179,71,0.30)', borderRadius: 10, padding: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: Z.amber, fontWeight: 600 }}>⚡ Today's workout differs from plan</div>
+        <button onClick={onDismiss} style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 16, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
+      </div>
+      <div style={{ fontSize: 13, color: Z.text, lineHeight: 1.5, marginBottom: 10 }}>{analysis.summary}</div>
+      {analysis.what_changed && (
+        <div style={{ background: '#1a1a1a', borderRadius: 8, padding: '8px 12px', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>What changed</div>
+          <div style={{ fontSize: 12, color: '#c8c5bf', lineHeight: 1.5 }}>{analysis.what_changed}</div>
+        </div>
+      )}
+      {analysis.week_impact && (
+        <div style={{ background: '#1a1a1a', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
+          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Week impact</div>
+          <div style={{ fontSize: 12, color: '#c8c5bf', lineHeight: 1.5 }}>{analysis.week_impact}</div>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={onAdjust} style={{ flex: 1, background: Z.amber, border: 'none', borderRadius: 8, padding: '9px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.bg, fontWeight: 600 }}>
+          Adjust plan
+        </button>
+        <button onClick={onDismiss} style={{ flex: 1, background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '9px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.muted }}>
+          Keep as is
+        </button>
       </div>
     </div>
   )
@@ -304,7 +343,10 @@ export default function Plan({ onActivityClick }) {
   const [showApprovalModal, setShowApprovalModal] = useState(false)
   const [weekOffset, setWeekOffset] = useState(0)
   const [weekStats, setWeekStats] = useState({ km: 0, elev: 0, runs: 0, strength: 0 })
-  const today = new Date().toISOString().slice(0, 10)
+  const [mismatch, setMismatch] = useState(null)
+  const [mismatchLoading, setMismatchLoading] = useState(false)
+  const mismatchRef = useRef(false)
+  const today = localDateStr(new Date())
 
   // Week date range
   const weekStart = (() => {
@@ -340,6 +382,80 @@ export default function Plan({ onActivityClick }) {
       })
     })
   }, [weekOffset])
+
+  // Mismatch detection — runs once on mount when current week data is loaded
+  useEffect(() => {
+    if (weekOffset !== 0) return
+    if (mismatchRef.current) return
+    if (sessions.length === 0 && activities.length === 0) return
+    mismatchRef.current = true
+    const todaysSessions = sessions.filter(s => s.planned_date === today)
+    const todaysActs = activities.filter(a => a.date?.slice(0,10) === today)
+    checkForMismatch(todaysSessions, todaysActs, sessions)
+  }, [sessions, activities])
+
+  async function checkForMismatch(todaysSessions, todaysActs, allSessions) {
+    const storageKey = `mismatch_${today}`
+    if (sessionStorage.getItem(storageKey)) return
+    const nonRest = todaysSessions.filter(s => s.session_type !== 'rest')
+    if (nonRest.length === 0 || todaysActs.length === 0) return
+    const typeMap = { run: ['run','trailrun','trail'], trail: ['trail','trailrun','run'], strength: ['weighttraining','strength'] }
+    const isMismatch = nonRest.some(s => {
+      const types = typeMap[s.session_type] || []
+      return !todaysActs.some(a => types.some(t => a.type?.toLowerCase().includes(t)))
+    })
+    if (!isMismatch) { sessionStorage.setItem(storageKey, 'none'); return }
+    sessionStorage.setItem(storageKey, 'detected')
+    setMismatchLoading(true)
+    try {
+      const systemPrompt = await fetchAndBuildPrompt(supabase)
+      const planned = nonRest.map(s => `${s.name} (${s.session_type}, ${s.zone || s.intensity})`).join(', ')
+      const actual = todaysActs.map(a => `${a.name} (${a.type}, ${parseFloat(a.distance_km||0).toFixed(1)}km, HR ${Math.round(a.avg_hr||0)})`).join(', ')
+      const upcoming = allSessions.filter(s => s.planned_date > today).slice(0, 5).map(s => `${s.planned_date}: ${s.name} (${s.session_type})`).join('\n')
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5',
+          max_tokens: 600,
+          system: systemPrompt + '\n\nTask: analyse a training mismatch. Respond ONLY with valid JSON: {"summary": "one sentence", "what_changed": "what was planned vs what happened", "week_impact": "how this affects the rest of the week", "proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence"}]}',
+          messages: [{ role: 'user', content: `Today was planned: ${planned}\nActual workout done: ${actual}\n\nUpcoming sessions this week:\n${upcoming}\n\nAnalyse the mismatch and propose any needed adjustments.` }]
+        })
+      })
+      const data = await resp.json()
+      const raw = data.content[0].text.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(raw)
+      setMismatch(parsed)
+    } catch(e) { console.error('Mismatch check failed', e) }
+    setMismatchLoading(false)
+  }
+
+  async function applyMismatchProposals() {
+    if (!mismatch?.proposals?.length) return
+    for (const p of mismatch.proposals) {
+      let origId = null
+      if (p.original_date) {
+        const match = sessions.find(s => s.planned_date === p.original_date)
+        origId = match?.id || null
+      }
+      await supabase.from('schedule_changes').insert({
+        status: 'pending',
+        change_type: p.change_type,
+        title: p.title,
+        reasoning: p.reasoning,
+        proposed_by: 'coach',
+        original_session_id: origId,
+        new_date: p.new_date || null,
+        new_notes: p.new_notes || null,
+        new_intensity: p.new_intensity || null,
+        context: { race_impact: p.race_impact || null },
+      })
+    }
+    const { data: newChanges } = await supabase.from('schedule_changes').select('*').eq('status', 'pending').order('created_at', { ascending: false })
+    setChanges(newChanges || [])
+    setMismatch(null)
+    setShowApprovalModal(true)
+  }
 
   // Match activity to session by date + type
   function matchActivity(session) {
@@ -447,6 +563,16 @@ export default function Plan({ onActivityClick }) {
         }
         {races.length === 0 && <div style={{ fontSize: 11, color: Z.muted, marginTop: -4, marginBottom: 10 }}>Add your races in Settings 👤</div>}
       </div>
+
+      {/* MISMATCH PROMPT */}
+      {(mismatchLoading || mismatch) && weekOffset === 0 && (
+        <MismatchPrompt
+          analysis={mismatch}
+          loading={mismatchLoading}
+          onAdjust={applyMismatchProposals}
+          onDismiss={() => setMismatch(null)}
+        />
+      )}
 
       {/* PENDING CHANGES — tap to open approval modal */}
       {changes.length > 0 && (
