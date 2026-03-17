@@ -203,6 +203,7 @@ export default function Nutrition() {
   const [logDate, setLogDate] = useState(new Date().toISOString().slice(0, 10))
   const [activeMetrics, setActiveMetrics] = useState(['kcal', 'protein', 'units'])
   const [todaySession, setTodaySession] = useState(null)
+  const [todayActivity, setTodayActivity] = useState(null)
 
   const todayKcal = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + (e.calories || 0), 0)
   const todayProtein = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + parseFloat(e.protein_g || 0), 0)
@@ -214,14 +215,16 @@ export default function Nutrition() {
   async function load() {
     const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString().slice(0,10)
     const todayStr = new Date().toISOString().slice(0, 10)
-    const [{ data: all }, { data: w7 }, { data: sessions }] = await Promise.all([
+    const [{ data: all }, { data: w7 }, { data: sessions }, { data: acts }] = await Promise.all([
       supabase.from('nutrition_logs').select('*').eq('date', logDate).order('logged_at', { ascending: false }),
       supabase.from('nutrition_logs').select('*').gte('date', sevenDaysAgo).order('date'),
-      supabase.from('scheduled_sessions').select('session_type,name,zone,duration_min_low,duration_min_high').eq('planned_date', todayStr).limit(3)
+      supabase.from('scheduled_sessions').select('session_type,name,zone,duration_min_low,duration_min_high').eq('planned_date', todayStr).limit(3),
+      supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec').eq('date', todayStr).order('date', { ascending: false }).limit(1)
     ])
     setEntries(all || [])
     setEntries7(w7 || [])
     setTodaySession(sessions?.[0] || null)
+    setTodayActivity(acts?.[0] || null)
     setLoading(false)
   }
 
@@ -310,18 +313,62 @@ export default function Nutrition() {
       </div>
 
       {/* Training context banner */}
-      {isToday && todaySession && (
-        <div style={{ margin: '10px 20px 0', padding: '10px 14px', background: todaySession.session_type === 'rest' ? 'rgba(136,133,128,0.1)' : todaySession.session_type === 'strength' ? 'rgba(255,179,71,0.1)' : 'rgba(232,255,71,0.08)', border: `1px solid ${todaySession.session_type === 'rest' ? 'rgba(136,133,128,0.25)' : todaySession.session_type === 'strength' ? 'rgba(255,179,71,0.3)' : 'rgba(232,255,71,0.2)'}`, borderRadius: 10 }}>
-          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Today's session</div>
-          <div style={{ fontSize: 13, color: Z.text, fontWeight: 500 }}>
-            {todaySession.session_type === 'run' ? '🏃' : todaySession.session_type === 'trail' ? '⛰️' : todaySession.session_type === 'strength' ? '🏋️' : '😴'} {todaySession.name}
-            {todaySession.zone && <span style={{ fontSize: 11, color: Z.muted }}> · {todaySession.zone} · {todaySession.duration_min_low}{todaySession.duration_min_high !== todaySession.duration_min_low ? `–${todaySession.duration_min_high}` : ''}min</span>}
-          </div>
-          <div style={{ fontSize: 11, color: Z.muted, marginTop: 4 }}>
-            {todaySession.session_type === 'rest' ? 'Rest day · protein focus, modest calorie deficit is fine' : todaySession.session_type === 'strength' ? 'Strength day · hit protein target, moderate carbs pre-session' : 'Training day · prioritise carbs & hit calorie target'}
-          </div>
-        </div>
-      )}
+      {isToday && (todayActivity || todaySession) && (() => {
+        const act = todayActivity
+        const sess = todaySession
+        const isRun = act?.type?.toLowerCase().includes('run') || act?.type?.toLowerCase().includes('trail')
+        const isStrength = act?.type?.toLowerCase().includes('weight') || act?.type?.toLowerCase().includes('strength')
+        const distKm = parseFloat(act?.distance_km || 0)
+        const elevM = parseFloat(act?.elevation_m || 0)
+        const durationMin = act?.duration_sec ? Math.round(act.duration_sec / 60) : null
+
+        let label, icon, bg, border, advice
+        if (act) {
+          // Recovery mode — workout already done
+          icon = isRun ? '🏃' : isStrength ? '🏋️' : '✓'
+          label = 'Workout done'
+          bg = 'rgba(77,255,145,0.07)'
+          border = 'rgba(77,255,145,0.25)'
+          const statStr = [distKm > 0 && `${distKm.toFixed(1)}km`, elevM > 0 && `${Math.round(elevM)}m elev`, durationMin && `${durationMin}min`].filter(Boolean).join(' · ')
+          const isHardRun = sess?.zone?.includes('Z4') || sess?.zone?.includes('Z5') || sess?.intensity?.toLowerCase().includes('hard')
+          if (isRun) {
+            const carbNote = distKm > 16 || isHardRun ? 'High carb run — aim for 400–500g carbs today to refill glycogen.' : 'Moderate run — 250–300g carbs sufficient, focus on hitting protein.'
+            advice = `${carbNote} Get 30–40g protein within 30min, then a full meal within 2hrs. Prioritise fluids — at least 500ml before your next meal.`
+          } else if (isStrength) {
+            advice = 'Protein window is open — aim for 40g+ protein now, then again at your next meal. Moderate carbs to support recovery; no need to aggressively refuel like post-run.'
+          } else {
+            advice = 'Session complete — protein focus for recovery, hit your calorie target.'
+          }
+          return (
+            <div style={{ margin: '10px 20px 0', padding: '10px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 10 }}>
+              <div style={{ fontSize: 10, color: Z.green, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
+              <div style={{ fontSize: 13, color: Z.text, fontWeight: 500, marginBottom: 2 }}>
+                {icon} {act.name}
+                {statStr && <span style={{ fontSize: 11, color: Z.muted, fontWeight: 400 }}> · {statStr}</span>}
+              </div>
+              <div style={{ fontSize: 11, color: '#a8a5a0', lineHeight: 1.5 }}>{advice}</div>
+            </div>
+          )
+        } else if (sess) {
+          // Pre-session mode — nothing logged yet
+          icon = sess.session_type === 'run' ? '🏃' : sess.session_type === 'trail' ? '⛰️' : sess.session_type === 'strength' ? '🏋️' : '😴'
+          label = "Today's session"
+          bg = sess.session_type === 'rest' ? 'rgba(136,133,128,0.1)' : sess.session_type === 'strength' ? 'rgba(255,179,71,0.1)' : 'rgba(232,255,71,0.08)'
+          border = sess.session_type === 'rest' ? 'rgba(136,133,128,0.25)' : sess.session_type === 'strength' ? 'rgba(255,179,71,0.3)' : 'rgba(232,255,71,0.2)'
+          advice = sess.session_type === 'rest' ? 'Rest day · protein focus, modest calorie deficit is fine' : sess.session_type === 'strength' ? 'Strength day · hit protein target, moderate carbs pre-session' : 'Training day · prioritise carbs, eat 2–3hrs before session'
+          return (
+            <div style={{ margin: '10px 20px 0', padding: '10px 14px', background: bg, border: `1px solid ${border}`, borderRadius: 10 }}>
+              <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
+              <div style={{ fontSize: 13, color: Z.text, fontWeight: 500, marginBottom: 2 }}>
+                {icon} {sess.name}
+                {sess.zone && <span style={{ fontSize: 11, color: Z.muted, fontWeight: 400 }}> · {sess.zone} · {sess.duration_min_low}{sess.duration_min_high !== sess.duration_min_low ? `–${sess.duration_min_high}` : ''}min</span>}
+              </div>
+              <div style={{ fontSize: 11, color: '#a8a5a0', lineHeight: 1.5 }}>{advice}</div>
+            </div>
+          )
+        }
+        return null
+      })()}
 
       {/* Clickable stat cards + graph */}
       <div style={{ padding: '12px 20px', borderBottom: `1px solid ${Z.border}` }}>
