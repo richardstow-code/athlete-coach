@@ -396,31 +396,55 @@ export default function Plan({ onActivityClick }) {
   }, [sessions, activities])
 
   async function checkForMismatch(todaysSessions, todaysActs, allSessions) {
-    const storageKey = `mismatch_${today}`
+    const storageKey = `mismatch_v2_${today}`
     if (sessionStorage.getItem(storageKey)) return
     const nonRest = todaysSessions.filter(s => s.session_type !== 'rest')
     if (nonRest.length === 0 || todaysActs.length === 0) return
+
     const typeMap = { run: ['run','trailrun','trail'], trail: ['trail','trailrun','run'], strength: ['weighttraining','strength'] }
-    const isMismatch = nonRest.some(s => {
+
+    let isMismatch = false
+    for (const s of nonRest) {
       const types = typeMap[s.session_type] || []
-      return !todaysActs.some(a => types.some(t => a.type?.toLowerCase().includes(t)))
-    })
+      const matchedAct = todaysActs.find(a => types.some(t => a.type?.toLowerCase().includes(t)))
+
+      // Type mismatch — did a completely different activity
+      if (!matchedAct) { isMismatch = true; break }
+
+      // Duration mismatch — did less than 75% of planned minimum
+      if (s.duration_min_low && matchedAct.duration_sec) {
+        if ((matchedAct.duration_sec / 60) < s.duration_min_low * 0.75) { isMismatch = true; break }
+      }
+
+      // Intensity mismatch — planned hard (Z4/Z5/threshold) but HR was low, or vice versa
+      if (s.zone && matchedAct.avg_hr) {
+        const plannedHard = /Z[45]|threshold|tempo/i.test(s.zone + ' ' + (s.intensity || ''))
+        const plannedEasy = /Z[12]/i.test(s.zone)
+        if (plannedHard && matchedAct.avg_hr < 148) { isMismatch = true; break }
+        if (plannedEasy && matchedAct.avg_hr > 158) { isMismatch = true; break }
+      }
+    }
+
     if (!isMismatch) { sessionStorage.setItem(storageKey, 'none'); return }
     sessionStorage.setItem(storageKey, 'detected')
     setMismatchLoading(true)
     try {
       const systemPrompt = await fetchAndBuildPrompt(supabase)
-      const planned = nonRest.map(s => `${s.name} (${s.session_type}, ${s.zone || s.intensity})`).join(', ')
-      const actual = todaysActs.map(a => `${a.name} (${a.type}, ${parseFloat(a.distance_km||0).toFixed(1)}km, HR ${Math.round(a.avg_hr||0)})`).join(', ')
-      const upcoming = allSessions.filter(s => s.planned_date > today).slice(0, 5).map(s => `${s.planned_date}: ${s.name} (${s.session_type})`).join('\n')
+      const planned = nonRest.map(s =>
+        `${s.name} (${s.session_type}, zone: ${s.zone || 'N/A'}, intensity: ${s.intensity || 'N/A'}, planned: ${s.duration_min_low}–${s.duration_min_high}min)`
+      ).join('; ')
+      const actual = todaysActs.map(a =>
+        `${a.name} (${a.type}, ${parseFloat(a.distance_km||0).toFixed(1)}km, ${a.duration_sec ? Math.round(a.duration_sec/60)+'min' : 'N/A'}, avg HR ${Math.round(a.avg_hr||0)}, elev ${Math.round(a.elevation_m||0)}m)`
+      ).join('; ')
+      const upcoming = allSessions.filter(s => s.planned_date > today).slice(0, 5).map(s => `${s.planned_date}: ${s.name} (${s.session_type}, ${s.zone || s.intensity})`).join('\n')
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
         body: JSON.stringify({
           model: 'claude-haiku-4-5',
           max_tokens: 600,
-          system: systemPrompt + '\n\nTask: analyse a training mismatch. Respond ONLY with valid JSON: {"summary": "one sentence", "what_changed": "what was planned vs what happened", "week_impact": "how this affects the rest of the week", "proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence"}]}',
-          messages: [{ role: 'user', content: `Today was planned: ${planned}\nActual workout done: ${actual}\n\nUpcoming sessions this week:\n${upcoming}\n\nAnalyse the mismatch and propose any needed adjustments.` }]
+          system: systemPrompt + '\n\nTask: analyse a training mismatch. Respond ONLY with valid JSON: {"summary": "one sentence", "what_changed": "what was planned vs what actually happened, including intensity and duration differences", "week_impact": "how this affects the rest of the week and Munich prep", "proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence"}]}',
+          messages: [{ role: 'user', content: `Planned today: ${planned}\nActual done: ${actual}\n\nUpcoming sessions this week:\n${upcoming}\n\nAnalyse the mismatch — consider type, intensity (HR vs zone), and duration differences. Propose adjustments if needed.` }]
         })
       })
       const data = await resp.json()
@@ -627,7 +651,7 @@ export default function Plan({ onActivityClick }) {
         {sessions.length === 0 ? (
           <div style={{ padding: '20px 0', color: Z.muted, fontSize: 13 }}>No sessions scheduled for this week.</div>
         ) : sessions.map(s => (
-          <SessionRow key={s.id} session={s} activity={matchActivity(s)} isToday={s.planned_date === today} onActivityClick={onActivityClick} onSessionClick={setSelectedSession} />
+          <SessionRow key={s.id} session={s} activity={matchActivity(s)} isToday={s.planned_date === today} onActivityClick={onActivityClick} onSessionClick={matchActivity(s) ? undefined : setSelectedSession} />
         ))}
       </div>
 
