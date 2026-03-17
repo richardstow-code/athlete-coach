@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase'
 import Home from './screens/Home'
 import Chat from './screens/Chat'
 import Plan from './screens/Plan'
-import Stats from './screens/Stats'
+import Progress from './screens/Stats'
 import Nutrition from './screens/Nutrition'
 import ActivityDetail from './screens/ActivityDetail'
 import Settings from './screens/Settings'
@@ -30,7 +30,7 @@ const TABS = [
   { id: 'plan',      label: 'Plan',  icon: '◉' },
   { id: 'chat',      label: 'Chat',  icon: '◎' },
   { id: 'nutrition', label: 'Fuel',  icon: '◈' },
-  { id: 'stats',     label: 'Stats', icon: '◫' },
+  { id: 'stats',     label: 'Progress', icon: '◫' },
 ]
 
 const Z = {
@@ -131,7 +131,7 @@ export default function App() {
             {activeTab === 'home'      && <ErrorBoundary><Home onActivityClick={openActivity} /></ErrorBoundary>}
             {activeTab === 'chat'      && <ErrorBoundary><Chat /></ErrorBoundary>}
             {activeTab === 'plan'      && <ErrorBoundary><Plan onActivityClick={openActivity} /></ErrorBoundary>}
-            {activeTab === 'stats'     && <ErrorBoundary><Stats onActivityClick={openActivity} /></ErrorBoundary>}
+            {activeTab === 'stats'     && <ErrorBoundary><Progress onActivityClick={openActivity} /></ErrorBoundary>}
             {activeTab === 'nutrition' && <ErrorBoundary><Nutrition /></ErrorBoundary>}
           </>
         )}
