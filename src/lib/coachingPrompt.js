@@ -66,6 +66,18 @@ export function buildSystemPrompt(settings = {}) {
     personaFocus = 'Your approach is balanced — training, recovery, and lifestyle together. No single dimension dominates.'
   }
 
+  // ── Lifecycle focus ───────────────────────────────────────
+  const LIFECYCLE_FOCUS = {
+    planning:    'Focus: help the athlete set up their training plan, establish baselines, and build a realistic schedule. Ask questions, surface gaps, confirm the goal.',
+    training:    'Focus: session execution, load management, and progressive overload. Review recent training, flag compliance issues, suggest adjustments.',
+    taper:       'Focus: volume reduction while maintaining intensity. Reassure — taper doubts are normal. No new stressors. Protect the work already done.',
+    race_week:   'Focus: logistics, nutrition timing, mental preparation, and minimal training. Keep the athlete calm, confident, and rested. Avoid anything that adds anxiety.',
+    recovery:    'Focus: active recovery only. Celebrate the effort and reflect on the event. No performance pressure. Protect sleep, easy movement, and mental reset.',
+    what_next:   'Focus: celebrate the achievement, then explore what comes next. Help the athlete articulate their next goal. Keep energy high, avoid a vacuum.',
+    maintenance: 'Focus: consistency over performance. Flexible scheduling is fine. Keep the athlete moving and engaged without peaking or heavy load.',
+  }
+  const lifecycleFocus = settings.lifecycle_state ? LIFECYCLE_FOCUS[settings.lifecycle_state] : null
+
   // ── Athlete context ───────────────────────────────────────
   const contextLines = [
     targetStr || null,
@@ -78,6 +90,7 @@ export function buildSystemPrompt(settings = {}) {
       ? 'Location: Taxach/Rif, Salzburg, Austria. Local routes: Salzach valley (flat), Bad Dürrnberg/Zinkenkopf (490m vert, 10min drive), Untersberg (summit 1853m, 15min drive).'
       : null,
     settings.health_notes ? `Health: ${settings.health_notes}` : null,
+    lifecycleFocus || null,
   ].filter(Boolean)
 
   // ── Style sliders ─────────────────────────────────────────
