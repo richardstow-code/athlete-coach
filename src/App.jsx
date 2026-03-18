@@ -48,6 +48,7 @@ import ActivityDetail from './screens/ActivityDetail'
 import Settings from './screens/Settings'
 import Onboarding from './screens/Onboarding'
 import PostWorkoutPopup from './components/PostWorkoutPopup'
+import PostEventModal from './components/PostEventModal'
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
@@ -85,6 +86,7 @@ const Z = {
 export default function App() {
   const [session, setSession] = useState(undefined)
   const [needsOnboarding, setNeedsOnboarding] = useState(null) // null=checking, true/false
+  const [postEventSettings, setPostEventSettings] = useState(null)
   const [activeTab, setActiveTab] = useState('home')
   const [detailId, setDetailId] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -96,12 +98,24 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Check if the user needs onboarding (no lifecycle_state or explicitly 'onboarding')
+  // Check onboarding state and post-event state together on session change
   useEffect(() => {
-    if (!session) { setNeedsOnboarding(null); return }
-    supabase.from('athlete_settings').select('lifecycle_state').maybeSingle()
+    if (!session) { setNeedsOnboarding(null); setPostEventSettings(null); return }
+    supabase
+      .from('athlete_settings')
+      .select('lifecycle_state, target_date, goal_type, target_event_name, target_metric, sport_category, sport')
+      .maybeSingle()
       .then(({ data }) => {
-        setNeedsOnboarding(!data || !data.lifecycle_state || data.lifecycle_state === 'onboarding')
+        const state = data?.lifecycle_state
+        setNeedsOnboarding(!data || !state || state === 'onboarding')
+
+        // Post-event: target_date has passed and athlete isn't already in recovery/what_next
+        const today = new Date().toISOString().slice(0, 10)
+        const targetPassed = data?.target_date && data.target_date < today
+        const alreadyHandled = !state || ['onboarding', 'recovery', 'what_next'].includes(state)
+        if (targetPassed && !alreadyHandled) {
+          setPostEventSettings(data)
+        }
       })
   }, [session])
 
@@ -169,6 +183,18 @@ export default function App() {
 
       {/* POST-WORKOUT POPUP */}
       <PostWorkoutPopup onViewDetail={(id) => { setShowSettings(false); setDetailId(id) }} />
+
+      {/* POST-EVENT MODAL — shown once after target_date passes */}
+      {postEventSettings && (
+        <PostEventModal
+          settings={postEventSettings}
+          onComplete={(newState) => {
+            setPostEventSettings(null)
+            // Nudge the onboarding gate so lifecycle_state is re-evaluated if needed
+            if (newState === 'what_next') setNeedsOnboarding(false)
+          }}
+        />
+      )}
 
       {/* SETTINGS OVERLAY */}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
