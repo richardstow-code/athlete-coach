@@ -32,7 +32,7 @@ export function buildSystemPrompt(settings = {}, primarySport = null) {
 
   // ── Goal & target ─────────────────────────────────────────
   const goalType     = settings.goal_type || null
-  const targetDesc   = targetMetric || settings.target_description || null
+  const targetDesc   = targetMetric || null
   const daysToTarget = targetDate
     ? Math.ceil((new Date(targetDate) - new Date()) / (24 * 60 * 60 * 1000))
     : null
@@ -91,7 +91,7 @@ export function buildSystemPrompt(settings = {}, primarySport = null) {
       ? 'Training zones: Z1 <125bpm, Z2 125–140bpm, Z3 140–158bpm, Z4 158–172bpm, Z5 >172bpm.'
       : null,
     isRunning
-      ? 'Location: Taxach/Rif, Salzburg, Austria. Local routes: Salzach valley (flat), Bad Dürrnberg/Zinkenkopf (490m vert, 10min drive), Untersberg (summit 1853m, 15min drive).'
+      ? null
       : null,
     settings.health_notes ? `Health: ${settings.health_notes}` : null,
     lifecycleFocus || null,

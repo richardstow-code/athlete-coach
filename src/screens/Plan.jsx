@@ -2,6 +2,7 @@ import SessionDetail from '../components/SessionDetail'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
+import { usePrimarySport } from '../lib/usePrimarySport'
 import { buildSystemPrompt, fetchAndBuildPrompt } from '../lib/coachingPrompt'
 import { callClaude } from '../lib/claudeProxy'
 
@@ -107,7 +108,7 @@ function ChangeApprovalModal({ changes, onApprove, onReject, onClose }) {
                 {/* Race impact */}
                 {c.context?.race_impact && (
                   <div style={{ borderLeft: `2px solid ${Z.accent2}`, paddingLeft: 10, marginBottom: 14 }}>
-                    <div style={{ fontSize: 10, color: Z.accent2, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Munich impact</div>
+                    <div style={{ fontSize: 10, color: Z.accent2, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Race impact</div>
                     <div style={{ fontSize: 12, color: '#a8a5a0', lineHeight: 1.5 }}>{c.context.race_impact}</div>
                   </div>
                 )}
@@ -345,6 +346,7 @@ function RaceCard({ race }) {
 // ── Main Plan Screen ──────────────────────────────────────────
 export default function Plan({ onActivityClick }) {
   const settings = useSettings()
+  const { primarySport } = usePrimarySport()
   const [sessions, setSessions] = useState([])
   const [activities, setActivities] = useState([])
   const [changes, setChanges] = useState([])
@@ -356,6 +358,7 @@ export default function Plan({ onActivityClick }) {
   const mismatchRef = useRef(false)
   const [selectedSession, setSelectedSession] = useState(null)
   const today = localDateStr(new Date())
+  const raceLabel = primarySport?.current_goal_raw || 'your race'
 
   // Week date range
   const weekStart = (() => {
@@ -448,7 +451,7 @@ export default function Plan({ onActivityClick }) {
       const data = await callClaude({
         model: 'claude-haiku-4-5',
         max_tokens: 600,
-        system: systemPrompt + '\n\nTask: analyse a training mismatch. Respond ONLY with valid JSON: {"summary": "one sentence", "what_changed": "what was planned vs what actually happened, including intensity and duration differences", "week_impact": "how this affects the rest of the week and Munich prep", "proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence"}]}',
+        system: systemPrompt + `\n\nTask: analyse a training mismatch. Respond ONLY with valid JSON: {"summary": "one sentence", "what_changed": "what was planned vs what actually happened, including intensity and duration differences", "week_impact": "how this affects the rest of the week and ${raceLabel}", "proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence"}]}`,
         messages: [{ role: 'user', content: `Planned today: ${planned}\nActual done: ${actual}\n\nUpcoming sessions this week:\n${upcoming}\n\nAnalyse the mismatch — consider type, intensity (HR vs zone), and duration differences. Propose adjustments if needed.` }],
       })
       const raw = data.content[0].text.replace(/```json|```/g, '').trim()
@@ -543,7 +546,7 @@ export default function Plan({ onActivityClick }) {
     const data = await callClaude({
       model: 'claude-haiku-4-5',
       max_tokens: 1000,
-      system: buildSystemPrompt(settings) + '\n\nTask: propose schedule adjustments for the change described. Respond ONLY with valid JSON, no other text: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence on how this affects Munich preparation"}]}',
+      system: buildSystemPrompt(settings) + `\n\nTask: propose schedule adjustments for the change described. Respond ONLY with valid JSON, no other text: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence on how this affects ${raceLabel}"}]}`,
       messages: [{ role: 'user', content: `Athlete says: "${text}"\n\nCurrent week schedule:\n${upcomingSess}\n\nPropose schedule changes to accommodate this.` }],
     })
     const raw = data.content[0].text.replace(/```json|```/g, '').trim()
@@ -589,9 +592,20 @@ export default function Plan({ onActivityClick }) {
       <div style={{ padding: '14px 20px 0' }}>
         {races.length > 0
           ? races.sort((a,b) => new Date(a.date) - new Date(b.date)).map((r,i) => <RaceCard key={i} race={r} />)
-          : <RaceCard race={{ name: 'Munich Marathon', date: '2026-10-12', distance: '42.2', target: '3:10:00' }} />
+          : primarySport?.current_goal_raw
+            ? <RaceCard race={{
+                name: primarySport.current_goal_raw,
+                date: primarySport.target_date || '',
+                distance: '',
+                target: primarySport.target_metric || '',
+              }} />
+            : null
         }
-        {races.length === 0 && <div style={{ fontSize: 11, color: Z.muted, marginTop: -4, marginBottom: 10 }}>Add your races in Settings 👤</div>}
+        {!primarySport?.current_goal_raw && races.length === 0 && (
+          <div style={{ fontSize: 11, color: Z.muted, padding: '10px 0 14px' }}>
+            No goal set yet — complete your profile to add a target.
+          </div>
+        )}
       </div>
 
       {/* MISMATCH PROMPT */}

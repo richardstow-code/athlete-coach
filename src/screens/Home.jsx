@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
+import { usePrimarySport } from '../lib/usePrimarySport'
 
 const S = {
   page: { overflowY: 'auto', height: '100%' },
@@ -66,6 +67,7 @@ function ActivityRow({ activity, onActivityClick }) {
 
 export default function Home({ onActivityClick }) {
   const settings = useSettings()
+  const { primarySport } = usePrimarySport()
   const [activities, setActivities] = useState([])
   const [briefing, setBriefing] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -106,9 +108,9 @@ export default function Home({ onActivityClick }) {
   const weekStrength = weekActs.filter(a => a.type?.toLowerCase().includes('weight')).length
 
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-  const targetDate = settings.target_date ? new Date(settings.target_date) : null
+  const targetDate = primarySport?.target_date ? new Date(primarySport.target_date) : null
   const daysToRace = targetDate ? Math.ceil((targetDate - new Date()) / (1000 * 60 * 60 * 24)) : null
-  const eventLabel = settings.target_event_name || null
+  const eventLabel = primarySport?.current_goal_raw || null
 
   // Last run for zone bars
   const lastRun = activities.find(a => a.type?.toLowerCase().includes('run'))
@@ -118,8 +120,8 @@ export default function Home({ onActivityClick }) {
       <div style={S.hero}>
         <div style={S.label}>{today}</div>
         <div style={S.greeting}>
-          {settings.lifecycle_state
-            ? settings.lifecycle_state.charAt(0).toUpperCase() + settings.lifecycle_state.slice(1).replace('_', ' ')
+          {primarySport?.lifecycle_state
+            ? primarySport.lifecycle_state.charAt(0).toUpperCase() + primarySport.lifecycle_state.slice(1).replace('_', ' ')
             : 'Welcome'}
         </div>
         {(eventLabel || daysToRace) && (
@@ -198,22 +200,24 @@ export default function Home({ onActivityClick }) {
       <div style={S.section}>
         <div style={S.sectionHeader}>
           <div style={S.sectionTitle}>Today's Fuel</div>
-          <div style={{ fontSize: '11px', color: '#888580' }}>2800 kcal · 150g target</div>
+          <div style={{ fontSize: '11px', color: '#888580' }}></div>
         </div>
         {!todayNutrition.logged ? (
           <div style={{ color: '#888580', fontSize: '13px' }}>Nothing logged yet today.</div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
             {[
-              { val: todayNutrition.kcal, lbl: 'kcal logged', target: 2800, col: '#e8ff47' },
-              { val: `${todayNutrition.protein}g`, lbl: 'protein', target: 150, numVal: todayNutrition.protein, col: '#47d4ff' },
+              { val: todayNutrition.kcal, lbl: 'kcal logged', target: null, col: '#e8ff47' },
+              { val: `${todayNutrition.protein}g`, lbl: 'protein', target: null, numVal: todayNutrition.protein, col: '#47d4ff' },
             ].map(({ val, lbl, target, numVal, col }) => (
               <div key={lbl} style={{ background: '#111111', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '10px', padding: '12px 14px' }}>
                 <div style={{ fontFamily: 'Syne, sans-serif', fontSize: '22px', fontWeight: 700, lineHeight: 1, color: col }}>{val}</div>
                 <div style={{ fontSize: '10px', color: '#888580', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 6px' }}>{lbl}</div>
-                <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px' }}>
-                  <div style={{ height: '100%', width: `${Math.min(100, ((numVal ?? val) / target) * 100)}%`, background: col, borderRadius: '2px', transition: 'width 0.4s' }} />
-                </div>
+                {target != null && (
+                  <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, ((numVal ?? val) / target) * 100)}%`, background: col, borderRadius: '2px', transition: 'width 0.4s' }} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

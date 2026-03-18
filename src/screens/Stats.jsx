@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
+import { usePrimarySport } from '../lib/usePrimarySport'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -465,6 +466,17 @@ function MicroLifestyle({ settings, weekSessions, weekActs, nutritionLogs }) {
 // ── Main ──────────────────────────────────────────────────────
 export default function Progress({ onActivityClick }) {
   const settings  = useSettings()
+  const { primarySport } = usePrimarySport()
+  // Merge primarySport fields over settings so sub-components keep working
+  const mergedSettings = {
+    ...settings,
+    sport_category:     primarySport?.sport_category     ?? settings.sport_category,
+    sport:              primarySport?.sport_raw          ?? settings.sport,
+    target_date:        primarySport?.target_date        ?? settings.target_date,
+    target_event_name:  primarySport?.current_goal_raw   ?? settings.target_event_name,
+    target_metric:      primarySport?.target_metric      ?? settings.target_metric,
+    lifecycle_state:    primarySport?.lifecycle_state    ?? settings.lifecycle_state,
+  }
   const [activities,    setActivities]    = useState([])
   const [weekSessions,  setWeekSessions]  = useState([])
   const [phaseSessions, setPhaseSessions] = useState([])
@@ -478,9 +490,9 @@ export default function Progress({ onActivityClick }) {
     const weekEndStr   = localDateStr(end)
 
     // Phase lookback: from estimated training start or 4 months ago
-    const pw = phaseWeeksForSport(settings.sport_category)
-    const phaseStartStr = settings.target_date
-      ? (() => { const d = new Date(settings.target_date); d.setDate(d.getDate() - pw*7); return localDateStr(d) })()
+    const pw = phaseWeeksForSport(mergedSettings.sport_category)
+    const phaseStartStr = mergedSettings.target_date
+      ? (() => { const d = new Date(mergedSettings.target_date); d.setDate(d.getDate() - pw*7); return localDateStr(d) })()
       : (() => { const d = new Date(); d.setMonth(d.getMonth()-4); return localDateStr(d) })()
 
     Promise.all([
@@ -495,15 +507,15 @@ export default function Progress({ onActivityClick }) {
       setNutritionLogs(nLogs || [])
       setLoading(false)
     })
-  }, [settings.target_date, settings.sport_category])
+  }, [primarySport?.target_date, primarySport?.sport_category])
 
   const now = new Date()
   const { start: weekStart } = getWeekBounds()
-  const goalType  = settings.goal_type
+  const goalType  = mergedSettings.goal_type
   const isEvent   = goalType === 'compete' || goalType === 'complete_event'
   const isBodyComp = goalType === 'body_composition'
   const isRecovery = goalType === 'injury_recovery'
-  const isRunning = settings.sport_category === 'running' || settings.sport === 'running'
+  const isRunning = mergedSettings.sport_category === 'running' || mergedSettings.sport === 'running'
 
   // 8-week chart data
   const chartWeeks = []
@@ -522,9 +534,9 @@ export default function Progress({ onActivityClick }) {
   const weekActs = activities.filter(a => new Date(a.date) >= weekStart)
 
   // Lifecycle banner
-  const targetName = settings.target_event_name || (settings.target_metric ? 'your goal' : null)
-  const daysToTarget = settings.target_date ? Math.ceil((new Date(settings.target_date) - now) / 86400000) : null
-  const bannerText = lifecycleDesc(settings.lifecycle_state, targetName, daysToTarget)
+  const targetName = mergedSettings.target_event_name || (mergedSettings.target_metric ? 'your goal' : null)
+  const daysToTarget = mergedSettings.target_date ? Math.ceil((new Date(mergedSettings.target_date) - now) / 86400000) : null
+  const bannerText = lifecycleDesc(mergedSettings.lifecycle_state, targetName, daysToTarget)
 
   // PBs — use all activities or sport-filtered
   const pbSource = isRunning ? activities.filter(a => a.type?.toLowerCase().includes('run')) : activities
@@ -560,8 +572,8 @@ export default function Progress({ onActivityClick }) {
           {/* ── MACRO ── */}
           {view === 'macro' && (
             <>
-              {isEvent    && <MacroCompete  settings={settings} activities={activities} chartWeeks={chartWeeks} />}
-              {isBodyComp && <MacroBodyComp settings={settings} activities={activities} chartWeeks={chartWeeks} />}
+              {isEvent    && <MacroCompete  settings={mergedSettings} activities={activities} chartWeeks={chartWeeks} />}
+              {isBodyComp && <MacroBodyComp settings={mergedSettings} activities={activities} chartWeeks={chartWeeks} />}
               {isRecovery && <MacroRecovery activities={activities} chartWeeks={chartWeeks} phaseSessions={phaseSessions} />}
               {!isEvent && !isBodyComp && !isRecovery && <MacroFitness activities={activities} chartWeeks={chartWeeks} />}
             </>
@@ -573,12 +585,12 @@ export default function Progress({ onActivityClick }) {
               {/* Lifecycle banner — always shown */}
               {bannerText && (
                 <div style={{ padding:'12px 20px' }}>
-                  <LifecycleBanner state={settings.lifecycle_state} text={bannerText} />
+                  <LifecycleBanner state={mergedSettings.lifecycle_state} text={bannerText} />
                 </div>
               )}
               {isEvent
-                ? <MicroEvent settings={settings} activities={activities} weekSessions={weekSessions} weekActs={weekActs} phaseSessions={phaseSessions} />
-                : <MicroLifestyle settings={settings} weekSessions={weekSessions} weekActs={weekActs} nutritionLogs={nutritionLogs} />
+                ? <MicroEvent settings={mergedSettings} activities={activities} weekSessions={weekSessions} weekActs={weekActs} phaseSessions={phaseSessions} />
+                : <MicroLifestyle settings={mergedSettings} weekSessions={weekSessions} weekActs={weekActs} nutritionLogs={nutritionLogs} />
               }
             </>
           )}
