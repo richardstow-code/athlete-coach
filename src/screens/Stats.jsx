@@ -5,22 +5,10 @@ import { useSettings } from '../lib/useSettings'
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
   border2:'rgba(255,255,255,0.14)', text:'#f0ede8', muted:'#888580',
-  accent:'#e8ff47', accent2:'#47d4ff', red:'#ff5c5c', green:'#4dff91', amber:'#ffb347'
+  accent:'#e8ff47', accent2:'#47d4ff', red:'#ff5c5c', green:'#4dff91', amber:'#ffb347',
 }
 
-// Phase definition — TODO: move to athlete_settings when multi-phase editing lands
-const PHASE_START = new Date('2026-03-02') // Monday week 1 of Base Build
-const PHASE_NAME  = 'Base Build'
-const PHASE_WEEKS = 9
-
-const PENDING = [
-  { text: '5km time trial — week of 17 Mar (zone calibration)', warn: false },
-  { text: 'Strength benchmark — squat 3RM, pull-up max, plank hold', warn: false },
-  { text: 'Book physio for right shoulder — before end March', warn: true },
-  { text: 'Ultra race decision — confirm or close door by end April', warn: false },
-]
-
-// ── Helpers ───────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────
 function fmtPaceSec(s) {
   if (!s || !isFinite(s)) return '—'
   return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`
@@ -38,118 +26,99 @@ function parseTimeStr(t) {
   return 0
 }
 function localDateStr(d) {
-  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+  return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
 }
 function getWeekBounds() {
-  const start = new Date()
-  const dow = start.getDay()
-  start.setDate(start.getDate() - (dow === 0 ? 6 : dow - 1))
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 6)
-  end.setHours(23, 59, 59, 999)
+  const start = new Date(); const dow = start.getDay()
+  start.setDate(start.getDate() - (dow === 0 ? 6 : dow - 1)); start.setHours(0,0,0,0)
+  const end = new Date(start); end.setDate(end.getDate() + 6); end.setHours(23,59,59,999)
   return { start, end }
 }
+// Estimated total training weeks before event by sport
+function phaseWeeksForSport(sportCategory) {
+  return { triathlon: 20, cycling: 16, running: 18, swimming: 12, hyrox: 12, strength: 10 }[sportCategory] || 12
+}
+// Consecutive weeks with at least 1 activity
+function consistencyStreak(activities) {
+  let streak = 0
+  const now = new Date()
+  for (let w = 0; w <= 52; w++) {
+    const s = new Date(now); const dow = s.getDay()
+    s.setDate(s.getDate() - (dow === 0 ? 6 : dow - 1) - w * 7); s.setHours(0,0,0,0)
+    const e = new Date(s); e.setDate(e.getDate() + 6); e.setHours(23,59,59,999)
+    const has = activities.some(a => { const d = new Date(a.date); return d >= s && d <= e })
+    if (w === 0) { if (has) streak++; continue }
+    if (!has) break
+    streak++
+  }
+  return streak
+}
+// Plain-English lifecycle description
+function lifecycleDesc(state, targetName, daysToTarget) {
+  if (!state) return null
+  const d = daysToTarget, t = targetName
+  return ({
+    planning:    "You're in the planning phase — setting goals and building your training baseline.",
+    training:    t && d ? `You're in training — ${d} days to ${t}.` : "You're in training — stay consistent and trust the process.",
+    taper:       t && d ? `Tapering — ${d} days to ${t}. Protect the work you've done.` : "Tapering — ease off the volume, stay sharp.",
+    race_week:   `Race week${t ? ` — ${t} is this week` : ''}. Rest, prepare, and trust your training.`,
+    recovery:    'Recovery phase — easy movement, rest, and reflection. The hard work is done.',
+    what_next:   "What's next? Reflect on what you achieved and start thinking about your next goal.",
+    maintenance: 'Maintenance — stay consistent, keep moving, no pressure to peak.',
+  })[state] || `Current phase: ${state}.`
+}
 
-// ── SVG Pace Trend Chart ──────────────────────────────────────
+// ── Shared chart primitives ──────────────────────────────────
 function PaceChart({ weeks, targetPaceSec }) {
   const withData = weeks.filter(w => w.paceSeconds != null)
-  if (withData.length < 2) {
-    return (
-      <div style={{ padding: '20px 0', textAlign: 'center', fontSize: 12, color: Z.muted }}>
-        Needs 2+ weeks of run data — check back soon
-      </div>
-    )
-  }
-
-  const VW = 300, VH = 110
-  const P = { l: 6, r: 8, t: 14, b: 18 }
-  const iW = VW - P.l - P.r
-  const iH = VH - P.t - P.b
-
+  if (withData.length < 2) return (
+    <div style={{ padding: '20px 0', textAlign: 'center', fontSize: 12, color: Z.muted }}>
+      Needs 2+ weeks of run data
+    </div>
+  )
+  const VW = 300, VH = 110, P = { l: 6, r: 8, t: 14, b: 18 }
+  const iW = VW - P.l - P.r, iH = VH - P.t - P.b
   const allP = withData.map(w => w.paceSeconds)
   const minP = Math.min(...allP, targetPaceSec) - 20
   const maxP = Math.max(...allP, targetPaceSec) + 20
-
-  const xOf = i  => P.l + (i / (weeks.length - 1)) * iW
-  // faster (lower seconds) = lower Y value = higher on screen
+  const xOf = i => P.l + (i / (weeks.length - 1)) * iW
   const yOf = sec => P.t + ((sec - minP) / (maxP - minP)) * iH
-
-  const targetY = yOf(targetPaceSec)
-
-  // Build polyline segments, splitting on null weeks
-  const segments = []
-  let seg = []
+  const tY = yOf(targetPaceSec)
+  const segments = []; let seg = []
   weeks.forEach((w, i) => {
-    if (w.paceSeconds != null) {
-      seg.push(`${xOf(i).toFixed(1)},${yOf(w.paceSeconds).toFixed(1)}`)
-    } else if (seg.length) {
-      segments.push(seg); seg = []
-    }
+    if (w.paceSeconds != null) seg.push(`${xOf(i).toFixed(1)},${yOf(w.paceSeconds).toFixed(1)}`)
+    else if (seg.length) { segments.push(seg); seg = [] }
   })
   if (seg.length) segments.push(seg)
-
   return (
     <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: '100%', overflow: 'visible' }}>
-      {/* Target line */}
-      <line x1={P.l} y1={targetY} x2={VW - P.r} y2={targetY}
-        stroke={Z.accent} strokeWidth="0.8" strokeDasharray="4,3" opacity="0.8" />
-      <text x={VW - P.r} y={targetY - 3} fill={Z.accent} fontSize="7" textAnchor="end" opacity="0.9">
-        {fmtPaceSec(targetPaceSec)} target
-      </text>
-
-      {/* Trend lines */}
-      {segments.map((s, i) => (
-        <polyline key={i} points={s.join(' ')} fill="none" stroke={Z.accent2} strokeWidth="1.5" strokeLinejoin="round" />
-      ))}
-
-      {/* Dots + labels */}
-      {weeks.map((w, i) => w.paceSeconds == null ? null : (
+      <line x1={P.l} y1={tY} x2={VW-P.r} y2={tY} stroke={Z.accent} strokeWidth="0.8" strokeDasharray="4,3" opacity="0.8" />
+      <text x={VW-P.r} y={tY-3} fill={Z.accent} fontSize="7" textAnchor="end" opacity="0.9">{fmtPaceSec(targetPaceSec)} target</text>
+      {segments.map((s,i) => <polyline key={i} points={s.join(' ')} fill="none" stroke={Z.accent2} strokeWidth="1.5" strokeLinejoin="round" />)}
+      {weeks.map((w,i) => w.paceSeconds == null ? null : (
         <g key={i}>
-          <circle cx={xOf(i)} cy={yOf(w.paceSeconds)} r={w.isCurrent ? 4.5 : 3}
-            fill={Z.accent2} opacity={w.isCurrent ? 1 : 0.65} />
-          <text x={xOf(i)} y={yOf(w.paceSeconds) - 6} textAnchor="middle"
-            fill={Z.text} fontSize="6.5" opacity={w.isCurrent ? 1 : 0.55}>
-            {fmtPaceSec(w.paceSeconds)}
-          </text>
+          <circle cx={xOf(i)} cy={yOf(w.paceSeconds)} r={w.isCurrent ? 4.5 : 3} fill={Z.accent2} opacity={w.isCurrent ? 1 : 0.65} />
+          <text x={xOf(i)} y={yOf(w.paceSeconds)-6} textAnchor="middle" fill={Z.text} fontSize="6.5" opacity={w.isCurrent ? 1 : 0.55}>{fmtPaceSec(w.paceSeconds)}</text>
         </g>
       ))}
-
-      {/* Week labels */}
-      {weeks.map((w, i) => (
-        <text key={i} x={xOf(i)} y={VH - 2} textAnchor="middle"
-          fill={w.isCurrent ? Z.accent : Z.muted} fontSize="7.5"
-          fontWeight={w.isCurrent ? '600' : '400'}>
-          {w.label}
-        </text>
+      {weeks.map((w,i) => (
+        <text key={i} x={xOf(i)} y={VH-2} textAnchor="middle" fill={w.isCurrent ? Z.accent : Z.muted} fontSize="7.5" fontWeight={w.isCurrent ? '600' : '400'}>{w.label}</text>
       ))}
     </svg>
   )
 }
 
-// ── Volume bars ───────────────────────────────────────────────
-function VolumeBars({ weeks }) {
-  const maxKm = Math.max(...weeks.map(w => w.km), 35)
+function VolumeBars({ weeks, unit = 'km' }) {
+  const maxVal = Math.max(...weeks.map(w => w.val || 0), 1)
   return (
     <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 64 }}>
       {weeks.map((w, i) => {
-        const barH = maxKm > 0 && w.km > 0 ? Math.max((w.km / maxKm) * 100, 4) : 0
+        const barH = w.val > 0 ? Math.max((w.val / maxVal) * 100, 4) : 0
         return (
-          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%', justifyContent: 'flex-end' }}>
-            {w.km > 0 && (
-              <div style={{ fontSize: 7.5, color: w.isCurrent ? Z.accent : Z.muted, lineHeight: 1 }}>
-                {Math.round(w.km)}
-              </div>
-            )}
-            <div style={{
-              width: '100%', height: `${barH}%`, minHeight: w.km > 0 ? 3 : 0,
-              background: w.isCurrent ? Z.accent : (w.km > 0 ? '#1e1e1e' : '#141414'),
-              borderTop: w.km > 0 && !w.isCurrent ? `1.5px solid ${Z.accent2}` : 'none',
-              borderRadius: '2px 2px 0 0', transition: 'height 0.4s',
-            }} />
-            <div style={{ fontSize: 7.5, color: w.isCurrent ? Z.accent : Z.muted }}>
-              {w.label}
-            </div>
+          <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3, height:'100%', justifyContent:'flex-end' }}>
+            {w.val > 0 && <div style={{ fontSize: 7.5, color: w.isCurrent ? Z.accent : Z.muted, lineHeight: 1 }}>{Math.round(w.val)}</div>}
+            <div style={{ width:'100%', height:`${barH}%`, minHeight: w.val > 0 ? 3 : 0, background: w.isCurrent ? Z.accent : (w.val > 0 ? '#1e1e1e' : '#141414'), borderTop: w.val > 0 && !w.isCurrent ? `1.5px solid ${Z.accent2}` : 'none', borderRadius:'2px 2px 0 0', transition:'height 0.4s' }} />
+            <div style={{ fontSize: 7.5, color: w.isCurrent ? Z.accent : Z.muted }}>{w.label}</div>
           </div>
         )
       })}
@@ -157,73 +126,24 @@ function VolumeBars({ weeks }) {
   )
 }
 
-// ── Phase progress ────────────────────────────────────────────
-function PhaseProgress({ name, week, totalWeeks }) {
-  const pct = Math.min(100, (week / totalWeeks) * 100)
+function StatCard({ label, value, sub, col }) {
   return (
-    <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: '14px 16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-        <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 15, fontWeight: 700, color: Z.text }}>{name}</div>
-        <div style={{ fontSize: 11, color: Z.muted }}>Wk {week} / {totalWeeks}</div>
-      </div>
-      <div style={{ height: 6, background: '#1a1a1a', borderRadius: 3 }}>
-        <div style={{ height: '100%', width: `${pct}%`, background: Z.accent, borderRadius: 3, transition: 'width 0.6s' }} />
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontSize: 10, color: Z.muted }}>
-        <span>Wk 1</span>
-        <span>{Math.round(pct)}% complete</span>
-        <span>Wk {totalWeeks}</span>
-      </div>
+    <div style={{ flex: 1, background: '#161616', borderRadius: 8, padding: '12px 14px' }}>
+      <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, color: col || Z.accent }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>{sub}</div>}
     </div>
   )
 }
 
-// ── Session list (this week) ──────────────────────────────────
-function SessionList({ sessions, weekActs }) {
-  const typeIcon = { run: '🏃', trail: '⛰️', strength: '🏋️', rest: '😴' }
-  const typeMap  = { run: ['run','trailrun'], trail: ['trail','trailrun','run'], strength: ['weighttraining','strength'], rest: [] }
-
+function ProgressBar({ pct, col }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {sessions.filter(s => s.session_type !== 'rest').map(s => {
-        const types   = typeMap[s.session_type] || []
-        const done    = s.status === 'completed' || weekActs.some(a =>
-          a.date?.slice(0, 10) === s.planned_date && types.some(t => a.type?.toLowerCase().includes(t)))
-        const missed  = new Date(s.planned_date) < new Date() && !done
-        return (
-          <div key={s.id} style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '9px 12px', background: Z.surface, borderRadius: 8,
-            border: `1px solid ${done ? 'rgba(77,255,145,0.2)' : missed ? 'rgba(255,92,92,0.15)' : Z.border2}`,
-            opacity: missed ? 0.55 : 1,
-          }}>
-            <div style={{
-              width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
-              background: done ? 'rgba(77,255,145,0.1)' : 'transparent',
-              border: `1.5px solid ${done ? Z.green : missed ? Z.red : Z.border2}`,
-              color: done ? Z.green : missed ? Z.red : 'transparent',
-            }}>
-              {done ? '✓' : missed ? '!' : ''}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, color: done ? Z.muted : Z.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {typeIcon[s.session_type]} {s.name}
-              </div>
-              <div style={{ fontSize: 10, color: Z.muted, marginTop: 1 }}>
-                {new Date(s.planned_date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                {s.zone ? ` · ${s.zone}` : ''}
-                {s.duration_min_low ? ` · ${s.duration_min_low}–${s.duration_min_high}min` : ''}
-              </div>
-            </div>
-          </div>
-        )
-      })}
+    <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3 }}>
+      <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: col || Z.accent, borderRadius: 3, transition: 'width 0.5s' }} />
     </div>
   )
 }
 
-// ── Target bar ────────────────────────────────────────────────
 function TargetBar({ label, numVal, displayVal, target, col, warn }) {
   const pct = Math.min(100, target > 0 ? (numVal / target) * 100 : 0)
   return (
@@ -232,250 +152,466 @@ function TargetBar({ label, numVal, displayVal, target, col, warn }) {
         <span>{label}</span>
         <span style={{ color: warn ? Z.amber : col }}>{displayVal}{warn ? ' ⚠' : ''}</span>
       </div>
-      <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3 }}>
-        <div style={{ height: '100%', width: `${pct}%`, background: warn ? Z.amber : col, borderRadius: 3, transition: 'width 0.5s' }} />
-      </div>
+      <ProgressBar pct={pct} col={warn ? Z.amber : col} />
     </div>
+  )
+}
+
+function SessionList({ sessions, weekActs }) {
+  const nonRest = sessions.filter(s => s.session_type !== 'rest')
+  if (nonRest.length === 0) return <div style={{ color: Z.muted, fontSize: 13 }}>No sessions scheduled this week.</div>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {nonRest.map(s => {
+        const done = s.status === 'completed' || weekActs.some(a => a.date?.slice(0,10) === s.planned_date)
+        const missed = new Date(s.planned_date) < new Date() && !done
+        return (
+          <div key={s.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px', background:Z.surface, borderRadius:8, border:`1px solid ${done ? 'rgba(77,255,145,0.2)' : missed ? 'rgba(255,92,92,0.15)' : Z.border2}`, opacity: missed ? 0.55 : 1 }}>
+            <div style={{ width:22, height:22, borderRadius:'50%', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, border:`1.5px solid ${done ? Z.green : missed ? Z.red : Z.border2}`, color: done ? Z.green : missed ? Z.red : 'transparent' }}>
+              {done ? '✓' : missed ? '!' : ''}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize:12, color: done ? Z.muted : Z.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.name}</div>
+              <div style={{ fontSize:10, color:Z.muted, marginTop:1 }}>
+                {new Date(s.planned_date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}
+                {s.zone ? ` · ${s.zone}` : ''}{s.duration_min_low ? ` · ${s.duration_min_low}–${s.duration_min_high}min` : ''}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function LifecycleBanner({ state, text }) {
+  if (!state || !text) return null
+  const LABELS = { planning:'Planning', training:'Training', taper:'Taper', race_week:'Race Week', recovery:'Recovery', what_next:'What Next', maintenance:'Maintenance' }
+  return (
+    <div style={{ background:Z.surface, border:`1px solid ${Z.border2}`, borderRadius:10, padding:'14px 16px', marginBottom: 0 }}>
+      <div style={{ fontSize:10, color:Z.accent, textTransform:'uppercase', letterSpacing:'0.1em', fontWeight:600, marginBottom:6 }}>
+        {LABELS[state] || state}
+      </div>
+      <div style={{ fontSize:13, color:Z.text, lineHeight:1.55 }}>{text}</div>
+    </div>
+  )
+}
+
+// ── MACRO view branches ───────────────────────────────────────
+
+function MacroCompete({ settings, activities, chartWeeks }) {
+  const sc = settings.sport_category
+  const isRunning = sc === 'running' || settings.sport === 'running'
+  const targetDate = settings.target_date
+  const targetName = settings.target_event_name || 'Event'
+  const daysToTarget = targetDate ? Math.ceil((new Date(targetDate) - new Date()) / 86400000) : null
+
+  // Parse target pace from target_metric for running (e.g. "sub 3:10:00 marathon")
+  let targetPaceSec = null
+  if (isRunning && settings.target_metric) {
+    const match = settings.target_metric.match(/(\d+):(\d{2}):(\d{2})/)
+    if (match) {
+      const secs = parseInt(match[1])*3600 + parseInt(match[2])*60 + parseInt(match[3])
+      // Derive distance from event name heuristic
+      const nm = (targetName + settings.target_metric).toLowerCase()
+      const dist = nm.includes('half') ? 21.095 : nm.includes('5k') ? 5 : nm.includes('10k') ? 10 : 42.195
+      targetPaceSec = secs / dist
+    }
+  }
+
+  const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth()-6)
+  const seasonKm = activities
+    .filter(a => new Date(a.date) >= sixMonthsAgo && (isRunning ? a.type?.toLowerCase().includes('run') : true))
+    .reduce((s, a) => s + parseFloat(a.distance_km || 0), 0)
+
+  const countdownColor = daysToTarget < 30 ? Z.red : daysToTarget < 90 ? Z.amber : Z.accent
+
+  return (
+    <>
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
+          <div>
+            <div style={{ fontSize:10, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:3 }}>Target</div>
+            <div style={{ fontFamily:'Syne, sans-serif', fontSize:16, fontWeight:700 }}>{targetName}</div>
+            {targetDate && <div style={{ fontSize:11, color:Z.muted, marginTop:2 }}>{targetDate}</div>}
+            {settings.target_metric && <div style={{ fontSize:11, color:Z.accent, marginTop:4 }}>{settings.target_metric}</div>}
+          </div>
+          {daysToTarget != null && daysToTarget > 0 && (
+            <div style={{ textAlign:'right', flexShrink:0, marginLeft:12 }}>
+              <div style={{ fontFamily:'Syne, sans-serif', fontSize:36, fontWeight:800, lineHeight:1, color:countdownColor }}>{daysToTarget}</div>
+              <div style={{ fontSize:10, color:Z.muted }}>days to go</div>
+            </div>
+          )}
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns: targetPaceSec ? '1fr 1fr' : '1fr', gap:8 }}>
+          {targetPaceSec && (
+            <StatCard label="Target pace" value={`${fmtPaceSec(targetPaceSec)}/km`} col={Z.accent} />
+          )}
+          <StatCard label="6-month volume" value={`${Math.round(seasonKm)}km`} col={Z.accent2} />
+        </div>
+      </div>
+
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>
+          {isRunning ? 'Avg run pace · 8 weeks' : 'Weekly volume · 8 weeks'}
+        </div>
+        {isRunning && targetPaceSec ? (
+          <>
+            <PaceChart weeks={chartWeeks} targetPaceSec={targetPaceSec} />
+            <div style={{ fontSize:10, color:'#444', marginTop:6, lineHeight:1.4 }}>
+              Faster = higher on chart. Dots trend up as pace approaches the target line.
+            </div>
+          </>
+        ) : (
+          <VolumeBars weeks={chartWeeks.map(w => ({ ...w, val: w.km }))} />
+        )}
+      </div>
+    </>
+  )
+}
+
+function MacroBodyComp({ settings, activities, chartWeeks }) {
+  const streak = consistencyStreak(activities)
+  const weight = settings.current_weight_kg
+  return (
+    <>
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ display:'flex', gap:8 }}>
+          <StatCard label="Consistency streak" value={`${streak}w`} sub="consecutive weeks active" col={Z.accent} />
+          {weight && <StatCard label="Last recorded weight" value={`${weight}kg`} sub="from check-in" col={Z.accent2} />}
+        </div>
+      </div>
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>
+          Weekly activity count · 8 weeks
+        </div>
+        <VolumeBars weeks={chartWeeks.map(w => ({ ...w, val: w.sessionCount }))} unit="sessions" />
+        <div style={{ fontSize:10, color:'#444', marginTop:8, lineHeight:1.4 }}>
+          Consistent weeks drive body composition change more than any single session.
+        </div>
+      </div>
+    </>
+  )
+}
+
+function MacroFitness({ activities, chartWeeks }) {
+  const streak = consistencyStreak(activities)
+  return (
+    <>
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ display:'flex', gap:8 }}>
+          <StatCard label="Consistency streak" value={`${streak}w`} sub="consecutive weeks active" col={Z.accent} />
+          <StatCard label="Total sessions" value={activities.length} sub="logged activities" col={Z.accent2} />
+        </div>
+      </div>
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>
+          Weekly volume · km (8 weeks)
+        </div>
+        <VolumeBars weeks={chartWeeks.map(w => ({ ...w, val: w.km }))} />
+      </div>
+    </>
+  )
+}
+
+function MacroRecovery({ activities, chartWeeks, phaseSessions }) {
+  const now = localDateStr(new Date())
+  const past = phaseSessions.filter(s => s.session_type !== 'rest' && s.planned_date <= now)
+  const completed = past.filter(s =>
+    s.status === 'completed' || activities.some(a => a.date?.slice(0,10) === s.planned_date)
+  ).length
+  const compliancePct = past.length > 0 ? Math.round((completed / past.length) * 100) : null
+  const complianceCol = compliancePct >= 80 ? Z.green : compliancePct >= 60 ? Z.amber : Z.red
+
+  // Weeks since earliest scheduled session (proxy for return-to-training date)
+  const sorted = [...phaseSessions].sort((a,b) => a.planned_date.localeCompare(b.planned_date))
+  const firstDate = sorted[0]?.planned_date
+  const weeksSince = firstDate ? Math.floor((new Date() - new Date(firstDate)) / (7*86400000)) : null
+
+  return (
+    <>
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ display:'flex', gap:8 }}>
+          {weeksSince != null && <StatCard label="Weeks since return" value={`${weeksSince}w`} col={Z.accent} />}
+          {compliancePct != null && (
+            <StatCard label="Session compliance" value={`${compliancePct}%`} sub={`${completed}/${past.length} done`} col={complianceCol} />
+          )}
+        </div>
+      </div>
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>
+          Weekly activity count · 8 weeks
+        </div>
+        <VolumeBars weeks={chartWeeks.map(w => ({ ...w, val: w.sessionCount }))} unit="sessions" />
+      </div>
+    </>
+  )
+}
+
+// ── MICRO view branches ───────────────────────────────────────
+
+function MicroEvent({ settings, activities, weekSessions, weekActs, phaseSessions }) {
+  const now = new Date()
+  const today = localDateStr(now)
+  const targetDate = settings.target_date
+  const state = settings.lifecycle_state
+
+  // Phase progress
+  let phasePct = null, phaseWeekLabel = null, phaseName = null
+  if (targetDate) {
+    const pw = phaseWeeksForSport(settings.sport_category)
+    const phaseStart = new Date(targetDate); phaseStart.setDate(phaseStart.getDate() - pw*7)
+    if (state === 'training') {
+      const totalMs = new Date(targetDate) - phaseStart
+      const elapsedMs = Math.max(0, now - phaseStart)
+      phasePct = (elapsedMs / totalMs) * 100
+      const currentWeek = Math.max(1, Math.ceil(elapsedMs / (7*86400000)))
+      phaseWeekLabel = `Wk ${currentWeek} / ${pw}`
+      phaseName = 'Training phase'
+    } else if (state === 'taper') {
+      phasePct = 88; phaseWeekLabel = 'Tapering'; phaseName = 'Taper'
+    } else if (state === 'race_week') {
+      phasePct = 97; phaseWeekLabel = 'Race week'; phaseName = 'Race week'
+    }
+  }
+
+  // Phase session compliance
+  const pastPhaseSess = phaseSessions.filter(s => s.session_type !== 'rest' && s.planned_date <= today)
+  const phaseCompleted = pastPhaseSess.filter(s =>
+    s.status === 'completed' || activities.some(a => a.date?.slice(0,10) === s.planned_date)
+  ).length
+
+  // This week
+  const nonRest = weekSessions.filter(s => s.session_type !== 'rest')
+  const weekDone = nonRest.filter(s =>
+    s.status === 'completed' || weekActs.some(a => a.date?.slice(0,10) === s.planned_date)
+  ).length
+
+  return (
+    <>
+      {phasePct != null && (
+        <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+          <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>{phaseName}</div>
+          <div style={{ background:Z.surface, border:`1px solid ${Z.border2}`, borderRadius:10, padding:'14px 16px' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10 }}>
+              <div style={{ fontFamily:'Syne, sans-serif', fontSize:15, fontWeight:700 }}>{phaseName}</div>
+              <div style={{ fontSize:11, color:Z.muted }}>{phaseWeekLabel}</div>
+            </div>
+            <ProgressBar pct={phasePct} />
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:5, fontSize:10, color:Z.muted }}>
+              <span>Start</span><span>{Math.round(Math.min(100, phasePct))}% complete</span><span>Event</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pastPhaseSess.length > 0 && (
+        <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:8 }}>
+            <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em' }}>Phase sessions</div>
+            <div style={{ fontSize:12, color: phaseCompleted === pastPhaseSess.length ? Z.green : Z.accent }}>
+              {phaseCompleted}/{pastPhaseSess.length} done
+            </div>
+          </div>
+          <ProgressBar pct={pastPhaseSess.length > 0 ? (phaseCompleted/pastPhaseSess.length)*100 : 0} />
+          <div style={{ fontSize:10, color:Z.muted, marginTop:5 }}>Scheduled sessions completed since phase start</div>
+        </div>
+      )}
+
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10 }}>
+          <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em' }}>This week</div>
+          <div style={{ fontSize:12, color: weekDone === nonRest.length && nonRest.length > 0 ? Z.green : Z.accent }}>
+            {weekDone}/{nonRest.length} done
+          </div>
+        </div>
+        <SessionList sessions={weekSessions} weekActs={weekActs} />
+      </div>
+    </>
+  )
+}
+
+function MicroLifestyle({ settings, weekSessions, weekActs, nutritionLogs }) {
+  const nonRest = weekSessions.filter(s => s.session_type !== 'rest')
+  const sessCompleted = nonRest.filter(s =>
+    s.status === 'completed' || weekActs.some(a => a.date?.slice(0,10) === s.planned_date)
+  ).length
+  const nutDays = new Set(nutritionLogs.map(n => n.date)).size
+  const targetDays = settings.training_days_per_week || nonRest.length || 3
+  const sleep = settings.sleep_hours_typical
+  const sleepCol = sleep >= 7 ? Z.green : sleep >= 6 ? Z.amber : Z.red
+
+  return (
+    <>
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>This week's targets</div>
+        <TargetBar label={`Sessions (target ${targetDays}/wk)`} numVal={sessCompleted} displayVal={`${sessCompleted} done`} target={targetDays} col={Z.accent} />
+        <TargetBar label="Nutrition days logged (target 7)" numVal={nutDays} displayVal={`${nutDays} days`} target={7} col={Z.green} />
+        {sleep && (
+          <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, padding:'8px 0', borderTop:`1px solid ${Z.border}`, marginTop:4 }}>
+            <span style={{ color:Z.muted }}>Typical sleep</span>
+            <span style={{ color:sleepCol }}>{sleep}h/night</span>
+          </div>
+        )}
+      </div>
+      <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
+        <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>This week's sessions</div>
+        <SessionList sessions={weekSessions} weekActs={weekActs} />
+      </div>
+    </>
   )
 }
 
 // ── Main ──────────────────────────────────────────────────────
 export default function Progress({ onActivityClick }) {
-  const settings   = useSettings()
-  const [activities,   setActivities]   = useState([])
-  const [weekSessions, setWeekSessions] = useState([])
-  const [loading,      setLoading]      = useState(true)
-  const [view,         setView]         = useState('macro')
+  const settings  = useSettings()
+  const [activities,    setActivities]    = useState([])
+  const [weekSessions,  setWeekSessions]  = useState([])
+  const [phaseSessions, setPhaseSessions] = useState([])
+  const [nutritionLogs, setNutritionLogs] = useState([])
+  const [loading,       setLoading]       = useState(true)
+  const [view,          setView]          = useState('macro')
 
   useEffect(() => {
     const { start, end } = getWeekBounds()
+    const weekStartStr = localDateStr(start)
+    const weekEndStr   = localDateStr(end)
+
+    // Phase lookback: from estimated training start or 4 months ago
+    const pw = phaseWeeksForSport(settings.sport_category)
+    const phaseStartStr = settings.target_date
+      ? (() => { const d = new Date(settings.target_date); d.setDate(d.getDate() - pw*7); return localDateStr(d) })()
+      : (() => { const d = new Date(); d.setMonth(d.getMonth()-4); return localDateStr(d) })()
+
     Promise.all([
-      supabase.from('activities').select('*').order('date', { ascending: false }).limit(100),
-      supabase.from('scheduled_sessions').select('*')
-        .gte('planned_date', localDateStr(start))
-        .lte('planned_date', localDateStr(end))
-        .order('planned_date'),
-    ]).then(([{ data: acts }, { data: sessions }]) => {
+      supabase.from('activities').select('*').order('date', { ascending: false }).limit(200),
+      supabase.from('scheduled_sessions').select('*').gte('planned_date', weekStartStr).lte('planned_date', weekEndStr).order('planned_date'),
+      supabase.from('scheduled_sessions').select('*').gte('planned_date', phaseStartStr).order('planned_date'),
+      supabase.from('nutrition_logs').select('date').gte('date', weekStartStr).lte('date', weekEndStr),
+    ]).then(([{ data: acts }, { data: wSess }, { data: pSess }, { data: nLogs }]) => {
       setActivities(acts || [])
-      setWeekSessions(sessions || [])
+      setWeekSessions(wSess || [])
+      setPhaseSessions(pSess || [])
+      setNutritionLogs(nLogs || [])
       setLoading(false)
     })
-  }, [])
+  }, [settings.target_date, settings.sport_category])
 
   const now = new Date()
-
-  // Primary race
-  const primaryRace = settings.races?.length > 0
-    ? [...settings.races].sort((a, b) => new Date(a.date) - new Date(b.date))[0]
-    : { name: 'Munich Marathon', date: '2026-10-12', distance: '42.2', target: '3:10:00' }
-  const daysToRace    = Math.ceil((new Date(primaryRace.date) - now) / 86400000)
-  const targetPaceSec = parseTimeStr(primaryRace.target) / parseFloat(primaryRace.distance || 42.2)
+  const { start: weekStart } = getWeekBounds()
+  const goalType  = settings.goal_type
+  const isEvent   = goalType === 'compete' || goalType === 'complete_event'
+  const isBodyComp = goalType === 'body_composition'
+  const isRecovery = goalType === 'injury_recovery'
+  const isRunning = settings.sport_category === 'running' || settings.sport === 'running'
 
   // 8-week chart data
   const chartWeeks = []
   for (let w = 7; w >= 0; w--) {
-    const start = new Date(now)
-    const sd = start.getDay()
-    start.setDate(start.getDate() - (sd === 0 ? 6 : sd - 1) - w * 7)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(start); end.setDate(end.getDate() + 6); end.setHours(23, 59, 59, 999)
-
-    const wRuns = activities.filter(a => {
-      const d = new Date(a.date)
-      return a.type?.toLowerCase().includes('run') && parseFloat(a.distance_km) >= 3 && d >= start && d <= end
-    })
-    const paces   = wRuns.filter(a => a.pace_per_km).map(a => parsePaceStr(a.pace_per_km)).filter(Boolean)
-    const avgPace = paces.length > 0 ? paces.reduce((a, b) => a + b, 0) / paces.length : null
-    const km      = parseFloat(wRuns.reduce((s, a) => s + parseFloat(a.distance_km || 0), 0).toFixed(1))
-
-    chartWeeks.push({ label: `W${8 - w}`, paceSeconds: avgPace, km, isCurrent: w === 0 })
+    const s = new Date(now); const dow = s.getDay()
+    s.setDate(s.getDate() - (dow === 0 ? 6 : dow - 1) - w*7); s.setHours(0,0,0,0)
+    const e = new Date(s); e.setDate(e.getDate()+6); e.setHours(23,59,59,999)
+    const wActs = activities.filter(a => { const d = new Date(a.date); return d >= s && d <= e })
+    const runActs = isRunning ? wActs.filter(a => a.type?.toLowerCase().includes('run') && parseFloat(a.distance_km) >= 3) : []
+    const paces = runActs.filter(a => a.pace_per_km).map(a => parsePaceStr(a.pace_per_km)).filter(Boolean)
+    const avgPace = paces.length > 0 ? paces.reduce((a,b) => a+b, 0) / paces.length : null
+    const km = parseFloat(wActs.reduce((s, a) => s + parseFloat(a.distance_km || 0), 0).toFixed(1))
+    chartWeeks.push({ label: `W${8-w}`, paceSeconds: avgPace, km, sessionCount: wActs.length, isCurrent: w === 0 })
   }
 
-  // This week stats
-  const { start: weekStart } = getWeekBounds()
-  const weekActs     = activities.filter(a => new Date(a.date) >= weekStart)
-  const weekKm       = weekActs.reduce((s, a) => s + parseFloat(a.distance_km || 0), 0)
-  const weekElev     = weekActs.reduce((s, a) => s + parseFloat(a.elevation_m || 0), 0)
-  const weekStrength = weekActs.filter(a => a.type?.toLowerCase().includes('weight')).length
+  const weekActs = activities.filter(a => new Date(a.date) >= weekStart)
 
-  // Phase
-  const phaseWeek = Math.max(1, Math.min(PHASE_WEEKS, Math.ceil((now - PHASE_START) / (7 * 86400000))))
+  // Lifecycle banner
+  const targetName = settings.target_event_name || (settings.target_metric ? 'your goal' : null)
+  const daysToTarget = settings.target_date ? Math.ceil((new Date(settings.target_date) - now) / 86400000) : null
+  const bannerText = lifecycleDesc(settings.lifecycle_state, targetName, daysToTarget)
 
-  // Season total km (from phase start)
-  const seasonKm = activities
-    .filter(a => a.type?.toLowerCase().includes('run') && new Date(a.date) >= PHASE_START)
-    .reduce((s, a) => s + parseFloat(a.distance_km || 0), 0)
-
-  // Sessions this week
-  const typeMap = { run: ['run','trailrun'], trail: ['trail','trailrun','run'], strength: ['weighttraining','strength'], rest: [] }
-  const nonRestSessions = weekSessions.filter(s => s.session_type !== 'rest')
-  const sessCompleted   = nonRestSessions.filter(s => {
-    const types = typeMap[s.session_type] || []
-    return s.status === 'completed' || weekActs.some(a =>
-      a.date?.slice(0, 10) === s.planned_date && types.some(t => a.type?.toLowerCase().includes(t)))
-  }).length
-
-  // PBs
-  const runActs  = activities.filter(a => a.type?.toLowerCase().includes('run'))
-  const pbLongest = runActs.reduce((b, a) => parseFloat(a.distance_km) > parseFloat(b?.distance_km || 0) ? a : b, null)
-  const pbFastest = runActs.filter(a => parseFloat(a.distance_km) >= 5 && a.pace_per_km)
-    .reduce((b, a) => (parsePaceStr(a.pace_per_km) || Infinity) < (parsePaceStr(b?.pace_per_km) || Infinity) ? a : b, null)
-  const pbElev    = runActs.reduce((b, a) => parseFloat(a.elevation_m) > parseFloat(b?.elevation_m || 0) ? a : b, null)
+  // PBs — use all activities or sport-filtered
+  const pbSource = isRunning ? activities.filter(a => a.type?.toLowerCase().includes('run')) : activities
+  const pbLongest = pbSource.reduce((b, a) => parseFloat(a.distance_km) > parseFloat(b?.distance_km || 0) ? a : b, null)
+  const pbFastest = pbSource.filter(a => parseFloat(a.distance_km) >= 5 && a.pace_per_km)
+    .reduce((b, a) => (parsePaceStr(a.pace_per_km)||Infinity) < (parsePaceStr(b?.pace_per_km)||Infinity) ? a : b, null)
+  const pbElev = pbSource.reduce((b, a) => parseFloat(a.elevation_m) > parseFloat(b?.elevation_m||0) ? a : b, null)
 
   return (
-    <div style={{ overflowY: 'auto', height: '100%', fontFamily: "'DM Mono', monospace" }}>
+    <div style={{ overflowY:'auto', height:'100%', fontFamily:"'DM Mono', monospace" }}>
 
       {/* HEADER + TOGGLE */}
-      <div style={{ padding: '14px 20px', borderBottom: `1px solid ${Z.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700 }}>Progress</div>
-        <div style={{ display: 'flex', background: '#161616', borderRadius: 8, padding: 2 }}>
-          {['macro', 'micro'].map(v => (
+      <div style={{ padding:'14px 20px', borderBottom:`1px solid ${Z.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <div style={{ fontFamily:'Syne, sans-serif', fontSize:18, fontWeight:700 }}>Progress</div>
+        <div style={{ display:'flex', background:'#161616', borderRadius:8, padding:2 }}>
+          {['macro','micro'].map(v => (
             <button key={v} onClick={() => setView(v)} style={{
-              padding: '5px 16px', borderRadius: 6, border: 'none',
+              padding:'5px 16px', borderRadius:6, border:'none',
               background: view === v ? Z.accent : 'none',
               color: view === v ? Z.bg : Z.muted,
-              fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace",
-              fontWeight: view === v ? 600 : 400, textTransform: 'uppercase',
-              letterSpacing: '0.04em', transition: 'all 0.15s',
-            }}>
-              {v}
-            </button>
+              fontSize:11, cursor:'pointer', fontFamily:"'DM Mono', monospace",
+              fontWeight: view === v ? 600 : 400, textTransform:'uppercase',
+              letterSpacing:'0.04em', transition:'all 0.15s',
+            }}>{v}</button>
           ))}
         </div>
       </div>
 
-      {/* ── MACRO VIEW ── */}
-      {view === 'macro' && (
+      {loading ? (
+        <div style={{ padding:40, textAlign:'center', color:Z.muted, fontSize:13 }}>Loading…</div>
+      ) : (
         <>
-          {/* Race target */}
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${Z.border}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <div>
-                <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Target race</div>
-                <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 16, fontWeight: 700 }}>{primaryRace.name}</div>
-                <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>{primaryRace.date} · {primaryRace.distance}km</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 28, fontWeight: 800, lineHeight: 1, color: daysToRace < 60 ? Z.red : daysToRace < 120 ? Z.amber : Z.accent }}>
-                  {daysToRace}
+          {/* ── MACRO ── */}
+          {view === 'macro' && (
+            <>
+              {isEvent    && <MacroCompete  settings={settings} activities={activities} chartWeeks={chartWeeks} />}
+              {isBodyComp && <MacroBodyComp settings={settings} activities={activities} chartWeeks={chartWeeks} />}
+              {isRecovery && <MacroRecovery activities={activities} chartWeeks={chartWeeks} phaseSessions={phaseSessions} />}
+              {!isEvent && !isBodyComp && !isRecovery && <MacroFitness activities={activities} chartWeeks={chartWeeks} />}
+            </>
+          )}
+
+          {/* ── MICRO ── */}
+          {view === 'micro' && (
+            <>
+              {/* Lifecycle banner — always shown */}
+              {bannerText && (
+                <div style={{ padding:'12px 20px' }}>
+                  <LifecycleBanner state={settings.lifecycle_state} text={bannerText} />
                 </div>
-                <div style={{ fontSize: 10, color: Z.muted }}>days to go</div>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div style={{ background: '#161616', borderRadius: 8, padding: '10px 12px' }}>
-                <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 2 }}>Target pace</div>
-                <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700, color: Z.accent }}>{fmtPaceSec(targetPaceSec)}/km</div>
-              </div>
-              <div style={{ background: '#161616', borderRadius: 8, padding: '10px 12px' }}>
-                <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 2 }}>Phase km</div>
-                <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700, color: Z.accent2 }}>{Math.round(seasonKm)}km</div>
-              </div>
-            </div>
-          </div>
+              )}
+              {isEvent
+                ? <MicroEvent settings={settings} activities={activities} weekSessions={weekSessions} weekActs={weekActs} phaseSessions={phaseSessions} />
+                : <MicroLifestyle settings={settings} weekSessions={weekSessions} weekActs={weekActs} nutritionLogs={nutritionLogs} />
+              }
+            </>
+          )}
 
-          {/* Pace trajectory */}
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${Z.border}` }}>
-            <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
-              Avg run pace · 8 weeks
-            </div>
-            <PaceChart weeks={chartWeeks} targetPaceSec={targetPaceSec} />
-            <div style={{ fontSize: 10, color: '#444', marginTop: 6, lineHeight: 1.4 }}>
-              Faster = higher. Dots trend up as training pace approaches the target line.
-            </div>
-          </div>
-
-          {/* Volume */}
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${Z.border}` }}>
-            <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
-              Weekly volume · km
-            </div>
-            <VolumeBars weeks={chartWeeks} />
-          </div>
-        </>
-      )}
-
-      {/* ── MICRO VIEW ── */}
-      {view === 'micro' && (
-        <>
-          {/* Phase */}
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${Z.border}` }}>
-            <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Training phase</div>
-            <PhaseProgress name={PHASE_NAME} week={phaseWeek} totalWeeks={PHASE_WEEKS} />
-          </div>
-
-          {/* This week sessions */}
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${Z.border}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-              <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>This week</div>
-              <div style={{ fontSize: 12, color: sessCompleted === nonRestSessions.length && nonRestSessions.length > 0 ? Z.green : Z.accent }}>
-                {sessCompleted}/{nonRestSessions.length} done
-              </div>
-            </div>
-            {loading ? (
-              <div style={{ color: Z.muted, fontSize: 13 }}>Loading...</div>
-            ) : nonRestSessions.length === 0 ? (
-              <div style={{ color: Z.muted, fontSize: 13 }}>No sessions scheduled this week.</div>
+          {/* PBs — always shown */}
+          <div style={{ padding:'20px', borderBottom:`1px solid ${Z.border}` }}>
+            <div style={{ fontSize:11, color:Z.muted, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:14 }}>Personal Bests</div>
+            {pbSource.length === 0 ? (
+              <div style={{ color:Z.muted, fontSize:13 }}>No activities logged yet.</div>
             ) : (
-              <SessionList sessions={weekSessions} weekActs={weekActs} />
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {[
+                  pbLongest && { label:'Longest session', val:`${parseFloat(pbLongest.distance_km).toFixed(1)}km`, sub:pbLongest.name, id:pbLongest.strava_id, col:Z.accent },
+                  pbFastest && { label:'Fastest pace (5km+)', val:`${pbFastest.pace_per_km}/km`, sub:`${parseFloat(pbFastest.distance_km).toFixed(1)}km · ${pbFastest.name}`, id:pbFastest.strava_id, col:Z.green },
+                  pbElev    && { label:'Most elevation', val:`${Math.round(pbElev.elevation_m)}m`, sub:pbElev.name, id:pbElev.strava_id, col:Z.accent2 },
+                ].filter(Boolean).map((pb, i) => (
+                  <div key={i} onClick={() => pb.id && onActivityClick?.(pb.id)}
+                    style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:Z.surface, border:`1px solid ${Z.border2}`, borderRadius:10, padding:'12px 14px', cursor: pb.id ? 'pointer' : 'default' }}>
+                    <div style={{ minWidth:0, flex:1 }}>
+                      <div style={{ fontSize:10, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:3 }}>{pb.label}</div>
+                      <div style={{ fontSize:12, color:Z.muted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pb.sub}</div>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, marginLeft:12 }}>
+                      <div style={{ fontFamily:'Syne, sans-serif', fontSize:20, fontWeight:700, color:pb.col }}>{pb.val}</div>
+                      {pb.id && <span style={{ color:Z.muted, fontSize:12 }}>→</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-
-          {/* Weekly targets */}
-          <div style={{ padding: '16px 20px', borderBottom: `1px solid ${Z.border}` }}>
-            <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>vs targets</div>
-            <TargetBar label="km (target 28–35)" numVal={weekKm} displayVal={`${weekKm.toFixed(1)}km`} target={35} col={Z.accent} />
-            <TargetBar label="elevation (target 100–200m)" numVal={weekElev} displayVal={`${Math.round(weekElev)}m`} target={200} col={Z.accent} warn={weekElev > 200} />
-            <TargetBar label="strength sessions (min 2)" numVal={weekStrength} displayVal={`${weekStrength} sessions`} target={2} col={Z.green} />
-          </div>
         </>
       )}
-
-      {/* PERSONAL BESTS — always shown */}
-      <div style={{ padding: '20px', borderBottom: `1px solid ${Z.border}` }}>
-        <div style={{ fontSize: '11px', color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '14px' }}>Personal Bests</div>
-        {loading ? (
-          <div style={{ color: Z.muted, fontSize: 13 }}>Loading...</div>
-        ) : runActs.length === 0 ? (
-          <div style={{ color: Z.muted, fontSize: 13 }}>No run activities yet.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[
-              pbLongest && { label: 'Longest Run',        val: `${parseFloat(pbLongest.distance_km).toFixed(1)}km`, sub: pbLongest.name, id: pbLongest.strava_id, col: Z.accent },
-              pbFastest && { label: 'Fastest Pace (5km+)', val: `${pbFastest.pace_per_km}/km`, sub: `${parseFloat(pbFastest.distance_km).toFixed(1)}km · ${pbFastest.name}`, id: pbFastest.strava_id, col: Z.green },
-              pbElev    && { label: 'Most Elevation',      val: `${Math.round(pbElev.elevation_m)}m`, sub: pbElev.name, id: pbElev.strava_id, col: Z.accent2 },
-            ].filter(Boolean).map((pb, i) => (
-              <div key={i} onClick={() => pb.id && onActivityClick?.(pb.id)}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: '12px 14px', cursor: pb.id ? 'pointer' : 'default' }}>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{pb.label}</div>
-                  <div style={{ fontSize: 12, color: Z.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pb.sub}</div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 12 }}>
-                  <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 20, fontWeight: 700, color: pb.col }}>{pb.val}</div>
-                  {pb.id && <span style={{ color: Z.muted, fontSize: 12 }}>→</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* PENDING ACTIONS — always shown */}
-      <div style={{ padding: '20px' }}>
-        <div style={{ fontSize: '11px', color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '14px' }}>Pending Actions</div>
-        <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: 16 }}>
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {PENDING.map((p, i) => (
-              <li key={i} style={{ padding: '6px 0 6px 16px', position: 'relative', borderTop: i > 0 ? `1px solid ${Z.border}` : 'none', lineHeight: 1.6, color: '#c8c5bf', fontSize: 13 }}>
-                <span style={{ position: 'absolute', left: 0, top: 8, color: p.warn ? Z.amber : Z.accent, fontSize: 11 }}>{p.warn ? '⚠' : '→'}</span>
-                {p.text}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
     </div>
   )
 }
