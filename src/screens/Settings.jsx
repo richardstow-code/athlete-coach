@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { inferAthleteContext } from '../lib/inferAthleteContext'
+import SportsPriorities from './SportsPriorities'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -59,18 +60,16 @@ export default function Settings({ onClose }) {
   const [settings, setSettings] = useState({
     tone:50, consequences:50, detail_level:50, coaching_reach:50,
     name:'', races:[],
-    goal_type:null, sport:null, sport_other:null,
-    target_type:null, target_event_name:null, target_date:null,
-    target_description:null, current_level:null,
-    health_notes:null, lifecycle_state:null,
+    goal_type:null, current_level:null,
+    health_notes:null,
     cycle_tracking_enabled: false, cycle_length_avg: null, cycle_is_irregular: false,
     cycle_last_period_date: null, cycle_notes: null,
-    sport_raw:null, sport_category:null, target_raw:null, target_metric:null,
     benchmark_raw:null, benchmark_value:null, health_notes_raw:null,
     has_injury:null, training_days_per_week:null, sleep_hours_typical:null,
     current_weight_kg:null, onboarding_nudges_sent:null,
   })
   const [inferState, setInferState] = useState(null) // null | 'running' | { result } | 'error'
+  const [showSports, setShowSports] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [newRace, setNewRace] = useState({ name:'', date:'', distance:'42.2', target:'3:10:00' })
@@ -110,8 +109,6 @@ export default function Settings({ onClose }) {
     setInferState('running')
     try {
       const result = await inferAthleteContext({
-        sport_raw:        settings.sport_raw || null,
-        target_raw:       settings.target_raw || null,
         benchmark_raw:    settings.benchmark_raw || null,
         health_notes_raw: settings.health_notes_raw || null,
       })
@@ -169,6 +166,7 @@ export default function Settings({ onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
+      {showSports && <SportsPriorities onClose={() => setShowSports(false)} />}
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${Z.border}`, background: Z.bg }}>
         <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 17, color: Z.text }}>Settings</div>
@@ -335,22 +333,26 @@ export default function Settings({ onClose }) {
           )}
         </div>
 
-        {/* Sport & Goal */}
+        {/* Sports & Priorities */}
         <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 11, color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>Sport &amp; Goal</div>
+          <div style={{ fontSize: 11, color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>Sports</div>
+          <button
+            onClick={() => setShowSports(true)}
+            style={{
+              width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '12px 16px', background: Z.surface, border: `1px solid ${Z.border2}`,
+              borderRadius: 8, cursor: 'pointer', fontFamily: "'DM Mono', monospace",
+            }}
+          >
+            <span style={{ fontSize: 13, color: Z.text }}>Sports &amp; Priorities</span>
+            <span style={{ fontSize: 16, color: Z.muted }}>›</span>
+          </button>
+        </div>
+
+        {/* Goal type & level */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontSize: 11, color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>Goal</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Sport</div>
-              <select style={sel} value={settings.sport || ''} onChange={e => setSettings(s => ({...s, sport: e.target.value || null}))}>
-                <option value="">— select —</option>
-                <option value="running">Running</option>
-                <option value="cycling">Cycling</option>
-                <option value="triathlon">Triathlon</option>
-                <option value="swimming">Swimming</option>
-                <option value="strength">Strength</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
             <div>
               <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Goal type</div>
               <select style={sel} value={settings.goal_type || ''} onChange={e => setSettings(s => ({...s, goal_type: e.target.value || null}))}>
@@ -372,28 +374,7 @@ export default function Settings({ onClose }) {
                 <option value="competitive">Competitive</option>
               </select>
             </div>
-            <div>
-              <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Training phase</div>
-              <select style={sel} value={settings.lifecycle_state || ''} onChange={e => setSettings(s => ({...s, lifecycle_state: e.target.value || null}))}>
-                <option value="">— select —</option>
-                <option value="onboarding">Onboarding</option>
-                <option value="planning">Planning</option>
-                <option value="training">Training</option>
-                <option value="taper">Taper</option>
-                <option value="race_week">Race Week</option>
-                <option value="recovery">Recovery</option>
-                <option value="what_next">What next?</option>
-                <option value="maintenance">Maintenance</option>
-              </select>
-            </div>
           </div>
-          {settings.sport === 'other' && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Sport (specify)</div>
-              <input style={inp} placeholder="e.g. rowing, climbing…" value={settings.sport_other || ''}
-                onChange={e => setSettings(s => ({...s, sport_other: e.target.value || null}))} />
-            </div>
-          )}
         </div>
 
         {/* AI Inputs */}
@@ -408,18 +389,6 @@ export default function Settings({ onClose }) {
             )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Sport / activity</div>
-              <textarea style={ta} placeholder="e.g. marathon running, olympic weightlifting…"
-                value={settings.sport_raw || ''}
-                onChange={e => setSettings(s => ({...s, sport_raw: e.target.value || null}))} />
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Target (in your words)</div>
-              <textarea style={ta} placeholder="e.g. sub-2 hour half marathon in Berlin in October…"
-                value={settings.target_raw || ''}
-                onChange={e => setSettings(s => ({...s, target_raw: e.target.value || null}))} />
-            </div>
             <div>
               <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Current fitness</div>
               <textarea style={ta} placeholder="e.g. I can run 5k in about 28 mins…"
@@ -442,10 +411,6 @@ export default function Settings({ onClose }) {
           </button>
           {inferState && inferState !== 'running' && inferState !== 'error' && (
             <div style={{ marginTop: 12, padding: '12px 14px', background: Z.surface, borderRadius: 8, border: `1px solid ${Z.border2}`, fontSize: 12, color: Z.muted, lineHeight: 1.8 }}>
-              {inferState.sport_category    && <div>→ Sport: <span style={{ color: Z.text }}>{inferState.sport_category}</span></div>}
-              {inferState.target_event_name && <div>→ Event: <span style={{ color: Z.text }}>{inferState.target_event_name}</span></div>}
-              {inferState.target_date       && <div>→ Date: <span style={{ color: Z.text }}>{inferState.target_date}</span></div>}
-              {inferState.target_metric     && <div>→ Target: <span style={{ color: Z.accent }}>{inferState.target_metric}</span></div>}
               {inferState.benchmark_value   && <div>→ Benchmark: <span style={{ color: Z.text }}>{inferState.benchmark_value}</span></div>}
               {inferState.has_injury != null && <div>→ Injury flag: <span style={{ color: inferState.has_injury ? Z.amber : Z.green }}>{inferState.has_injury ? 'yes' : 'none'}</span></div>}
               {inferState.current_level     && <div>→ Level: <span style={{ color: Z.text }}>{inferState.current_level}</span></div>}
@@ -500,41 +465,6 @@ export default function Settings({ onClose }) {
                 )}
               </>
             )}
-          </div>
-        </div>
-
-        {/* Target */}
-        <div style={{ marginBottom: 32 }}>
-          <div style={{ fontSize: 11, color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>Primary Target</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Target type</div>
-              <select style={sel} value={settings.target_type || ''} onChange={e => setSettings(s => ({...s, target_type: e.target.value || null}))}>
-                <option value="">— select —</option>
-                <option value="event">Event (race / competition)</option>
-                <option value="milestone">Milestone (time, weight, distance)</option>
-                <option value="open_ended">Open-ended</option>
-              </select>
-            </div>
-            {(settings.target_type === 'event' || settings.target_type === 'milestone') && (
-              <>
-                <div>
-                  <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Event / milestone name</div>
-                  <input style={inp} placeholder="Munich Marathon 2026" value={settings.target_event_name || ''}
-                    onChange={e => setSettings(s => ({...s, target_event_name: e.target.value || null}))} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Target date</div>
-                  <input style={inp} type="date" value={settings.target_date || ''}
-                    onChange={e => setSettings(s => ({...s, target_date: e.target.value || null}))} />
-                </div>
-              </>
-            )}
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Description / goal</div>
-            <textarea style={ta} placeholder="e.g. Sub-3:00 marathon; secondary target 3:10" value={settings.target_description || ''}
-              onChange={e => setSettings(s => ({...s, target_description: e.target.value || null}))} />
           </div>
         </div>
 

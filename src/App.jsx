@@ -167,28 +167,27 @@ export default function App() {
   // Check onboarding state and post-event state together on session change
   useEffect(() => {
     if (!session) { setNeedsOnboarding(null); setPostEventSettings(null); return }
-    supabase
-      .from('athlete_settings')
-      .select('lifecycle_state, target_date, goal_type, target_event_name, target_metric, sport_category, sport')
-      .maybeSingle()
-      .then(({ data }) => {
-        const state = data?.lifecycle_state
-        setNeedsOnboarding(!data || !state || state === 'onboarding')
 
-        if (data && (data.lifecycle_state === 'planning' || data.lifecycle_state) && !data.goal_type) {
-          setProfileIncomplete(true)
-        } else {
-          setProfileIncomplete(false)
-        }
+    Promise.all([
+      supabase.from('athlete_settings').select('goal_type').maybeSingle(),
+      supabase.from('athlete_sports').select('*').eq('is_active', true).order('created_at'),
+    ]).then(([{ data: settingsData }, { data: sportsData }]) => {
+      setNeedsOnboarding(!settingsData || !settingsData.goal_type)
 
-        // Post-event: target_date has passed and athlete isn't already in recovery/what_next
-        const today = new Date().toISOString().slice(0, 10)
-        const targetPassed = data?.target_date && data.target_date < today
-        const alreadyHandled = !state || ['onboarding', 'recovery', 'what_next'].includes(state)
-        if (targetPassed && !alreadyHandled) {
-          setPostEventSettings(data)
-        }
-      })
+      setProfileIncomplete(!!settingsData && !settingsData.goal_type)
+
+      // Post-event: find any sport whose target_date has passed and is not already handled
+      const today = new Date().toISOString().slice(0, 10)
+      const overdueSport = sportsData?.find(s =>
+        s.target_date && s.target_date < today &&
+        s.is_active &&
+        !['recovery', 'what_next', 'maintenance'].includes(s.lifecycle_state)
+      )
+      if (overdueSport) {
+        // Attach goal_type from settings so PostEventModal can use it
+        setPostEventSettings({ ...overdueSport, goal_type: settingsData?.goal_type || null })
+      }
+    })
   }, [session])
 
   // Handle Strava OAuth callback (?code=...&scope=activity:read_all)
@@ -259,7 +258,8 @@ export default function App() {
       {/* POST-EVENT MODAL — shown once after target_date passes */}
       {postEventSettings && (
         <PostEventModal
-          settings={postEventSettings}
+          sportRow={postEventSettings}
+          goalType={postEventSettings.goal_type}
           onComplete={(newState) => {
             setPostEventSettings(null)
             // Nudge the onboarding gate so lifecycle_state is re-evaluated if needed

@@ -1,4 +1,4 @@
-export function buildSystemPrompt(settings = {}) {
+export function buildSystemPrompt(settings = {}, primarySport = null) {
   const tone         = settings.tone ?? 50
   const consequences = settings.consequences ?? 50
   const detail       = settings.detail_level ?? 50
@@ -15,20 +15,24 @@ export function buildSystemPrompt(settings = {}) {
     settings.height_cm ? `${settings.height_cm}cm` : null,
   ].filter(Boolean).join(', ')
 
-  // ── Sport ─────────────────────────────────────────────────
-  const sportCategory = settings.sport_category || null
-  const sportLabel = settings.sport_raw
+  // ── Sport (prefer primarySport, fall back to settings for backwards compat) ──
+  const sportCategory = primarySport?.sport_category || settings.sport_category || null
+  const sportLabel    = primarySport?.sport_raw
+    || settings.sport_raw
     || settings.sport_category
     || (settings.sport === 'other' ? (settings.sport_other || 'sport') : settings.sport)
     || 'sport'
+  const lifecycleState = primarySport?.lifecycle_state || settings.lifecycle_state || null
+  const targetDate     = primarySport?.target_date    || settings.target_date     || null
+  const targetMetric   = primarySport?.target_metric  || settings.target_metric   || null
+  const targetName     = primarySport?.current_goal_raw || settings.target_event_name || null
+
   const isRunning   = sportCategory === 'running' || settings.sport === 'running'
   const isEndurance = ['running', 'cycling', 'swimming', 'triathlon', 'hyrox'].includes(sportCategory)
 
   // ── Goal & target ─────────────────────────────────────────
   const goalType     = settings.goal_type || null
-  const targetName   = settings.target_event_name || null
-  const targetDate   = settings.target_date || null
-  const targetDesc   = settings.target_description || settings.target_metric || null
+  const targetDesc   = targetMetric || settings.target_description || null
   const daysToTarget = targetDate
     ? Math.ceil((new Date(targetDate) - new Date()) / (24 * 60 * 60 * 1000))
     : null
@@ -45,8 +49,8 @@ export function buildSystemPrompt(settings = {}) {
     planning: 'Planning', training: 'Training', taper: 'Taper',
     race_week: 'Race Week', recovery: 'Recovery', what_next: 'What Next', maintenance: 'Maintenance',
   }
-  const phase = settings.lifecycle_state
-    ? (PHASE_LABELS[settings.lifecycle_state] || settings.lifecycle_state)
+  const phase = lifecycleState
+    ? (PHASE_LABELS[lifecycleState] || lifecycleState)
     : null
 
   // ── Persona by goal_type ──────────────────────────────────
@@ -76,7 +80,7 @@ export function buildSystemPrompt(settings = {}) {
     what_next:   'Focus: celebrate the achievement, then explore what comes next. Help the athlete articulate their next goal. Keep energy high, avoid a vacuum.',
     maintenance: 'Focus: consistency over performance. Flexible scheduling is fine. Keep the athlete moving and engaged without peaking or heavy load.',
   }
-  const lifecycleFocus = settings.lifecycle_state ? LIFECYCLE_FOCUS[settings.lifecycle_state] : null
+  const lifecycleFocus = lifecycleState ? LIFECYCLE_FOCUS[lifecycleState] : null
 
   // ── Athlete context ───────────────────────────────────────
   const contextLines = [
@@ -141,8 +145,12 @@ Use arrow symbol for bullets. Flag risks with warning symbol. One flag per issue
 
 export async function fetchAndBuildPrompt(supabaseClient) {
   try {
-    const { data } = await supabaseClient.from('athlete_settings').select('*').maybeSingle()
-    return buildSystemPrompt(data || {})
+    const [{ data: settings }, { data: sportsData }] = await Promise.all([
+      supabaseClient.from('athlete_settings').select('*').maybeSingle(),
+      supabaseClient.from('athlete_sports').select('*').eq('is_active', true).order('created_at'),
+    ])
+    const primarySport = sportsData?.find(s => s.priority === 'primary') || sportsData?.[0] || null
+    return buildSystemPrompt(settings || {}, primarySport)
   } catch {
     return buildSystemPrompt({})
   }

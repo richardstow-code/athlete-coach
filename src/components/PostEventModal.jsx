@@ -26,10 +26,10 @@ function isEventGoal(goalType) {
   return goalType === 'compete' || goalType === 'complete_event'
 }
 
-async function generateRecoverySessions({ settings, felt, userId }) {
+async function generateRecoverySessions({ sportRow, felt, userId }) {
   const today = new Date().toISOString().slice(0, 10)
-  const sportCategory = settings.sport_category || settings.sport || 'general'
-  const eventLabel = settings.target_event_name || 'event'
+  const sportCategory = sportRow.sport_category || 'general'
+  const eventLabel = sportRow.current_goal_raw || 'event'
   const recoveryDays = (felt === 'great' || felt === 'ok') ? 10 : 14
   const sportSession = sportCategory === 'cycling' ? 'easy bike ride'
     : sportCategory === 'swimming' ? 'easy swim'
@@ -85,8 +85,8 @@ Generate a ${recoveryDays}-day recovery plan starting today. Rules:
   }
 }
 
-export default function PostEventModal({ settings, onComplete }) {
-  const isEvent = isEventGoal(settings.goal_type)
+export default function PostEventModal({ sportRow, goalType, onComplete }) {
+  const isEvent = isEventGoal(goalType)
   const [felt, setFelt] = useState(null)
   const [result, setResult] = useState('')
   const [notes, setNotes] = useState('')
@@ -94,7 +94,7 @@ export default function PostEventModal({ settings, onComplete }) {
   const [statusMsg, setStatusMsg] = useState(null)
   const [error, setError] = useState(false)
 
-  const eventLabel = settings.target_event_name || (isEvent ? 'your event' : 'your goal')
+  const eventLabel = sportRow.current_goal_raw || (isEvent ? 'your event' : 'your goal')
   const feltOptions = isEvent ? EVENT_FELT : GOAL_FELT
 
   async function handleSubmit() {
@@ -109,24 +109,24 @@ export default function PostEventModal({ settings, onComplete }) {
       setStatusMsg('Saving…')
       await supabase.from('race_results').insert({
         user_id: user.id,
-        event_name: settings.target_event_name || null,
-        event_date: settings.target_date || null,
-        goal_type: settings.goal_type || null,
+        event_name: sportRow.current_goal_raw || null,
+        event_date: sportRow.target_date || null,
+        goal_type: goalType || null,
         result_raw: result.trim() || null,
         felt,
         notes: notes.trim() || null,
       })
 
-      // 2. Update lifecycle_state
+      // 2. Update athlete_sports lifecycle_state
       const newState = isEvent ? 'recovery' : 'what_next'
-      await supabase.from('athlete_settings')
+      await supabase.from('athlete_sports')
         .update({ lifecycle_state: newState, updated_at: new Date().toISOString() })
-        .eq('user_id', user.id)
+        .eq('id', sportRow.id)
 
       // 3. Generate recovery sessions (event users only)
       if (isEvent) {
         setStatusMsg('Building recovery plan…')
-        await generateRecoverySessions({ settings, felt, userId: user.id })
+        await generateRecoverySessions({ sportRow, felt, userId: user.id })
       }
 
       onComplete(newState)
@@ -158,9 +158,9 @@ export default function PostEventModal({ settings, onComplete }) {
         }}>
           {isEvent ? `How did ${eventLabel} go?` : `Did you hit ${eventLabel}?`}
         </h1>
-        {settings.target_date && (
+        {sportRow.target_date && (
           <div style={{ fontSize: 11, color: Z.muted, marginTop: 6 }}>
-            {settings.target_date}
+            {sportRow.target_date}
           </div>
         )}
       </div>

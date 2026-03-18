@@ -38,10 +38,6 @@ const LEVELS = [
   { value: 'competitive', label: 'Competitive', desc: 'Performance-focused, serious about results' },
 ]
 
-function hasDateHint(text) {
-  if (!text || text.length < 4) return false
-  return /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\b\d{1,2}[\/\-]\d{1,2}|\b20\d{2}\b/i.test(text)
-}
 
 function Dots({ step }) {
   return (
@@ -86,18 +82,48 @@ const sub = { fontSize: 13, color: Z.muted, marginBottom: 24, lineHeight: 1.6 }
 
 export default function Onboarding({ onComplete }) {
   const [step, setStep] = useState(1)
-  const [goalType, setGoalType]       = useState(null)
-  const [sportRaw, setSportRaw]       = useState('')
-  const [targetRaw, setTargetRaw]     = useState('')
-  const [confirmedDate, setConfirmedDate] = useState('')
-  const [levelIndex, setLevelIndex]   = useState(1)   // default: 'returning'
-  const [error, setError]             = useState(null)
+  const [goalType, setGoalType]           = useState(null)
+  const [sports, setSports]               = useState([]) // [{ sport_raw, priority, current_goal_raw }]
+  const [sportInput, setSportInput]       = useState('')
+  const [targetRaw, setTargetRaw]         = useState('')
+  const [levelIndex, setLevelIndex]       = useState(1)   // default: 'returning'
+  const [error, setError]                 = useState(null)
+
+  function addSport(raw) {
+    const trimmed = raw.trim()
+    if (!trimmed || sports.find(s => s.sport_raw.toLowerCase() === trimmed.toLowerCase())) return
+    const isFirst = sports.length === 0
+    setSports(prev => [...prev, { sport_raw: trimmed, priority: isFirst ? 'primary' : 'supporting', current_goal_raw: '' }])
+    setSportInput('')
+  }
+
+  function updateSport(index, field, value) {
+    setSports(prev => prev.map((s, i) => {
+      if (i !== index) {
+        // If setting this sport to primary, demote others
+        if (field === 'priority' && value === 'primary') return { ...s, priority: 'supporting' }
+        return s
+      }
+      return { ...s, [field]: value }
+    }))
+  }
+
+  function removeSport(index) {
+    setSports(prev => {
+      const next = prev.filter((_, i) => i !== index)
+      // If we removed the primary, promote the first remaining to primary
+      if (prev[index].priority === 'primary' && next.length > 0) {
+        next[0] = { ...next[0], priority: 'primary' }
+      }
+      return next
+    })
+  }
 
   async function handleSkip() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       await supabase.from('athlete_settings').upsert(
-        { user_id: user.id, lifecycle_state: 'planning', updated_at: new Date().toISOString() },
+        { user_id: user.id, updated_at: new Date().toISOString() },
         { onConflict: 'user_id' }
       )
     } catch { /* non-fatal */ }
@@ -114,32 +140,38 @@ export default function Onboarding({ onComplete }) {
       await supabase.from('athlete_settings').upsert({
         user_id:       user.id,
         goal_type:     goalType,
-        sport_raw:     sportRaw  || null,
         target_raw:    targetRaw || null,
         current_level: LEVELS[levelIndex].value,
         updated_at:    new Date().toISOString(),
       }, { onConflict: 'user_id' })
 
-      // 2. AI inference — writes sport_category, target_event_name, target_date,
-      //    target_metric, benchmark_value, has_injury, current_level back to DB.
-      //    Non-fatal: onboarding continues if this fails.
+      // 2. Insert sports into athlete_sports
+      if (sports.length > 0) {
+        await supabase.from('athlete_sports').insert(
+          sports.map(s => ({
+            user_id: user.id,
+            sport_raw: s.sport_raw,
+            priority: s.priority,
+            current_goal_raw: s.current_goal_raw || null,
+            lifecycle_state: 'planning',
+          }))
+        )
+      }
+
+      // 3. AI inference — non-fatal
       try {
         await inferAthleteContext({
-          sport_raw:        sportRaw  || null,
-          target_raw:       targetRaw || null,
-          benchmark_raw:    null,
+          sports: sports.map(s => ({ sport_raw: s.sport_raw, current_goal_raw: s.current_goal_raw || null })),
           health_notes_raw: null,
+          benchmark_raw:    null,
         })
       } catch { /* non-fatal */ }
 
-      // 3. Finalise: lifecycle_state + user-confirmed date (overrides inferred)
+      // 4. Finalise athlete_settings
       const final = {
-        user_id:         user.id,
-        lifecycle_state: 'planning',
-        updated_at:      new Date().toISOString(),
+        user_id:    user.id,
+        updated_at: new Date().toISOString(),
       }
-      if (confirmedDate) final.target_date = confirmedDate
-
       await supabase.from('athlete_settings').upsert(final, { onConflict: 'user_id' })
       onComplete()
     } catch (err) {
@@ -201,40 +233,111 @@ export default function Onboarding({ onComplete }) {
     </div>
   )
 
-  // ── Step 2: Sport ─────────────────────────────────────────────────────────
+  // ── Step 2: Sports (multi-sport) ──────────────────────────────────────────
   if (step === 2) return (
     <div style={shell}>
       <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
       <div style={body}>
         <Dots step={2} />
-        <div style={h1}>What's your sport?</div>
-        <div style={sub}>Describe it in your own words, or pick a suggestion.</div>
-        <input
-          style={{ ...inp, fontSize: 14, marginBottom: 14 }}
-          placeholder="e.g. marathon running, olympic weightlifting…"
-          value={sportRaw}
-          onChange={e => setSportRaw(e.target.value)}
-          autoFocus
-        />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 4 }}>
+        <div style={h1}>What do you train for?</div>
+        <div style={sub}>Add your sports or activities — you can have more than one.</div>
+
+        {/* Text input + Add button */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <input
+            style={{ ...inp, fontSize: 13, flex: 1 }}
+            placeholder="e.g. marathon running, olympic weightlifting…"
+            value={sportInput}
+            onChange={e => setSportInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addSport(sportInput) }}
+            autoFocus
+          />
+          <button
+            onClick={() => addSport(sportInput)}
+            style={{
+              background: Z.accent, border: 'none', borderRadius: 8,
+              padding: '0 14px', fontFamily: "'DM Mono', monospace",
+              fontSize: 12, fontWeight: 700, color: Z.bg, cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            Add
+          </button>
+        </div>
+
+        {/* Chip suggestions */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 20 }}>
           {SPORT_CHIPS.map(chip => {
-            const on = sportRaw.toLowerCase().trim() === chip
+            const already = sports.some(s => s.sport_raw.toLowerCase() === chip)
             return (
-              <button key={chip} onClick={() => setSportRaw(chip)} style={{
-                padding: '5px 11px', borderRadius: 20, cursor: 'pointer',
-                background: on ? Z.accent : 'transparent',
-                border: `1px solid ${on ? Z.accent : Z.border2}`,
-                color: on ? Z.bg : Z.muted,
+              <button key={chip} onClick={() => addSport(chip)} style={{
+                padding: '5px 11px', borderRadius: 20, cursor: already ? 'default' : 'pointer',
+                background: already ? 'rgba(232,255,71,0.12)' : 'transparent',
+                border: `1px solid ${already ? Z.accent : Z.border2}`,
+                color: already ? Z.accent : Z.muted,
                 fontFamily: "'DM Mono', monospace", fontSize: 12,
-                transition: 'all 0.12s',
+                transition: 'all 0.12s', opacity: already ? 0.6 : 1,
               }}>
                 {chip}
               </button>
             )
           })}
         </div>
+
+        {/* Added sport cards */}
+        {sports.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
+            {sports.map((sport, i) => (
+              <div key={i} style={{
+                background: Z.surface, border: `1px solid ${Z.border2}`,
+                borderRadius: 10, padding: '12px 14px',
+              }}>
+                {/* Sport name + remove */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, color: Z.text, fontWeight: 600 }}>{sport.sport_raw}</div>
+                  <button
+                    onClick={() => removeSport(i)}
+                    style={{ background: 'none', border: 'none', color: Z.muted, cursor: 'pointer', fontSize: 16, padding: '0 0 0 8px', lineHeight: 1 }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* Priority pills */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: Z.muted, marginRight: 4 }}>Priority:</span>
+                  {['primary', 'supporting', 'recovery'].map(p => (
+                    <button
+                      key={p}
+                      onClick={() => updateSport(i, 'priority', p)}
+                      style={{
+                        padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                        background: sport.priority === p ? (p === 'primary' ? Z.accent : 'rgba(255,255,255,0.08)') : 'transparent',
+                        border: `1px solid ${sport.priority === p ? (p === 'primary' ? Z.accent : Z.border2) : Z.border}`,
+                        color: sport.priority === p ? (p === 'primary' ? Z.bg : Z.text) : Z.muted,
+                        fontFamily: "'DM Mono', monospace", fontSize: 11,
+                        fontWeight: sport.priority === p ? 600 : 400,
+                        transition: 'all 0.12s',
+                      }}
+                    >
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Goal input */}
+                <input
+                  style={{ ...inp, fontSize: 12 }}
+                  placeholder="Goal (optional): e.g. sub 3:10 marathon in October"
+                  value={sport.current_goal_raw}
+                  onChange={e => updateSport(i, 'current_goal_raw', e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
         <div style={{ flex: 1 }} />
-        <button style={primaryBtn(!!sportRaw.trim())} onClick={() => sportRaw.trim() && setStep(3)}>Next →</button>
+        <button style={primaryBtn(sports.length > 0)} onClick={() => sports.length > 0 && setStep(3)}>Next →</button>
         <button style={backBtn} onClick={() => setStep(1)}>← Back</button>
       </div>
     </div>
@@ -243,7 +346,6 @@ export default function Onboarding({ onComplete }) {
   // ── Step 3: Target ────────────────────────────────────────────────────────
   if (step === 3) {
     const cfg = TARGET_CONFIG[goalType] || { label: "What are you working towards?", placeholder: 'Describe your goal…' }
-    const showDatePicker = hasDateHint(targetRaw)
 
     return (
       <div style={shell}>
@@ -253,28 +355,12 @@ export default function Onboarding({ onComplete }) {
           <div style={h1}>{cfg.label}</div>
           <div style={sub}>The more detail the better — events, dates, times, all of it.</div>
           <textarea
-            style={{ ...ta, marginBottom: showDatePicker ? 10 : 0 }}
+            style={{ ...ta }}
             placeholder={cfg.placeholder}
             value={targetRaw}
-            onChange={e => {
-              setTargetRaw(e.target.value)
-              if (!e.target.value) setConfirmedDate('')
-            }}
+            onChange={e => setTargetRaw(e.target.value)}
             autoFocus
           />
-          {showDatePicker && (
-            <div>
-              <div style={{ fontSize: 11, color: Z.amber, marginBottom: 6, marginTop: 2 }}>
-                ↑ Date detected — confirm or adjust:
-              </div>
-              <input
-                type="date"
-                style={inp}
-                value={confirmedDate}
-                onChange={e => setConfirmedDate(e.target.value)}
-              />
-            </div>
-          )}
           <div style={{ flex: 1 }} />
           <button style={primaryBtn(!!targetRaw.trim())} onClick={() => targetRaw.trim() && setStep(4)}>Next →</button>
           <button style={backBtn} onClick={() => setStep(2)}>← Back</button>

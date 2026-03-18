@@ -18,6 +18,7 @@ export async function buildContext() {
     { data: briefings },
     { data: settings },
     { data: cycleLogs },
+    { data: sportsData },
   ] = await Promise.all([
     supabase
       .from('activities')
@@ -52,7 +53,7 @@ export async function buildContext() {
 
     supabase
       .from('athlete_settings')
-      .select('name,dob,height_cm,weight_kg,races,sport,sport_other,goal_type,target_type,target_event_name,target_date,target_description,current_level,health_notes,lifecycle_state,cycle_tracking_enabled,cycle_length_avg,cycle_is_irregular,cycle_last_period_date,cycle_notes')
+      .select('name,dob,height_cm,weight_kg,races,goal_type,current_level,health_notes,cycle_tracking_enabled,cycle_length_avg,cycle_is_irregular,cycle_last_period_date,cycle_notes')
       .maybeSingle(),
 
     supabase
@@ -60,6 +61,12 @@ export async function buildContext() {
       .select('phase_reported, override_intensity, notes, log_date')
       .order('log_date', { ascending: false })
       .limit(5),
+
+    supabase
+      .from('athlete_sports')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at'),
   ])
 
   // Cycle context — only populated if user has opted in
@@ -83,6 +90,9 @@ export async function buildContext() {
     }
   }
 
+  const primarySport   = sportsData?.find(s => s.priority === 'primary') || sportsData?.[0] || null
+  const supportingSports = sportsData?.filter(s => s.priority === 'supporting' || s.priority === 'recovery') || []
+
   return {
     activities:       activities       || [],
     upcomingSessions: upcomingSessions || [],
@@ -91,6 +101,9 @@ export async function buildContext() {
     briefing:         briefings?.[0]   || null,
     settings:         settings         || null,
     cycle_context:    cycleContext,
+    primary_sport:    primarySport,
+    supporting_sports: supportingSports,
+    all_sports:       sportsData        || [],
   }
 }
 
@@ -106,6 +119,9 @@ export function formatContext({
   briefing = null,
   settings = null,
   cycle_context = null,
+  primary_sport = null,
+  supporting_sports = [],
+  all_sports = [],
 } = {}) {
   const parts = []
 
@@ -119,16 +135,7 @@ export function formatContext({
       const age = Math.floor((Date.now() - new Date(settings.dob)) / (365.25 * 24 * 60 * 60 * 1000))
       lines.push(`Age: ${age}`)
     }
-    if (settings.sport) {
-      const sportLabel = settings.sport === 'other' ? (settings.sport_other || 'other') : settings.sport
-      lines.push(`Sport: ${sportLabel}`)
-    }
-    if (settings.current_level)   lines.push(`Level: ${settings.current_level}`)
-    if (settings.lifecycle_state) lines.push(`Phase: ${settings.lifecycle_state.replace('_', ' ')}`)
-    if (settings.target_event_name && settings.target_date) {
-      const daysTo = Math.ceil((new Date(settings.target_date) - new Date()) / (24 * 60 * 60 * 1000))
-      lines.push(`Primary target: ${settings.target_event_name} on ${settings.target_date} (${daysTo}d)${settings.target_description ? ' — ' + settings.target_description : ''}`)
-    }
+    if (settings.current_level) lines.push(`Level: ${settings.current_level}`)
     const upcoming = (settings.races || [])
       .filter(r => r.date >= new Date().toISOString().slice(0, 10))
       .sort((a, b) => a.date.localeCompare(b.date))
@@ -139,6 +146,32 @@ export function formatContext({
     }
     if (settings.health_notes) lines.push(`Health: ${settings.health_notes}`)
     if (lines.length > 0) parts.push('ATHLETE:\n' + lines.map(l => `- ${l}`).join('\n'))
+  }
+
+  // ── Sports context ────────────────────────────────────────
+  if (all_sports.length > 0) {
+    const sportLines = []
+    if (primary_sport) {
+      const ps = primary_sport
+      let primaryLine = `Primary: ${ps.sport_raw}`
+      if (ps.sport_category) primaryLine += ` (${ps.sport_category})`
+      if (ps.lifecycle_state) primaryLine += ` — ${ps.lifecycle_state.replace(/_/g, ' ')} phase`
+      if (ps.target_metric)   primaryLine += `, target: ${ps.target_metric}`
+      if (ps.target_date) {
+        const daysTo = Math.ceil((new Date(ps.target_date) - new Date()) / (24 * 60 * 60 * 1000))
+        primaryLine += `, race date: ${ps.target_date} (${daysTo}d)`
+      }
+      sportLines.push(primaryLine)
+    }
+    const supporting = all_sports.filter(s => s.priority === 'supporting')
+    if (supporting.length > 0) {
+      sportLines.push(`Supporting: ${supporting.map(s => s.sport_raw + (s.sport_category ? ` (${s.sport_category})` : '')).join(', ')}`)
+    }
+    const recovery = all_sports.filter(s => s.priority === 'recovery')
+    if (recovery.length > 0) {
+      sportLines.push(`Recovery: ${recovery.map(s => s.sport_raw).join(', ')}`)
+    }
+    if (sportLines.length > 0) parts.push('SPORTS CONTEXT:\n' + sportLines.map(l => `- ${l}`).join('\n'))
   }
 
   // ── Recent activities ────────────────────────────────────
