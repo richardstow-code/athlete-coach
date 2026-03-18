@@ -155,6 +155,8 @@ export default function App() {
   const [detailId, setDetailId] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [pendingChanges, setPendingChanges] = useState(0)
+  const [profileIncomplete, setProfileIncomplete] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -172,6 +174,12 @@ export default function App() {
       .then(({ data }) => {
         const state = data?.lifecycle_state
         setNeedsOnboarding(!data || !state || state === 'onboarding')
+
+        if (data && (data.lifecycle_state === 'planning' || data.lifecycle_state) && !data.goal_type) {
+          setProfileIncomplete(true)
+        } else {
+          setProfileIncomplete(false)
+        }
 
         // Post-event: target_date has passed and athlete isn't already in recovery/what_next
         const today = new Date().toISOString().slice(0, 10)
@@ -263,6 +271,15 @@ export default function App() {
       {/* SETTINGS OVERLAY */}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
 
+      {/* ONBOARDING OVERLAY — re-openable from "Complete profile" chip */}
+      {showOnboarding && (
+        <Onboarding onComplete={() => {
+          setShowOnboarding(false)
+          setProfileIncomplete(false)
+          // Re-check settings to update profileIncomplete
+        }} />
+      )}
+
       {/* TOP HEADER — slim, just logo + profile */}
       <header style={{
         display: 'flex',
@@ -281,6 +298,21 @@ export default function App() {
           {detailId && (
             <button onClick={closeActivity} style={{ background: 'none', border: 'none', color: Z.accent, fontSize: 12, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: '4px 8px' }}>
               ← Back
+            </button>
+          )}
+          {profileIncomplete && !showOnboarding && (
+            <button
+              onClick={() => setShowOnboarding(true)}
+              style={{
+                fontSize: 10, letterSpacing: '0.06em',
+                background: 'rgba(255,183,71,0.15)',
+                border: '1px solid rgba(255,183,71,0.4)',
+                borderRadius: 20, padding: '4px 10px',
+                color: '#ffb347', cursor: 'pointer',
+                fontFamily: "'DM Mono', monospace",
+              }}
+            >
+              Complete profile
             </button>
           )}
           <button onClick={() => setShowSettings(true)} style={{

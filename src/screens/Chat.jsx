@@ -2,21 +2,52 @@ import { useSettings } from '../lib/useSettings'
 import { buildSystemPrompt } from '../lib/coachingPrompt'
 import { buildContext, formatContext } from '../lib/buildContext'
 import { getActiveNudge } from '../lib/nudges'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { callClaude } from '../lib/claudeProxy'
 import NudgeCard from '../components/NudgeCard'
 import CycleLogNudge from '../components/CycleLogNudge'
 
-const QUICK_QUESTIONS = [
-  "How did my last run look?",
-  "Am I on track for Munich sub-3:10?",
-  "What should Sunday's long run look like?",
-  "Should I do Untersberg this week?",
-]
-
 export default function Chat() {
   const settings = useSettings()
+
+  const quickQuestions = useMemo(() => {
+    const goalType = settings.goal_type
+    const eventName = settings.target_event_name
+    const sport = settings.sport_category || settings.sport || 'training'
+
+    if (goalType === 'compete' || goalType === 'complete_event') {
+      return [
+        eventName ? `Am I on track for ${eventName}?` : 'Am I on track for my goal?',
+        `How was my last ${sport} session?`,
+        'What should I focus on this week?',
+        'Am I recovering well enough?',
+      ]
+    }
+    if (goalType === 'body_composition') {
+      return [
+        'How is my nutrition looking this week?',
+        'Am I hitting my protein targets?',
+        'How is my training consistency?',
+        'Any changes I should make?',
+      ]
+    }
+    if (goalType === 'injury_recovery') {
+      return [
+        'How should I train today?',
+        'Am I progressing safely?',
+        'What should I avoid this week?',
+        'How is my recovery going?',
+      ]
+    }
+    return [
+      'How did my last session go?',
+      'What should I do this week?',
+      'How is my consistency looking?',
+      'Any advice for today?',
+    ]
+  }, [settings.goal_type, settings.target_event_name, settings.sport_category, settings.sport])
+
   const [messages, setMessages] = useState([])
   const [greeting, setGreeting] = useState('Loading...')
   const [input, setInput] = useState('')
@@ -158,7 +189,7 @@ export default function Chat() {
 
       {/* QUICK PILLS */}
       <div style={{ padding: '0 20px 12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        {QUICK_QUESTIONS.map((q, i) => (
+        {quickQuestions.map((q, i) => (
           <button key={i} onClick={() => sendMessage(q)} style={{ fontSize: '11px', padding: '5px 12px', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '20px', color: '#888580', background: 'transparent', cursor: 'pointer', fontFamily: "'DM Mono', monospace', transition: 'all 0.15s'" }}>
             {q}
           </button>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSettings } from '../lib/useSettings'
 
 const S = {
   page: { overflowY: 'auto', height: '100%' },
@@ -64,6 +65,7 @@ function ActivityRow({ activity, onActivityClick }) {
 }
 
 export default function Home({ onActivityClick }) {
+  const settings = useSettings()
   const [activities, setActivities] = useState([])
   const [briefing, setBriefing] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -104,8 +106,9 @@ export default function Home({ onActivityClick }) {
   const weekStrength = weekActs.filter(a => a.type?.toLowerCase().includes('weight')).length
 
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-  const raceDate = new Date('2026-10-12')
-  const daysToRace = Math.ceil((raceDate - new Date()) / (1000 * 60 * 60 * 24))
+  const targetDate = settings.target_date ? new Date(settings.target_date) : null
+  const daysToRace = targetDate ? Math.ceil((targetDate - new Date()) / (1000 * 60 * 60 * 24)) : null
+  const eventLabel = settings.target_event_name || null
 
   // Last run for zone bars
   const lastRun = activities.find(a => a.type?.toLowerCase().includes('run'))
@@ -114,8 +117,16 @@ export default function Home({ onActivityClick }) {
     <div style={S.page}>
       <div style={S.hero}>
         <div style={S.label}>{today}</div>
-        <div style={S.greeting}>Week 2<br />Base Build</div>
-        <div style={S.date}>Munich Marathon · {daysToRace} days</div>
+        <div style={S.greeting}>
+          {settings.lifecycle_state
+            ? settings.lifecycle_state.charAt(0).toUpperCase() + settings.lifecycle_state.slice(1).replace('_', ' ')
+            : 'Welcome'}
+        </div>
+        {(eventLabel || daysToRace) && (
+          <div style={S.date}>
+            {eventLabel || 'Your goal'}{daysToRace !== null ? ` · ${daysToRace} days` : ''}
+          </div>
+        )}
       </div>
 
       <div style={S.statStrip}>

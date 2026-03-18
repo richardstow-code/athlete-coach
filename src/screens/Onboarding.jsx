@@ -93,6 +93,17 @@ export default function Onboarding({ onComplete }) {
   const [levelIndex, setLevelIndex]   = useState(1)   // default: 'returning'
   const [error, setError]             = useState(null)
 
+  async function handleSkip() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('athlete_settings').upsert(
+        { user_id: user.id, lifecycle_state: 'planning', updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' }
+      )
+    } catch { /* non-fatal */ }
+    onComplete()
+  }
+
   async function handleComplete() {
     setStep('submitting')
     setError(null)
@@ -185,6 +196,7 @@ export default function Onboarding({ onComplete }) {
         </div>
         <div style={{ flex: 1 }} />
         <button style={primaryBtn(!!goalType)} onClick={() => goalType && setStep(2)}>Next →</button>
+        <button style={backBtn} onClick={handleSkip}>Skip for now</button>
       </div>
     </div>
   )
