@@ -62,9 +62,11 @@ export default function Settings({ onClose }) {
   const [showRaceForm, setShowRaceForm] = useState(false)
   const [stravaToken, setStravaToken] = useState(null)   // null = loading, false = not connected
   const [stravaStatus, setStravaStatus] = useState(null) // 'syncing' | 'synced' | 'error' | null
+  const [userId, setUserId] = useState(null)
 
   useEffect(() => {
-    supabase.from('athlete_settings').select('*').eq('id', 1).single()
+    supabase.auth.getUser().then(({ data }) => setUserId(data?.user?.id ?? null))
+    supabase.from('athlete_settings').select('*').maybeSingle()
       .then(({ data }) => { if (data) setSettings(s => ({ ...s, ...data, races: data.races || [] })) })
     supabase.from('strava_tokens').select('athlete_id, athlete_name').maybeSingle()
       .then(({ data }) => setStravaToken(data || false))
@@ -91,7 +93,7 @@ export default function Settings({ onClose }) {
 
   async function save() {
     setSaving(true)
-    await supabase.from('athlete_settings').upsert({ id: 1, ...settings, updated_at: new Date().toISOString() })
+    await supabase.from('athlete_settings').upsert({ user_id: userId, ...settings, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
     setSaving(false); setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -103,7 +105,7 @@ export default function Settings({ onClose }) {
     setNewRace({ name:'', date:'', distance:'42.2', target:'3:10:00' })
     setShowRaceForm(false)
     // Auto-save immediately so the race isn't lost if the user closes Settings
-    await supabase.from('athlete_settings').upsert({ id: 1, ...updated, updated_at: new Date().toISOString() })
+    await supabase.from('athlete_settings').upsert({ user_id: userId, ...updated, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }

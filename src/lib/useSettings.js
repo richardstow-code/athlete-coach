@@ -1,18 +1,15 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 
-let cache = null
-
 export function useSettings() {
-  const [settings, setSettings] = useState(cache || {
+  const [settings, setSettings] = useState({
     tone: 50, consequences: 50, detail_level: 50, coaching_reach: 50,
     name: '', races: []
   })
 
   useEffect(() => {
-    if (cache) return
-    supabase.from('athlete_settings').select('*').eq('id', 1).single()
-      .then(({ data }) => { if (data) { cache = data; setSettings(data) } })
+    supabase.from('athlete_settings').select('*').maybeSingle()
+      .then(({ data }) => { if (data) setSettings(data) })
   }, [])
 
   return settings

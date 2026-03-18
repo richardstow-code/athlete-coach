@@ -3,8 +3,7 @@ import { supabase } from './supabase'
 /**
  * Fetches all context needed for coaching prompts in a single parallel round-trip.
  * All table queries are automatically scoped to the authenticated user via RLS
- * (user_id = auth.uid()). athlete_settings is fetched by id=1 (single-user table,
- * RLS migration pending).
+ * (user_id = auth.uid()), including athlete_settings.
  */
 export async function buildContext() {
   const today = new Date().toISOString().slice(0, 10)
@@ -52,7 +51,6 @@ export async function buildContext() {
     supabase
       .from('athlete_settings')
       .select('name,dob,height_cm,weight_kg,races')
-      .eq('id', 1)
       .maybeSingle(),
   ])
 

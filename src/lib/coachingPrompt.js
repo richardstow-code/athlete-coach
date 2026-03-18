@@ -52,7 +52,7 @@ Use arrow symbol for bullets. Flag risks with warning symbol. One flag per issue
 
 export async function fetchAndBuildPrompt(supabaseClient) {
   try {
-    const { data } = await supabaseClient.from('athlete_settings').select('*').eq('id', 1).single()
+    const { data } = await supabaseClient.from('athlete_settings').select('*').maybeSingle()
     return buildSystemPrompt(data || {})
   } catch {
     return buildSystemPrompt({})
