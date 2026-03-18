@@ -63,6 +63,8 @@ export default function Settings({ onClose }) {
     target_type:null, target_event_name:null, target_date:null,
     target_description:null, current_level:null,
     health_notes:null, lifecycle_state:null,
+    cycle_tracking_enabled: false, cycle_length_avg: null, cycle_is_irregular: false,
+    cycle_last_period_date: null, cycle_notes: null,
     sport_raw:null, sport_category:null, target_raw:null, target_metric:null,
     benchmark_raw:null, benchmark_value:null, health_notes_raw:null,
     has_injury:null, training_days_per_week:null, sleep_hours_typical:null,
@@ -145,6 +147,22 @@ export default function Settings({ onClose }) {
     setSettings(s => ({ ...s, races: s.races.filter((_, idx) => idx !== i) }))
   }
 
+  async function deleteCycleData() {
+    if (!userId) return
+    await Promise.all([
+      supabase.from('cycle_logs').delete().eq('user_id', userId),
+      supabase.from('athlete_settings').update({
+        cycle_tracking_enabled: false, cycle_length_avg: null,
+        cycle_is_irregular: false, cycle_last_period_date: null, cycle_notes: null,
+      }).eq('user_id', userId),
+    ])
+    setSettings(s => ({
+      ...s,
+      cycle_tracking_enabled: false, cycle_length_avg: null,
+      cycle_is_irregular: false, cycle_last_period_date: null, cycle_notes: null,
+    }))
+  }
+
   const inp = { background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 6, padding: '8px 12px', color: Z.text, fontFamily: "'DM Mono', monospace", fontSize: 13, width: '100%', outline: 'none', boxSizing: 'border-box' }
   const sel = { ...inp, cursor: 'pointer' }
   const ta  = { ...inp, resize: 'vertical', minHeight: 72, lineHeight: 1.5 }
@@ -199,6 +217,122 @@ export default function Settings({ onClose }) {
             <textarea style={ta} placeholder="Injuries, conditions, limitations…" value={settings.health_notes || ''}
               onChange={e => setSettings(s => ({...s, health_notes: e.target.value || null}))} />
           </div>
+        </div>
+
+        {/* Cycle Tracking (opt-in) */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: 11, color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Cycle Tracking</div>
+              <div style={{ fontSize: 11, color: Z.muted, marginTop: 3, lineHeight: 1.4, maxWidth: 220 }}>
+                Optional — helps your coach adapt to your energy levels
+              </div>
+            </div>
+            <button
+              onClick={() => setSettings(s => ({...s, cycle_tracking_enabled: !s.cycle_tracking_enabled}))}
+              style={{
+                padding: '5px 16px', borderRadius: 20, flexShrink: 0,
+                background: settings.cycle_tracking_enabled ? Z.accent : 'none',
+                border: `1px solid ${settings.cycle_tracking_enabled ? Z.accent : Z.border2}`,
+                color: settings.cycle_tracking_enabled ? Z.bg : Z.muted,
+                fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace",
+                fontWeight: settings.cycle_tracking_enabled ? 600 : 400, transition: 'all 0.15s',
+              }}
+            >
+              {settings.cycle_tracking_enabled ? 'On' : 'Off'}
+            </button>
+          </div>
+
+          {settings.cycle_tracking_enabled && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ fontSize: 12, color: Z.muted, lineHeight: 1.6, padding: '12px 14px', background: Z.surface, borderRadius: 8, border: `1px solid ${Z.border}` }}>
+                Your cycle data is completely private — only used to help your coach tune training and nutrition guidance to your energy levels.
+              </div>
+
+              {/* Cycle length */}
+              <div>
+                <div style={{ fontSize: 11, color: Z.muted, marginBottom: 8 }}>
+                  Do you have a rough idea of your average cycle length?
+                </div>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="number" placeholder="e.g. 28" min={15} max={60}
+                    disabled={settings.cycle_is_irregular}
+                    value={settings.cycle_length_avg || ''}
+                    onChange={e => setSettings(s => ({...s, cycle_length_avg: parseInt(e.target.value) || null, cycle_is_irregular: false}))}
+                    style={{ ...inp, width: 90, opacity: settings.cycle_is_irregular ? 0.4 : 1 }}
+                  />
+                  <span style={{ fontSize: 11, color: Z.muted }}>days</span>
+                  <button
+                    onClick={() => setSettings(s => ({...s, cycle_is_irregular: !s.cycle_is_irregular, cycle_length_avg: !s.cycle_is_irregular ? null : s.cycle_length_avg}))}
+                    style={{
+                      padding: '6px 14px', borderRadius: 20,
+                      background: settings.cycle_is_irregular ? 'rgba(232,255,71,0.1)' : 'none',
+                      border: `1px solid ${settings.cycle_is_irregular ? Z.accent : Z.border2}`,
+                      color: settings.cycle_is_irregular ? Z.accent : Z.muted,
+                      fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace",
+                    }}
+                  >
+                    My cycle is irregular
+                  </button>
+                </div>
+                {settings.cycle_is_irregular && (
+                  <div style={{ fontSize: 11, color: Z.muted, marginTop: 8, lineHeight: 1.5 }}>
+                    That's completely fine — your coach will rely on your day-to-day signals rather than estimates.
+                  </div>
+                )}
+              </div>
+
+              {/* Last period date */}
+              <div>
+                <div style={{ fontSize: 11, color: Z.muted, marginBottom: 8 }}>
+                  When did your last period start? (optional)
+                </div>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="date"
+                    value={settings.cycle_last_period_date || ''}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={e => setSettings(s => ({...s, cycle_last_period_date: e.target.value || null}))}
+                    style={{ ...inp, width: 'auto' }}
+                  />
+                  {settings.cycle_last_period_date && (
+                    <button
+                      onClick={() => setSettings(s => ({...s, cycle_last_period_date: null}))}
+                      style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}
+                    >
+                      not sure / skip
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <div style={{ fontSize: 11, color: Z.muted, marginBottom: 8 }}>
+                  Anything else you'd like your coach to know? (optional)
+                </div>
+                <textarea
+                  style={ta}
+                  placeholder="e.g. I usually feel low energy for the first couple of days, heavy training makes it worse…"
+                  value={settings.cycle_notes || ''}
+                  onChange={e => setSettings(s => ({...s, cycle_notes: e.target.value || null}))}
+                />
+              </div>
+            </div>
+          )}
+
+          {!settings.cycle_tracking_enabled && settings.cycle_last_period_date && (
+            <div style={{ fontSize: 11, color: Z.muted, marginTop: 10, lineHeight: 1.6, padding: '10px 14px', background: Z.surface, borderRadius: 8, border: `1px solid ${Z.border}` }}>
+              Your cycle data is still saved in case you re-enable tracking.{' '}
+              <button
+                onClick={deleteCycleData}
+                style={{ background: 'none', border: 'none', color: Z.red, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: 0, textDecoration: 'underline' }}
+              >
+                Delete all cycle data
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Sport & Goal */}

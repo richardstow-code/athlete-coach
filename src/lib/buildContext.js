@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { inferCyclePhase, daysSincePeriod } from './inferCyclePhase'
 
 /**
  * Fetches all context needed for coaching prompts in a single parallel round-trip.
@@ -16,6 +17,7 @@ export async function buildContext() {
     { data: memory },
     { data: briefings },
     { data: settings },
+    { data: cycleLogs },
   ] = await Promise.all([
     supabase
       .from('activities')
@@ -50,9 +52,36 @@ export async function buildContext() {
 
     supabase
       .from('athlete_settings')
-      .select('name,dob,height_cm,weight_kg,races,sport,sport_other,goal_type,target_type,target_event_name,target_date,target_description,current_level,health_notes,lifecycle_state')
+      .select('name,dob,height_cm,weight_kg,races,sport,sport_other,goal_type,target_type,target_event_name,target_date,target_description,current_level,health_notes,lifecycle_state,cycle_tracking_enabled,cycle_length_avg,cycle_is_irregular,cycle_last_period_date,cycle_notes')
       .maybeSingle(),
+
+    supabase
+      .from('cycle_logs')
+      .select('phase_reported, override_intensity, notes, log_date')
+      .order('log_date', { ascending: false })
+      .limit(5),
   ])
+
+  // Cycle context — only populated if user has opted in
+  let cycleContext = null
+  if (settings?.cycle_tracking_enabled) {
+    const phase = inferCyclePhase(
+      settings.cycle_last_period_date,
+      settings.cycle_length_avg,
+      settings.cycle_is_irregular || false,
+      cycleLogs || []
+    )
+    const daysSince = daysSincePeriod(settings.cycle_last_period_date)
+    const today = new Date().toISOString().slice(0, 10)
+    const todayLog = cycleLogs?.find(l => l.log_date === today) || null
+    cycleContext = {
+      tracking_enabled: true,
+      estimated_phase:  phase,
+      is_irregular:     settings.cycle_is_irregular || false,
+      days_since_period: daysSince,
+      recent_log:       todayLog,
+    }
+  }
 
   return {
     activities:       activities       || [],
@@ -61,6 +90,7 @@ export async function buildContext() {
     memory:           memory           || [],
     briefing:         briefings?.[0]   || null,
     settings:         settings         || null,
+    cycle_context:    cycleContext,
   }
 }
 
@@ -75,6 +105,7 @@ export function formatContext({
   memory = [],
   briefing = null,
   settings = null,
+  cycle_context = null,
 } = {}) {
   const parts = []
 
@@ -171,6 +202,49 @@ export function formatContext({
       'RECENT COACHING EXCHANGES:\n' +
       memory.map(m => m.content).join('\n---\n')
     )
+  }
+
+  // ── Cycle context ─────────────────────────────────────────────
+  if (cycle_context?.tracking_enabled) {
+    const { estimated_phase, is_irregular, days_since_period, recent_log } = cycle_context
+    const lines = []
+
+    const PHASE_LABELS = {
+      menstrual: 'Menstrual', follicular: 'Follicular',
+      ovulatory: 'Ovulatory', luteal: 'Luteal',
+    }
+
+    if (estimated_phase !== 'unknown' && PHASE_LABELS[estimated_phase]) {
+      const dayNote = days_since_period != null ? ` (day ${days_since_period + 1} of cycle)` : ''
+      const irregNote = is_irregular ? ' — irregular cycle, estimate only' : ''
+      lines.push(`Estimated phase: ${PHASE_LABELS[estimated_phase]}${dayNote}${irregNote}`)
+    } else {
+      lines.push('Cycle phase: unknown — rely on user signals only')
+    }
+
+    if (recent_log?.phase_reported) {
+      lines.push(`User reported today: ${recent_log.phase_reported.replace(/_/g, ' ')}`)
+    }
+    if (recent_log?.override_intensity) {
+      lines.push(`Intensity preference today: ${recent_log.override_intensity} — respect this without requiring explanation`)
+    }
+    if (recent_log?.notes) {
+      lines.push(`User note: ${recent_log.notes}`)
+    }
+
+    const GUIDANCE = {
+      menstrual:  'Coaching: Acknowledge potential lower energy. Proactively offer lighter session options. Prioritise rest if fatigue is signalled. Never assume — always check in first.',
+      follicular: 'Coaching: Energy typically building. A good time to introduce new challenges or increase load if the athlete feels ready — check in before assuming.',
+      ovulatory:  'Coaching: Often peak energy. Can support higher intensity if the athlete is up for it. Always follow their lead.',
+      luteal:     'Coaching: Energy may reduce toward end of phase; PMS symptoms possible. Be especially attuned to mood and fatigue. Avoid pushing load increases.',
+      unknown:    'Coaching: Phase unknown — check in regularly about energy and readiness rather than making any assumptions.',
+    }
+    const guidance = GUIDANCE[estimated_phase] || GUIDANCE.unknown
+    lines.push(guidance)
+
+    if (lines.length > 0) {
+      parts.push('CYCLE CONTEXT:\n' + lines.map(l => `- ${l}`).join('\n'))
+    }
   }
 
   // ── Latest briefing ──────────────────────────────────────

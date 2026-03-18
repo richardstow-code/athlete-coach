@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
 import { buildSystemPrompt } from '../lib/coachingPrompt'
 import { callClaude } from '../lib/claudeProxy'
+import { inferCyclePhase } from '../lib/inferCyclePhase'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -203,6 +204,7 @@ export default function Nutrition() {
   const [activeMetrics, setActiveMetrics] = useState(['kcal', 'protein', 'units'])
   const [todaySession, setTodaySession] = useState(null)
   const [todayActivity, setTodayActivity] = useState(null)
+  const [cycleLog, setCycleLog] = useState(null)
 
   const todayKcal = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + (e.calories || 0), 0)
   const todayProtein = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + parseFloat(e.protein_g || 0), 0)
@@ -214,16 +216,18 @@ export default function Nutrition() {
   async function load() {
     const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString().slice(0,10)
     const todayStr = new Date().toISOString().slice(0, 10)
-    const [{ data: all }, { data: w7 }, { data: sessions }, { data: acts }] = await Promise.all([
+    const [{ data: all }, { data: w7 }, { data: sessions }, { data: acts }, { data: cLog }] = await Promise.all([
       supabase.from('nutrition_logs').select('*').eq('date', logDate).order('logged_at', { ascending: false }),
       supabase.from('nutrition_logs').select('*').gte('date', sevenDaysAgo).order('date'),
       supabase.from('scheduled_sessions').select('session_type,name,zone,duration_min_low,duration_min_high').eq('planned_date', todayStr).limit(3),
-      supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec').eq('date', todayStr).order('date', { ascending: false }).limit(1)
+      supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec').eq('date', todayStr).order('date', { ascending: false }).limit(1),
+      supabase.from('cycle_logs').select('phase_reported, override_intensity, notes').eq('log_date', new Date().toISOString().slice(0,10)).maybeSingle(),
     ])
     setEntries(all || [])
     setEntries7(w7 || [])
     setTodaySession(sessions?.[0] || null)
     setTodayActivity(acts?.[0] || null)
+    setCycleLog(cLog || null)
     setLoading(false)
   }
 
@@ -363,6 +367,39 @@ export default function Nutrition() {
           )
         }
         return null
+      })()}
+
+      {/* Cycle nutrition banner */}
+      {isToday && settings.cycle_tracking_enabled && (() => {
+        const phase = inferCyclePhase(
+          settings.cycle_last_period_date,
+          settings.cycle_length_avg,
+          settings.cycle_is_irregular || false,
+          cycleLog ? [cycleLog] : []
+        )
+        const override = cycleLog?.override_intensity
+        const PHASE_NUTRITION = {
+          menstrual:  'You might find iron-rich foods and magnesium helpful right now — think leafy greens, nuts, dark chocolate. Cravings are completely normal and worth listening to.',
+          follicular: 'Rising energy — lighter, fresh foods tend to suit this phase well. A good time to build up protein if you\'re increasing training.',
+          ovulatory:  'Energy tends to be at its peak around now. No specific changes needed — keep fuelling well around sessions.',
+          luteal:     'Complex carbs and magnesium can help with energy and mood in the latter part of this phase. If you\'re noticing PMS symptoms, reducing caffeine might help a little.',
+        }
+        const tip = PHASE_NUTRITION[phase]
+        if (!tip && phase !== 'unknown') return null
+        if (phase === 'unknown' && !cycleLog) return null
+
+        const overrideNote = override === 'rest' ? ' Rest day — keep nutrition easy and hydration up.'
+          : override === 'reduce' ? ' Lighter session — moderate fuelling, no need to aggressively refuel.'
+          : null
+
+        return (
+          <div style={{ margin: '10px 20px 0', padding: '10px 14px', background: 'rgba(232,255,71,0.05)', border: '1px solid rgba(232,255,71,0.15)', borderRadius: 10 }}>
+            <div style={{ fontSize: 10, color: Z.accent, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Nutrition note</div>
+            <div style={{ fontSize: 12, color: '#c8c5bf', lineHeight: 1.6 }}>
+              {tip}{overrideNote}
+            </div>
+          </div>
+        )
       })()}
 
       {/* Clickable stat cards + graph */}

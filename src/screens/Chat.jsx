@@ -6,6 +6,7 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { callClaude } from '../lib/claudeProxy'
 import NudgeCard from '../components/NudgeCard'
+import CycleLogNudge from '../components/CycleLogNudge'
 
 const QUICK_QUESTIONS = [
   "How did my last run look?",
@@ -22,6 +23,7 @@ export default function Chat() {
   const [loading, setLoading] = useState(false)
   const [ctx, setCtx] = useState(null)
   const [nudgeDismissed, setNudgeDismissed] = useState(false)
+  const [showCycleNudge, setShowCycleNudge] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -44,6 +46,15 @@ export default function Chat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    if (!settings.cycle_tracking_enabled) return
+    const today = new Date().toISOString().slice(0, 10)
+    const dismissKey = `cycle_nudge_dismissed_${today}`
+    if (localStorage.getItem(dismissKey)) return
+    supabase.from('cycle_logs').select('id').eq('log_date', today).maybeSingle()
+      .then(({ data }) => { if (!data) setShowCycleNudge(true) })
+  }, [settings.cycle_tracking_enabled])
 
   async function sendMessage(text) {
     const userText = text || input.trim()
@@ -95,6 +106,16 @@ export default function Chat() {
           nudge={activeNudge}
           settings={settings}
           onDismiss={() => setNudgeDismissed(true)}
+        />
+      )}
+
+      {showCycleNudge && (
+        <CycleLogNudge
+          onDismiss={() => {
+            const today = new Date().toISOString().slice(0, 10)
+            localStorage.setItem(`cycle_nudge_dismissed_${today}`, '1')
+            setShowCycleNudge(false)
+          }}
         />
       )}
 
