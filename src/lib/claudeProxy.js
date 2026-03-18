@@ -5,5 +5,8 @@ export async function callClaude({ model, max_tokens, system, messages }) {
     body: { model, max_tokens, system, messages },
   })
   if (error) throw error
+  if (data?.type === 'error') {
+    throw new Error(data.error?.message || JSON.stringify(data.error))
+  }
   return data
 }

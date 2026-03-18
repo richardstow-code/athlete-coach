@@ -26,14 +26,16 @@ serve(async (req) => {
     })
 
     const data = await resp.json()
-    return new Response(JSON.stringify(data), {
+    // Always return 200 so the client can read the body.
+    // Errors from Anthropic are surfaced via data.type === 'error'.
+    return new Response(JSON.stringify({ ...data, _status: resp.status }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: resp.status,
+      status: 200,
     })
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ type: 'error', error: { type: 'proxy_error', message: err.message } }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
+      status: 200,
     })
   }
 })

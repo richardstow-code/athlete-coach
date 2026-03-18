@@ -89,7 +89,7 @@ export default function Chat() {
       })
 
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Check your API key or network.' }])
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}` }])
     }
     setLoading(false)
   }
