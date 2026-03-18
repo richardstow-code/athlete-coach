@@ -50,7 +50,7 @@ export async function buildContext() {
 
     supabase
       .from('athlete_settings')
-      .select('name,dob,height_cm,weight_kg,races')
+      .select('name,dob,height_cm,weight_kg,races,sport,sport_other,goal_type,target_type,target_event_name,target_date,target_description,current_level,health_notes,lifecycle_state')
       .maybeSingle(),
   ])
 
@@ -88,6 +88,16 @@ export function formatContext({
       const age = Math.floor((Date.now() - new Date(settings.dob)) / (365.25 * 24 * 60 * 60 * 1000))
       lines.push(`Age: ${age}`)
     }
+    if (settings.sport) {
+      const sportLabel = settings.sport === 'other' ? (settings.sport_other || 'other') : settings.sport
+      lines.push(`Sport: ${sportLabel}`)
+    }
+    if (settings.current_level)   lines.push(`Level: ${settings.current_level}`)
+    if (settings.lifecycle_state) lines.push(`Phase: ${settings.lifecycle_state.replace('_', ' ')}`)
+    if (settings.target_event_name && settings.target_date) {
+      const daysTo = Math.ceil((new Date(settings.target_date) - new Date()) / (24 * 60 * 60 * 1000))
+      lines.push(`Primary target: ${settings.target_event_name} on ${settings.target_date} (${daysTo}d)${settings.target_description ? ' — ' + settings.target_description : ''}`)
+    }
     const upcoming = (settings.races || [])
       .filter(r => r.date >= new Date().toISOString().slice(0, 10))
       .sort((a, b) => a.date.localeCompare(b.date))
@@ -96,6 +106,7 @@ export function formatContext({
       const daysTo = Math.ceil((new Date(next.date) - new Date()) / (24 * 60 * 60 * 1000))
       lines.push(`Next race: ${next.name} on ${next.date} (${daysTo}d) — target ${next.target}`)
     }
+    if (settings.health_notes) lines.push(`Health: ${settings.health_notes}`)
     if (lines.length > 0) parts.push('ATHLETE:\n' + lines.map(l => `- ${l}`).join('\n'))
   }
 

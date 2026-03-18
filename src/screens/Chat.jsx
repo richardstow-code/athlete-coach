@@ -1,9 +1,11 @@
 import { useSettings } from '../lib/useSettings'
 import { buildSystemPrompt } from '../lib/coachingPrompt'
 import { buildContext, formatContext } from '../lib/buildContext'
+import { getActiveNudge } from '../lib/nudges'
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { callClaude } from '../lib/claudeProxy'
+import NudgeCard from '../components/NudgeCard'
 
 const QUICK_QUESTIONS = [
   "How did my last run look?",
@@ -19,8 +21,15 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [ctx, setCtx] = useState(null)
+  const [nudgeDismissed, setNudgeDismissed] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+
+  // Fire at most one nudge per session, only after settings have loaded
+  // (lifecycle_state being non-null is our signal that the DB fetch completed)
+  const activeNudge = (!nudgeDismissed && settings.lifecycle_state != null)
+    ? getActiveNudge(settings)
+    : null
 
   useEffect(() => {
     buildContext().then(c => {
@@ -80,6 +89,15 @@ export default function Chat() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* NUDGE CARD — fires once per session for the next missing profile field */}
+      {activeNudge && (
+        <NudgeCard
+          nudge={activeNudge}
+          settings={settings}
+          onDismiss={() => setNudgeDismissed(true)}
+        />
+      )}
+
       {/* MESSAGES */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {messages.map((m, i) => (

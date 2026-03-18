@@ -46,6 +46,7 @@ import Progress from './screens/Stats'
 import Nutrition from './screens/Nutrition'
 import ActivityDetail from './screens/ActivityDetail'
 import Settings from './screens/Settings'
+import Onboarding from './screens/Onboarding'
 import PostWorkoutPopup from './components/PostWorkoutPopup'
 
 class ErrorBoundary extends React.Component {
@@ -83,6 +84,7 @@ const Z = {
 
 export default function App() {
   const [session, setSession] = useState(undefined)
+  const [needsOnboarding, setNeedsOnboarding] = useState(null) // null=checking, true/false
   const [activeTab, setActiveTab] = useState('home')
   const [detailId, setDetailId] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -93,6 +95,15 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
     return () => subscription.unsubscribe()
   }, [])
+
+  // Check if the user needs onboarding (no lifecycle_state or explicitly 'onboarding')
+  useEffect(() => {
+    if (!session) { setNeedsOnboarding(null); return }
+    supabase.from('athlete_settings').select('lifecycle_state').maybeSingle()
+      .then(({ data }) => {
+        setNeedsOnboarding(!data || !data.lifecycle_state || data.lifecycle_state === 'onboarding')
+      })
+  }, [session])
 
   // Handle Strava OAuth callback (?code=...&scope=activity:read_all)
   useEffect(() => {
@@ -135,10 +146,12 @@ export default function App() {
     setDetailId(null)
   }
 
-  if (session === undefined) return (
-    <div style={{ height: '100dvh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 28, color: '#e8ff47', letterSpacing: '-1px' }}>COACH</div>
-  )
+  const loading = <div style={{ height: '100dvh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 28, color: '#e8ff47', letterSpacing: '-1px' }}>COACH</div>
+
+  if (session === undefined) return loading
   if (session === null) return <Login />
+  if (needsOnboarding === null) return loading
+  if (needsOnboarding) return <Onboarding onComplete={() => setNeedsOnboarding(false)} />
 
   return (
     <div style={{
