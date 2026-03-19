@@ -13,7 +13,7 @@ const SLIDERS = [
   { key:'tone', label:'Tone', left:'Brutal honesty', right:'Overly British', leftIcon:'💀', rightIcon:'🎩',
     desc: val => val < 30 ? 'Unfiltered. Will hurt.' : val < 60 ? 'Direct but respectful' : 'Frightfully encouraging, old chap' },
   { key:'consequences', label:'Consequences', left:'Gentle nudge', right:'Apocalyptic', leftIcon:'🌱', rightIcon:'🔥',
-    desc: val => val < 30 ? 'Soft encouragement, no drama' : val < 60 ? 'Clear stakes, firm expectations' : 'Every missed session brings Munich closer to disaster' },
+    desc: val => val < 30 ? 'Soft encouragement, no drama' : val < 60 ? 'Clear stakes, firm expectations' : 'Every missed session brings your race closer to disaster' },
   { key:'detail_level', label:'Detail', left:'Headlines only', right:'Deep analysis', leftIcon:'📌', rightIcon:'🔬',
     desc: val => val < 30 ? 'Key point only, move on' : val < 60 ? 'Summary + key insight' : 'Full split analysis, zone breakdowns, biomechanics' },
   { key:'coaching_reach', label:'Coaching reach', left:'Training only', right:'Full lifestyle', leftIcon:'🏃', rightIcon:'🥗',
@@ -56,7 +56,7 @@ function RaceItem({ race, onRemove }) {
 
 const STRAVA_CLIENT_ID = import.meta.env.VITE_STRAVA_CLIENT_ID
 
-export default function Settings({ onClose }) {
+export default function Settings({ onClose, stravaConnectError, onLogout }) {
   const [settings, setSettings] = useState({
     tone:50, consequences:50, detail_level:50, coaching_reach:50,
     name:'', races:[],
@@ -72,7 +72,7 @@ export default function Settings({ onClose }) {
   const [showSports, setShowSports] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [newRace, setNewRace] = useState({ name:'', date:'', distance:'42.2', target:'3:10:00' })
+  const [newRace, setNewRace] = useState({ name:'', date:'', type:'Run', distance:'42.2', target:'3:10:00', elevation:'' })
   const [showRaceForm, setShowRaceForm] = useState(false)
   const [stravaToken, setStravaToken] = useState(null)   // null = loading, false = not connected
   const [stravaStatus, setStravaStatus] = useState(null) // 'syncing' | 'synced' | 'error' | null
@@ -92,12 +92,48 @@ export default function Settings({ onClose }) {
     window.location.href = url
   }
 
+  async function testStravaToken() {
+    const sessionRes = await supabase.auth.getSession()
+    const jwt = sessionRes.data?.session?.access_token
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/strava-sync?test=true`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': import.meta.env.VITE_SUPABASE_KEY,
+        ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+      },
+      body: JSON.stringify({}),
+    })
+    const data = await res.json()
+    setStravaStatus(`diag: ${JSON.stringify(data).slice(0, 200)}`)
+  }
+
   async function syncStrava() {
     setStravaStatus('syncing')
-    const { data, error } = await supabase.functions.invoke('strava-sync', {})
-    if (error) { setStravaStatus('error'); return }
-    setStravaStatus(`synced ${data.synced} activities`)
-    setTimeout(() => setStravaStatus(null), 4000)
+    const sessionRes = await supabase.auth.getSession()
+    const jwt = sessionRes.data?.session?.access_token
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/strava-sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_KEY,
+          ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+        },
+        body: JSON.stringify({}),
+      })
+      const text = await res.text()
+      let data
+      try { data = JSON.parse(text) } catch { data = { error: text } }
+      if (!res.ok || data?.error) {
+        setStravaStatus(`error: ${data?.error || res.status}`)
+      } else {
+        setStravaStatus(`synced ${data?.synced ?? 0} activities`)
+        setTimeout(() => setStravaStatus(null), 4000)
+      }
+    } catch (e) {
+      setStravaStatus(`error: ${e.message}`)
+    }
   }
 
   async function disconnectStrava() {
@@ -132,7 +168,7 @@ export default function Settings({ onClose }) {
     if (!newRace.name || !newRace.date) return
     const updated = { ...settings, races: [...(settings.races || []), newRace] }
     setSettings(updated)
-    setNewRace({ name:'', date:'', distance:'42.2', target:'3:10:00' })
+    setNewRace({ name:'', date:'', type:'Run', distance:'42.2', target:'3:10:00', elevation:'' })
     setShowRaceForm(false)
     // Auto-save immediately so the race isn't lost if the user closes Settings
     await supabase.from('athlete_settings').upsert({ user_id: userId, ...updated, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
@@ -433,6 +469,11 @@ export default function Settings({ onClose }) {
         <div style={{ marginBottom: 32 }}>
           <div style={{ fontSize: 11, color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>Strava</div>
           <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: 16 }}>
+            {stravaConnectError && (
+              <div style={{ background: 'rgba(255,92,92,0.1)', border: `1px solid rgba(255,92,92,0.3)`, borderRadius: 8, padding: '10px 12px', marginBottom: 12, fontSize: 12, color: Z.red }}>
+                ⚠ {stravaConnectError}
+              </div>
+            )}
             {stravaToken === null ? (
               <div style={{ fontSize: 12, color: Z.muted }}>Checking...</div>
             ) : stravaToken ? (
@@ -445,17 +486,24 @@ export default function Settings({ onClose }) {
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={syncStrava} disabled={stravaStatus === 'syncing'} style={{ flex: 1, background: stravaStatus === 'syncing' ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 7, padding: '9px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: stravaStatus === 'syncing' ? 'wait' : 'pointer', color: Z.bg, fontWeight: 600 }}>
-                    {stravaStatus === 'syncing' ? '⏳ Syncing...' : stravaStatus?.startsWith('synced') ? `✓ ${stravaStatus}` : '↓ Sync activities'}
+                    {stravaStatus === 'syncing' ? '⏳ Syncing...' : stravaStatus?.startsWith('synced') ? `✓ ${stravaStatus}` : '↓ Sync now'}
                   </button>
                   <button onClick={disconnectStrava} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 7, padding: '9px 14px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.muted }}>
                     Disconnect
                   </button>
                 </div>
-                {stravaStatus === 'error' && <div style={{ fontSize: 11, color: Z.red, marginTop: 8 }}>Sync failed — check your connection.</div>}
+                {stravaStatus?.startsWith('error') && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, color: Z.red, marginBottom: 6, wordBreak: 'break-word' }}>{stravaStatus}</div>
+                    <button onClick={testStravaToken} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 6, padding: '5px 10px', fontFamily: "'DM Mono', monospace", fontSize: 10, cursor: 'pointer', color: Z.muted }}>
+                      Run token diagnostic
+                    </button>
+                  </div>
+                )}
               </>
             ) : (
               <>
-                <div style={{ fontSize: 12, color: Z.muted, marginBottom: 12, lineHeight: 1.5 }}>Connect Strava to sync your activities automatically.</div>
+                <div style={{ fontSize: 12, color: Z.muted, marginBottom: 12, lineHeight: 1.5 }}>Connect Strava to sync activities automatically. Your last 30 days will be imported immediately.</div>
                 {!STRAVA_CLIENT_ID ? (
                   <div style={{ fontSize: 11, color: Z.amber }}>Set VITE_STRAVA_CLIENT_ID in .env to enable.</div>
                 ) : (
@@ -482,13 +530,21 @@ export default function Settings({ onClose }) {
             <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: 16, marginTop: 8 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                 <div><div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Race name</div>
-                  <input style={inp} placeholder="Munich Marathon" value={newRace.name} onChange={e => setNewRace(r => ({...r, name: e.target.value}))} /></div>
+                  <input style={inp} placeholder="e.g. Munich Marathon" value={newRace.name} onChange={e => setNewRace(r => ({...r, name: e.target.value}))} /></div>
                 <div><div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Date</div>
                   <input style={inp} type="date" value={newRace.date} onChange={e => setNewRace(r => ({...r, date: e.target.value}))} /></div>
+                <div><div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Activity type</div>
+                  <select style={sel} value={newRace.type} onChange={e => setNewRace(r => ({...r, type: e.target.value}))}>
+                    {['Run','Trail Run','Bike','Skimo','Hyrox','Other'].map(t => <option key={t}>{t}</option>)}
+                  </select></div>
                 <div><div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Distance (km)</div>
                   <input style={inp} type="number" value={newRace.distance} onChange={e => setNewRace(r => ({...r, distance: e.target.value}))} /></div>
                 <div><div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Target time</div>
                   <input style={inp} placeholder="3:10:00" value={newRace.target} onChange={e => setNewRace(r => ({...r, target: e.target.value}))} /></div>
+                {['Trail Run','Bike','Skimo'].includes(newRace.type) && (
+                  <div><div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Elevation (m)</div>
+                    <input style={inp} type="number" placeholder="2500" value={newRace.elevation} onChange={e => setNewRace(r => ({...r, elevation: e.target.value}))} /></div>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={addRace} style={{ background: Z.accent, border: 'none', borderRadius: 6, padding: '7px 16px', fontSize: 12, cursor: 'pointer', color: Z.bg, fontFamily: "'DM Mono', monospace" }}>Add</button>
@@ -496,6 +552,20 @@ export default function Settings({ onClose }) {
               </div>
             </div>
           )}
+        </div>
+
+        {/* LOGOUT */}
+        <div style={{ padding: '24px 20px 40px', borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 8 }}>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut()
+              onLogout?.()
+              onClose?.()
+            }}
+            style={{ width: '100%', background: 'none', border: '1px solid rgba(255,92,92,0.3)', borderRadius: 8, padding: '11px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: '#ff5c5c' }}
+          >
+            Sign out
+          </button>
         </div>
       </div>
     </div>

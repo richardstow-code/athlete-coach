@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
 import { usePrimarySport } from '../lib/usePrimarySport'
+import { usePullToRefresh } from '../lib/usePullToRefresh'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -364,11 +365,31 @@ function MicroEvent({ settings, activities, weekSessions, weekActs, phaseSession
     const phaseStart = new Date(targetDate); phaseStart.setDate(phaseStart.getDate() - pw*7)
     if (state === 'training') {
       const totalMs = new Date(targetDate) - phaseStart
-      const elapsedMs = Math.max(0, now - phaseStart)
-      phasePct = (elapsedMs / totalMs) * 100
-      const currentWeek = Math.max(1, Math.ceil(elapsedMs / (7*86400000)))
-      phaseWeekLabel = `Wk ${currentWeek} / ${pw}`
-      phaseName = 'Training phase'
+      const elapsedMs = now - phaseStart
+
+      if (elapsedMs >= 0) {
+        // Inside the formal plan window
+        phasePct = (elapsedMs / totalMs) * 100
+        const currentWeek = Math.max(1, Math.ceil(elapsedMs / (7*86400000)))
+        phaseWeekLabel = `Wk ${currentWeek} / ${pw}`
+        phaseName = 'Training phase'
+      } else {
+        // Before the formal plan — count from the earliest scheduled session (the actual plan start)
+        const sorted = [...phaseSessions].sort((a, b) => a.planned_date.localeCompare(b.planned_date))
+        const firstSessionDate = sorted[0]?.planned_date
+        const trainingStart = firstSessionDate ? new Date(firstSessionDate) : null
+        // Find the Monday of that week so week boundaries align
+        if (trainingStart) {
+          const dow = trainingStart.getDay()
+          trainingStart.setDate(trainingStart.getDate() - (dow === 0 ? 6 : dow - 1))
+          trainingStart.setHours(0, 0, 0, 0)
+        }
+        const weeksIn = trainingStart ? Math.max(1, Math.ceil((now - trainingStart) / (7*86400000))) : 1
+        const weeksToPhase = Math.ceil(-elapsedMs / (7*86400000))
+        phasePct = Math.max(0, ((pw - weeksToPhase) / pw) * 100)
+        phaseWeekLabel = `Base Wk ${weeksIn} · plan in ${weeksToPhase}w`
+        phaseName = 'Base building'
+      }
     } else if (state === 'taper') {
       phasePct = 88; phaseWeekLabel = 'Tapering'; phaseName = 'Taper'
     } else if (state === 'race_week') {
@@ -484,30 +505,38 @@ export default function Progress({ onActivityClick }) {
   const [loading,       setLoading]       = useState(true)
   const [view,          setView]          = useState('macro')
 
-  useEffect(() => {
+  const loadStats = useCallback(async () => {
     const { start, end } = getWeekBounds()
     const weekStartStr = localDateStr(start)
     const weekEndStr   = localDateStr(end)
 
-    // Phase lookback: from estimated training start or 4 months ago
     const pw = phaseWeeksForSport(mergedSettings.sport_category)
+    // Look back from race minus pw weeks OR 12 months ago, whichever is earlier —
+    // so phaseSessions includes base-build sessions before the formal 18-week window
     const phaseStartStr = mergedSettings.target_date
-      ? (() => { const d = new Date(mergedSettings.target_date); d.setDate(d.getDate() - pw*7); return localDateStr(d) })()
+      ? (() => {
+          const fromRace = new Date(mergedSettings.target_date); fromRace.setDate(fromRace.getDate() - pw*7)
+          const twelveMonthsAgo = new Date(); twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1)
+          return localDateStr(fromRace < twelveMonthsAgo ? fromRace : twelveMonthsAgo)
+        })()
       : (() => { const d = new Date(); d.setMonth(d.getMonth()-4); return localDateStr(d) })()
 
-    Promise.all([
+    const [{ data: acts }, { data: wSess }, { data: pSess }, { data: nLogs }] = await Promise.all([
       supabase.from('activities').select('*').order('date', { ascending: false }).limit(200),
       supabase.from('scheduled_sessions').select('*').gte('planned_date', weekStartStr).lte('planned_date', weekEndStr).order('planned_date'),
       supabase.from('scheduled_sessions').select('*').gte('planned_date', phaseStartStr).order('planned_date'),
       supabase.from('nutrition_logs').select('date').gte('date', weekStartStr).lte('date', weekEndStr),
-    ]).then(([{ data: acts }, { data: wSess }, { data: pSess }, { data: nLogs }]) => {
-      setActivities(acts || [])
-      setWeekSessions(wSess || [])
-      setPhaseSessions(pSess || [])
-      setNutritionLogs(nLogs || [])
-      setLoading(false)
-    })
-  }, [primarySport?.target_date, primarySport?.sport_category])
+    ])
+    setActivities(acts || [])
+    setWeekSessions(wSess || [])
+    setPhaseSessions(pSess || [])
+    setNutritionLogs(nLogs || [])
+    setLoading(false)
+  }, [primarySport?.target_date, primarySport?.sport_category]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadStats() }, [loadStats])
+
+  const { containerRef: statsContainerRef, pullDistance: statsPullDist, refreshing: statsRefreshing } = usePullToRefresh(loadStats)
 
   const now = new Date()
   const { start: weekStart } = getWeekBounds()
@@ -546,7 +575,12 @@ export default function Progress({ onActivityClick }) {
   const pbElev = pbSource.reduce((b, a) => parseFloat(a.elevation_m) > parseFloat(b?.elevation_m||0) ? a : b, null)
 
   return (
-    <div style={{ overflowY:'auto', height:'100%', fontFamily:"'DM Mono', monospace" }}>
+    <div ref={statsContainerRef} style={{ overflowY:'auto', height:'100%', fontFamily:"'DM Mono', monospace" }}>
+      {(statsPullDist > 0 || statsRefreshing) && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: Math.max(statsPullDist, statsRefreshing ? 48 : 0), overflow: 'hidden', color: '#888580', fontSize: '12px', letterSpacing: '0.06em' }}>
+          {statsRefreshing ? 'Refreshing...' : statsPullDist > 72 ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      )}
 
       {/* HEADER + TOGGLE */}
       <div style={{ padding:'14px 20px', borderBottom:`1px solid ${Z.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>

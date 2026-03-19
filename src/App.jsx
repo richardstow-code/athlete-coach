@@ -113,6 +113,7 @@ import Settings from './screens/Settings'
 import Onboarding from './screens/Onboarding'
 import PostWorkoutPopup from './components/PostWorkoutPopup'
 import PostEventModal from './components/PostEventModal'
+import WorkoutIngest from './screens/WorkoutIngest'
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
@@ -157,6 +158,11 @@ export default function App() {
   const [pendingChanges, setPendingChanges] = useState(0)
   const [profileIncomplete, setProfileIncomplete] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showWorkoutIngest, setShowWorkoutIngest] = useState(false)
+  const [stravaConnecting, setStravaConnecting] = useState(false)
+  const [stravaConnectError, setStravaConnectError] = useState(null)
+  const [stravaConnected, setStravaConnected] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -172,7 +178,7 @@ export default function App() {
       supabase.from('athlete_settings').select('goal_type').maybeSingle(),
       supabase.from('athlete_sports').select('*').eq('is_active', true).order('created_at'),
     ]).then(([{ data: settingsData }, { data: sportsData }]) => {
-      setNeedsOnboarding(!settingsData || !settingsData.goal_type)
+      setNeedsOnboarding(!settingsData)
 
       setProfileIncomplete(!!settingsData && !settingsData.goal_type)
 
@@ -196,16 +202,61 @@ export default function App() {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
     const scope = params.get('scope')
+    // Also handle Strava errors (user denied)
+    const stravaError = params.get('error')
+    if (stravaError) {
+      window.history.replaceState({}, '', window.location.pathname)
+      setStravaConnectError('Strava authorisation was denied. Try connecting again.')
+      setShowSettings(true)
+      return
+    }
     if (!code || !scope?.includes('activity')) return
 
     // Clean the URL immediately so a refresh doesn't re-trigger
     window.history.replaceState({}, '', window.location.pathname)
+    setStravaConnecting(true)
+    setStravaConnectError(null)
 
-    supabase.functions.invoke('strava-exchange', {
-      body: { code, redirect_uri: window.location.origin },
-    }).then(({ error }) => {
-      if (error) console.error('Strava exchange failed:', error)
-      setShowSettings(true) // Return user to Settings to see the connected state
+    // Explicitly get the session token — supabase.functions.invoke can race
+    // on a fresh page load (post-OAuth redirect) and send the anon key instead
+    supabase.auth.getSession().then(({ data: { session: sess } }) => {
+      const jwt = sess?.access_token
+      return fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/strava-exchange`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_KEY,
+          ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+        },
+        body: JSON.stringify({ code, redirect_uri: window.location.origin }),
+      }).then(r => r.json())
+    }).then(data => {
+      setStravaConnecting(false)
+      if (data?.error) {
+        setStravaConnectError(data.error + (data.detail ? ` — ${data.detail}` : ''))
+      } else {
+        // Success — show confirmation banner and sync last 30 days
+        setStravaConnected(true)
+        setTimeout(() => setStravaConnected(false), 4000)
+        // Explicitly get session JWT — same race-condition fix as strava-exchange
+        supabase.auth.getSession().then(({ data: { session: sess } }) => {
+          const jwt = sess?.access_token
+          return fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/strava-sync`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': import.meta.env.VITE_SUPABASE_KEY,
+              ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+            },
+            body: JSON.stringify({ after: Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000) }),
+          })
+        }).then(() => setRefreshKey(k => k + 1)).catch(e => console.warn('Background sync error:', e))
+      }
+      setShowSettings(true)
+    }).catch(err => {
+      setStravaConnecting(false)
+      setStravaConnectError(err.message || 'Strava connection failed')
+      setShowSettings(true)
     })
   }, [session])
 
@@ -268,8 +319,27 @@ export default function App() {
         />
       )}
 
+      {/* STRAVA CONNECTING OVERLAY */}
+      {stravaConnecting && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 400, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Mono', monospace" }}>
+          <div style={{ fontSize: 32, marginBottom: 16 }}>🔗</div>
+          <div style={{ fontSize: 14, color: '#f0ede8', marginBottom: 8 }}>Connecting Strava…</div>
+          <div style={{ fontSize: 12, color: '#888580' }}>Exchanging authorisation token</div>
+        </div>
+      )}
+
+      {/* STRAVA CONNECTED TOAST */}
+      {stravaConnected && (
+        <div style={{ position: 'fixed', top: 56, left: '50%', transform: 'translateX(-50%)', zIndex: 500, background: '#4dff91', color: '#0a0a0a', borderRadius: 20, padding: '8px 18px', fontSize: 12, fontFamily: "'DM Mono', monospace", fontWeight: 600, whiteSpace: 'nowrap', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+          ✓ Strava connected — syncing activities
+        </div>
+      )}
+
       {/* SETTINGS OVERLAY */}
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {showSettings && <Settings onClose={() => { setShowSettings(false); setStravaConnectError(null) }} stravaConnectError={stravaConnectError} onLogout={() => setShowSettings(false)} />}
+
+      {/* WORKOUT INGEST OVERLAY */}
+      {showWorkoutIngest && <WorkoutIngest onClose={() => setShowWorkoutIngest(false)} />}
 
       {/* ONBOARDING OVERLAY — re-openable from "Complete profile" chip */}
       {showOnboarding && (
@@ -315,6 +385,15 @@ export default function App() {
               Complete profile
             </button>
           )}
+          <button onClick={() => setShowWorkoutIngest(true)} title="Log workout from photo" style={{
+            width: 32, height: 32, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            cursor: 'pointer', fontSize: 15,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            📷
+          </button>
           <button onClick={() => setShowSettings(true)} style={{
             width: 32, height: 32, borderRadius: '50%',
             background: 'rgba(232,255,71,0.12)',
@@ -333,11 +412,11 @@ export default function App() {
           <ActivityDetail stravaId={detailId} onBack={closeActivity} />
         ) : (
           <>
-            {activeTab === 'home'      && <ErrorBoundary><Home onActivityClick={openActivity} /></ErrorBoundary>}
+            {activeTab === 'home'      && <ErrorBoundary><Home key={refreshKey} onActivityClick={openActivity} /></ErrorBoundary>}
             {activeTab === 'chat'      && <ErrorBoundary><Chat /></ErrorBoundary>}
-            {activeTab === 'plan'      && <ErrorBoundary><Plan onActivityClick={openActivity} /></ErrorBoundary>}
-            {activeTab === 'stats'     && <ErrorBoundary><Progress onActivityClick={openActivity} /></ErrorBoundary>}
-            {activeTab === 'nutrition' && <ErrorBoundary><Nutrition /></ErrorBoundary>}
+            {activeTab === 'plan'      && <ErrorBoundary><Plan key={refreshKey} onActivityClick={openActivity} /></ErrorBoundary>}
+            {activeTab === 'stats'     && <ErrorBoundary><Progress key={refreshKey} onActivityClick={openActivity} /></ErrorBoundary>}
+            {activeTab === 'nutrition' && <ErrorBoundary><Nutrition key={refreshKey} /></ErrorBoundary>}
           </>
         )}
       </main>

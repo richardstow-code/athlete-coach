@@ -47,22 +47,88 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const jwt = req.headers.get('Authorization')?.replace('Bearer ', '')
-    if (!jwt) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
-
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt)
-    if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
-
+    const url = new URL(req.url)
     const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {}
-    // Default: sync last 90 days; caller can pass a unix timestamp to sync from
-    const after: number = body.after ?? Math.floor((Date.now() - 90 * 24 * 60 * 60 * 1000) / 1000)
 
-    const accessToken = await getValidAccessToken(supabase, user.id)
+    // Support cron/service-role mode: sync all users who have Strava tokens
+    const isCronMode = body.cron === true
+    if (!isCronMode) {
+      const jwt = req.headers.get('Authorization')?.replace('Bearer ', '')
+      if (!jwt) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+      const { data: { user }, error: authError } = await supabase.auth.getUser(jwt)
+      if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+      body.user_id = user.id
+    }
+
+    // Diagnostic test mode — returns raw Strava API response for debugging
+    if (url.searchParams.get('test') === 'true' && !isCronMode) {
+      const { data: tokenRow } = await supabase.from('strava_tokens').select('*').eq('user_id', body.user_id).single()
+      if (!tokenRow) return new Response(JSON.stringify({ error: 'No token row found' }), { headers: corsHeaders })
+      const after = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000)
+      const stravaRes = await fetch(
+        `https://www.strava.com/api/v3/athlete/activities?after=${after}&per_page=5&page=1`,
+        { headers: { Authorization: `Bearer ${tokenRow.access_token}` } },
+      )
+      const stravaBody = await stravaRes.text()
+      return new Response(JSON.stringify({
+        strava_status: stravaRes.status,
+        strava_body: stravaBody.slice(0, 1000),
+        token_expires_at: tokenRow.expires_at,
+        token_athlete_id: tokenRow.athlete_id,
+        now_unix: Math.floor(Date.now() / 1000),
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    // Default: sync last 2 days for cron, 90 days for manual
+    const after: number = body.after ?? Math.floor((Date.now() - (isCronMode ? 2 : 90) * 24 * 60 * 60 * 1000) / 1000)
+
+    // Get list of users to sync
+    let userIds: string[] = []
+    if (isCronMode) {
+      const { data: tokens } = await supabase.from('strava_tokens').select('user_id')
+      userIds = (tokens || []).map((t: { user_id: string }) => t.user_id)
+    } else {
+      userIds = [body.user_id]
+    }
+
+    let totalSynced = 0
+    const errors: string[] = []
+    for (const userId of userIds) {
+      try {
+        totalSynced += await syncUser(supabase, userId, after)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error(`Sync failed for user ${userId}:`, msg)
+        if (!isCronMode) errors.push(msg) // surface errors in manual mode
+      }
+    }
+
+    if (!isCronMode && errors.length > 0) {
+      return new Response(
+        JSON.stringify({ error: errors[0], synced: totalSynced }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+
+    return new Response(
+      JSON.stringify({ synced: totalSynced, users: userIds.length }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err.message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
+  }
+})
+
+async function syncUser(supabase: ReturnType<typeof createClient>, userId: string, after: number): Promise<number> {
+    const accessToken = await getValidAccessToken(supabase, userId)
 
     // Fetch all pages of activities from Strava
     const activities = []
@@ -72,21 +138,19 @@ serve(async (req) => {
         `https://www.strava.com/api/v3/athlete/activities?after=${after}&per_page=100&page=${page}`,
         { headers: { Authorization: `Bearer ${accessToken}` } },
       )
-      if (!res.ok) throw new Error(`Strava API error: ${res.status}`)
       const batch = await res.json()
-      if (!batch.length) break
+      if (!res.ok) throw new Error(`Strava API error ${res.status}: ${JSON.stringify(batch)}`)
+      if (!Array.isArray(batch) || batch.length === 0) break
       activities.push(...batch)
       if (batch.length < 100) break
       page++
     }
 
-    if (!activities.length) {
-      return new Response(JSON.stringify({ synced: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
+    if (!activities.length) return 0
 
     // Map Strava fields to the activities table schema
     const rows = activities.map((a: Record<string, unknown>) => ({
-      user_id: user.id,
+      user_id: userId,
       strava_id: String(a.id),
       date: (a.start_date_local as string).slice(0, 10),
       name: a.name,
@@ -116,14 +180,5 @@ serve(async (req) => {
 
     if (upsertError) throw upsertError
 
-    return new Response(
-      JSON.stringify({ synced: rows.length }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
-  }
-})
+    return rows.length
+}

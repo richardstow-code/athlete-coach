@@ -1,10 +1,11 @@
 import SessionDetail from '../components/SessionDetail'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
 import { usePrimarySport } from '../lib/usePrimarySport'
 import { buildSystemPrompt, fetchAndBuildPrompt } from '../lib/coachingPrompt'
 import { callClaude } from '../lib/claudeProxy'
+import { usePullToRefresh } from '../lib/usePullToRefresh'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -372,28 +373,32 @@ export default function Plan({ onActivityClick }) {
   weekEnd.setDate(weekEnd.getDate() + 6)
   weekEnd.setHours(23,59,59,999)
 
-  useEffect(() => {
+  const loadWeek = useCallback(async () => {
     const ws = localDateStr(weekStart)
     const we = localDateStr(weekEnd)
 
-    Promise.all([
+    const [{data: sess}, {data: acts}, {data: chg}] = await Promise.all([
       supabase.from('scheduled_sessions').select('*').gte('planned_date', ws).lte('planned_date', we).order('planned_date'),
       supabase.from('activities').select('*').gte('date', ws).lte('date', we).order('date'),
       supabase.from('schedule_changes').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
-    ]).then(([{data: sess}, {data: acts}, {data: chg}]) => {
-      setSessions(sess || [])
-      setActivities(acts || [])
-      setChanges(chg || [])
-      // Stats
-      const runs = (acts || []).filter(a => a.type?.toLowerCase().includes('run'))
-      setWeekStats({
-        km: runs.reduce((s, a) => s + parseFloat(a.distance_km || 0), 0),
-        elev: runs.reduce((s, a) => s + parseFloat(a.elevation_m || 0), 0),
-        runs: runs.length,
-        strength: (acts || []).filter(a => a.type?.toLowerCase().includes('weight')).length,
-      })
+    ])
+    setSessions(sess || [])
+    setActivities(acts || [])
+    setChanges(chg || [])
+    const allActs = acts || []
+    const runs = allActs.filter(a => a.type?.toLowerCase().includes('run'))
+    setWeekStats({
+      km: allActs.reduce((s, a) => s + parseFloat(a.distance_km || 0), 0),
+      elev: allActs.reduce((s, a) => s + parseFloat(a.elevation_m || 0), 0),
+      runs: runs.length,
+      strength: allActs.filter(a => a.type?.toLowerCase().includes('weight') || a.type?.toLowerCase().includes('strength')).length,
+      sessions: allActs.length,
     })
-  }, [weekOffset])
+  }, [weekOffset]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadWeek() }, [loadWeek])
+
+  const { containerRef: planContainerRef, pullDistance: planPullDist, refreshing: planRefreshing } = usePullToRefresh(loadWeek)
 
   // Mismatch detection — runs once on mount when current week data is loaded
   useEffect(() => {
@@ -493,13 +498,22 @@ export default function Plan({ onActivityClick }) {
 
   // Match activity to session by date + type
   function matchActivity(session) {
-    const typeMap = { run: ['run','trailrun','trail'], trail: ['trail','trailrun','run'], strength: ['weighttraining','strength'], rest: [] }
-    const types = typeMap[session.session_type] || []
+    const typeMap = { run: ['run','trailrun','trail'], trail: ['trail','trailrun','run'], strength: ['weighttraining','strength'] }
+    const types = typeMap[session.session_type]
     return activities.find(a => {
       const aDate = a.date?.slice(0,10)
-      return aDate === session.planned_date && types.some(t => a.type?.toLowerCase().includes(t))
+      if (aDate !== session.planned_date) return false
+      // Rest sessions match any activity (athlete chose to train on a rest day)
+      if (!types) return true
+      return types.some(t => a.type?.toLowerCase().includes(t))
     })
   }
+
+  // Activities that don't match any planned session (logged on unscheduled days)
+  const orphanActivities = activities.filter(a => {
+    const aDate = a.date?.slice(0,10)
+    return !sessions.some(s => s.planned_date === aDate && matchActivity(s)?.strava_id === a.strava_id)
+  })
 
   async function approveChange(changeId) {
     const change = changes.find(c => c.id === changeId)
@@ -586,7 +600,12 @@ export default function Plan({ onActivityClick }) {
   const plannedStrength = sessions.filter(s => s.session_type === 'strength').length
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
+    <div ref={planContainerRef} style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
+      {(planPullDist > 0 || planRefreshing) && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: Math.max(planPullDist, planRefreshing ? 48 : 0), overflow: 'hidden', color: '#888580', fontSize: '12px', letterSpacing: '0.06em' }}>
+          {planRefreshing ? 'Refreshing...' : planPullDist > 72 ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      )}
 
       {/* RACES */}
       <div style={{ padding: '14px 20px 0' }}>
@@ -643,7 +662,7 @@ export default function Plan({ onActivityClick }) {
         <button onClick={() => setWeekOffset(w => w - 1)} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 6, padding: '4px 12px', color: Z.muted, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>← prev</button>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 12, color: Z.text, fontWeight: 500 }}>{weekLabel}</div>
-          <div style={{ fontSize: 10, color: Z.muted, marginTop: 1 }}>{weekStats.runs}/{plannedRuns} runs · {weekStats.km.toFixed(1)}km · {weekStats.elev}m elev</div>
+          <div style={{ fontSize: 10, color: Z.muted, marginTop: 1 }}>{weekStats.sessions || 0} sessions · {weekStats.km.toFixed(1)}km · {Math.round(weekStats.elev)}m elev</div>
         </div>
         <button onClick={() => setWeekOffset(w => Math.min(4, w + 1))} disabled={weekOffset >= 4} style={{ background: 'none', border: `1px solid ${weekOffset >= 4 ? Z.border : Z.border2}`, borderRadius: 6, padding: '4px 12px', color: weekOffset >= 4 ? '#333' : Z.muted, fontSize: 11, cursor: weekOffset >= 4 ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace" }}>next →</button>
       </div>
@@ -666,13 +685,48 @@ export default function Plan({ onActivityClick }) {
       </div>
 
       {/* SESSION LIST */}
-      <div style={{ padding: '0 20px 32px' }}>
+      <div style={{ padding: '0 20px', paddingBottom: orphanActivities.length > 0 ? 0 : 32 }}>
         {sessions.length === 0 ? (
           <div style={{ padding: '20px 0', color: Z.muted, fontSize: 13 }}>No sessions scheduled for this week.</div>
         ) : sessions.map(s => (
           <SessionRow key={s.id} session={s} activity={matchActivity(s)} isToday={s.planned_date === today} onActivityClick={onActivityClick} onSessionClick={matchActivity(s) ? undefined : setSelectedSession} />
         ))}
       </div>
+
+      {/* ORPHAN ACTIVITIES — logged on days with no planned session */}
+      {orphanActivities.length > 0 && (
+        <div style={{ padding: '0 20px 32px' }}>
+          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 0 6px' }}>Unplanned</div>
+          {orphanActivities.map(a => (
+            <div key={a.strava_id} onClick={() => onActivityClick?.(a.strava_id)}
+              style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${Z.border}`, cursor: 'pointer' }}>
+              <div style={{ width: 38, flexShrink: 0, textAlign: 'center', paddingTop: 2 }}>
+                <div style={{ fontSize: 10, color: a.date?.slice(0,10) === today ? Z.accent : Z.muted, fontWeight: a.date?.slice(0,10) === today ? 600 : 400, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {new Date(a.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' })}
+                </div>
+                <div style={{ fontSize: 12, color: Z.muted, marginTop: 1 }}>
+                  {new Date(a.date + 'T12:00:00').getDate()}
+                </div>
+                <div style={{ fontSize: 18, marginTop: 2 }}>{typeIcon[a.type?.toLowerCase()] || '🏃'}</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ fontSize: 13, color: Z.text, fontWeight: 500 }}>{a.name}</div>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, marginLeft: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12,
+                    background: 'rgba(77,255,145,0.15)', border: `2px solid ${Z.green}`, color: Z.green }}>✓</div>
+                </div>
+                <div style={{ fontSize: 10, color: typeColor[a.type?.toLowerCase()] || Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>
+                  {a.type} · unplanned
+                </div>
+                <div style={{ marginTop: 6, display: 'inline-flex', gap: 8, background: 'rgba(77,255,145,0.08)', border: '1px solid rgba(77,255,145,0.2)', borderRadius: 6, padding: '5px 10px', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: Z.green }}>✓ {parseFloat(a.distance_km||0).toFixed(1)}km</span>
+                  <span style={{ fontSize: 11, color: Z.muted }}>HR {Math.round(a.avg_hr||0)} →</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* SESSION DETAIL */}
       {selectedSession && <SessionDetail session={selectedSession} onClose={() => setSelectedSession(null)} />}

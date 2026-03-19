@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
 import { buildSystemPrompt } from '../lib/coachingPrompt'
 import { callClaude } from '../lib/claudeProxy'
 import { inferCyclePhase } from '../lib/inferCyclePhase'
+import { usePullToRefresh } from '../lib/usePullToRefresh'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -213,7 +214,7 @@ export default function Nutrition() {
   const weekStart = (() => { const d = new Date(); const dow = d.getDay(); d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1)); return d.toISOString().slice(0,10) })()
   const weekUnits = entries7.filter(e => e.meal_type === 'alcohol').reduce((s, e) => s + parseFloat(e.alcohol_units || 0), 0)
 
-  async function load() {
+  const load = useCallback(async () => {
     const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString().slice(0,10)
     const todayStr = new Date().toISOString().slice(0, 10)
     const [{ data: all }, { data: w7 }, { data: sessions }, { data: acts }, { data: cLog }] = await Promise.all([
@@ -229,9 +230,11 @@ export default function Nutrition() {
     setTodayActivity(acts?.[0] || null)
     setCycleLog(cLog || null)
     setLoading(false)
-  }
+  }, [logDate])
 
-  useEffect(() => { load() }, [logDate])
+  useEffect(() => { load() }, [load])
+
+  const { containerRef: nutriContainerRef, pullDistance: nutriPullDist, refreshing: nutriRefreshing } = usePullToRefresh(load)
 
   function toggleMetric(key) {
     setActiveMetrics(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
@@ -295,7 +298,12 @@ export default function Nutrition() {
   const isToday = logDate === new Date().toISOString().slice(0, 10)
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
+    <div ref={nutriContainerRef} style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
+      {(nutriPullDist > 0 || nutriRefreshing) && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: Math.max(nutriPullDist, nutriRefreshing ? 48 : 0), overflow: 'hidden', color: '#888580', fontSize: '12px', letterSpacing: '0.06em' }}>
+          {nutriRefreshing ? 'Refreshing...' : nutriPullDist > 72 ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      )}
       {/* Header */}
       <div style={{ padding: '14px 20px 10px', borderBottom: `1px solid ${Z.border}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

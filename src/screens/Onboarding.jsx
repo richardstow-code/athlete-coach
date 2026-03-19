@@ -140,7 +140,6 @@ export default function Onboarding({ onComplete }) {
       await supabase.from('athlete_settings').upsert({
         user_id:       user.id,
         goal_type:     goalType,
-        target_raw:    targetRaw || null,
         current_level: LEVELS[levelIndex].value,
         updated_at:    new Date().toISOString(),
       }, { onConflict: 'user_id' })
@@ -173,6 +172,13 @@ export default function Onboarding({ onComplete }) {
         updated_at: new Date().toISOString(),
       }
       await supabase.from('athlete_settings').upsert(final, { onConflict: 'user_id' })
+
+      // 5. Kick off historical Strava sync in background (non-blocking)
+      // Fetches last 20 activities (~60 days) so the app is useful immediately
+      supabase.functions.invoke('strava-sync', {
+        body: { after: Math.floor((Date.now() - 60 * 24 * 60 * 60 * 1000) / 1000) },
+      }).catch(() => { /* non-fatal — user may not have Strava connected yet */ })
+
       onComplete()
     } catch (err) {
       setError(err.message || 'Something went wrong. Try again.')

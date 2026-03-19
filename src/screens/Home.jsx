@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
 import { usePrimarySport } from '../lib/usePrimarySport'
+import { usePullToRefresh } from '../lib/usePullToRefresh'
 
 const S = {
   page: { overflowY: 'auto', height: '100%' },
@@ -72,29 +73,31 @@ export default function Home({ onActivityClick }) {
   const [briefing, setBriefing] = useState(null)
   const [loading, setLoading] = useState(true)
   const [todayNutrition, setTodayNutrition] = useState({ kcal: 0, protein: 0, logged: false })
+  const [statFilter, setStatFilter] = useState('All')
 
-  useEffect(() => {
-    async function load() {
-      const todayStr = new Date().toISOString().slice(0, 10)
-      const [{ data: acts }, { data: brief }, { data: nutri }] = await Promise.all([
-        supabase.from('activities').select('*').order('date', { ascending: false }).limit(5),
-        supabase.from('daily_briefings').select('id, date, briefing_text, created_at').order('created_at', { ascending: false }).limit(1),
-        supabase.from('nutrition_logs').select('calories,protein_g,meal_type').eq('date', todayStr),
-      ])
-      if (acts) setActivities(acts)
-      if (brief && brief[0]) setBriefing(brief[0])
-      if (nutri) {
-        const food = nutri.filter(n => n.meal_type !== 'alcohol')
-        setTodayNutrition({
-          kcal: food.reduce((s, n) => s + (n.calories || 0), 0),
-          protein: Math.round(food.reduce((s, n) => s + parseFloat(n.protein_g || 0), 0)),
-          logged: nutri.length > 0,
-        })
-      }
-      setLoading(false)
+  const load = useCallback(async () => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const [{ data: acts }, { data: brief }, { data: nutri }] = await Promise.all([
+      supabase.from('activities').select('*').order('date', { ascending: false }).limit(20),
+      supabase.from('daily_briefings').select('id, date, briefing_text, created_at').order('created_at', { ascending: false }).limit(1),
+      supabase.from('nutrition_logs').select('calories,protein_g,meal_type').eq('date', todayStr),
+    ])
+    if (acts) setActivities(acts)
+    if (brief && brief[0]) setBriefing(brief[0])
+    if (nutri) {
+      const food = nutri.filter(n => n.meal_type !== 'alcohol')
+      setTodayNutrition({
+        kcal: food.reduce((s, n) => s + (n.calories || 0), 0),
+        protein: Math.round(food.reduce((s, n) => s + parseFloat(n.protein_g || 0), 0)),
+        logged: nutri.length > 0,
+      })
     }
-    load()
+    setLoading(false)
   }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const { containerRef, pullDistance, refreshing } = usePullToRefresh(load)
 
   // Calculate this week's stats (week starts Monday)
   const weekStart = new Date()
@@ -103,9 +106,17 @@ export default function Home({ onActivityClick }) {
   weekStart.setDate(weekStart.getDate() - _daysFromMon)
   weekStart.setHours(0, 0, 0, 0)
   const weekActs = activities.filter(a => new Date(a.date) >= weekStart)
-  const weekKm = weekActs.reduce((s, a) => s + (parseFloat(a.distance_km) || 0), 0)
-  const weekElev = weekActs.reduce((s, a) => s + (parseFloat(a.elevation_m) || 0), 0)
-  const weekStrength = weekActs.filter(a => a.type?.toLowerCase().includes('weight')).length
+  const isRun = a => a.type?.toLowerCase().includes('run')
+  const isBike = a => a.type?.toLowerCase().includes('ride') || a.type?.toLowerCase().includes('cycl') || a.type?.toLowerCase().includes('bike')
+  const isStrengthAct = a => a.type?.toLowerCase().includes('weight') || a.type?.toLowerCase().includes('strength') || a.type?.toLowerCase().includes('workout')
+  const filteredActs = statFilter === 'All' ? weekActs
+    : statFilter === 'Runs' ? weekActs.filter(isRun)
+    : statFilter === 'Bike' ? weekActs.filter(isBike)
+    : weekActs.filter(isStrengthAct)
+  const weekKm = filteredActs.reduce((s, a) => s + (parseFloat(a.distance_km) || 0), 0)
+  const weekElev = filteredActs.reduce((s, a) => s + (parseFloat(a.elevation_m) || 0), 0)
+  const weekSessions = filteredActs.length
+  const weekStrength = weekActs.filter(isStrengthAct).length
 
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const targetDate = primarySport?.target_date ? new Date(primarySport.target_date) : null
@@ -116,7 +127,13 @@ export default function Home({ onActivityClick }) {
   const lastRun = activities.find(a => a.type?.toLowerCase().includes('run'))
 
   return (
-    <div style={S.page}>
+    <div ref={containerRef} style={S.page}>
+      {/* PULL-TO-REFRESH INDICATOR */}
+      {(pullDistance > 0 || refreshing) && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: Math.max(pullDistance, refreshing ? 48 : 0), overflow: 'hidden', transition: refreshing ? 'none' : 'height 0.1s', color: '#888580', fontSize: '12px', letterSpacing: '0.06em' }}>
+          {refreshing ? 'Refreshing...' : pullDistance > 72 ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      )}
       <div style={S.hero}>
         <div style={S.label}>{today}</div>
         <div style={S.greeting}>
@@ -131,10 +148,17 @@ export default function Home({ onActivityClick }) {
         )}
       </div>
 
+      {/* STAT FILTER PILLS */}
+      <div style={{ display: 'flex', gap: '6px', padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', overflowX: 'auto' }}>
+        {['All', 'Runs', 'Bike', 'Strength'].map(f => (
+          <button key={f} onClick={() => setStatFilter(f)} style={{ background: statFilter === f ? '#e8ff47' : 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '20px', padding: '4px 12px', fontSize: '11px', fontFamily: "'DM Mono', monospace", cursor: 'pointer', color: statFilter === f ? '#0a0a0a' : '#888580', whiteSpace: 'nowrap', fontWeight: statFilter === f ? 600 : 400 }}>{f}</button>
+        ))}
+      </div>
+
       <div style={S.statStrip}>
         <div style={S.statCell}>
-          <div style={{ ...S.statVal, color: '#e8ff47' }}>{weekKm.toFixed(1)}</div>
-          <div style={S.statLbl}>km this wk</div>
+          <div style={{ ...S.statVal, color: '#e8ff47' }}>{weekKm > 0 ? weekKm.toFixed(1) : weekSessions}</div>
+          <div style={S.statLbl}>{weekKm > 0 ? 'km this wk' : 'sessions'}</div>
         </div>
         <div style={S.statCell}>
           <div style={{ ...S.statVal, color: '#47d4ff' }}>{Math.round(weekElev)}</div>
