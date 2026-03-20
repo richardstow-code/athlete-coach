@@ -9,6 +9,8 @@
 
 const SUPABASE_URL = 'https://yjuhzmknabedjklsgbje.supabase.co'
 const TZ = 'Europe/Vienna'
+// Single-user app — user_id required for RLS-aware tables even with service_role
+const ATHLETE_USER_ID = '40cfe68e-faea-491c-b410-0093572f02d6'
 
 function viennaDate(ts) {
   return new Date(ts).toLocaleDateString('en-CA', { timeZone: TZ })
@@ -86,6 +88,7 @@ function enrichActivity(activity) {
   return {
     activityRow: {
       strava_id: String(activity.id),
+      user_id: ATHLETE_USER_ID,
       date,
       name: activity.name,
       type: activity.type,
@@ -174,8 +177,9 @@ async function insertCoachingMemory(activityId, date, feedback) {
       source: 'activity-trigger',
       category: 'activity_feedback',
       content: feedback,
-      activity_id: activityId,
+      activity_id: parseInt(activityId, 10),
       date,
+      user_id: ATHLETE_USER_ID,
     }),
   })
   if (!res.ok) {
