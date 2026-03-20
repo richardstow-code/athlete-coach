@@ -240,21 +240,21 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { object_type, object_id, aspect_type } = req.body || {}
 
-    // Always return 200 immediately — Strava requires response within 2s
-    res.status(200).json({ received: true })
-
-    // Only process new activity creates
+    // Ignore non-activity events immediately
     if (object_type !== 'activity' || aspect_type !== 'create') {
       console.log(`[strava-webhook] Ignored: ${object_type}/${aspect_type}`)
-      return
+      return res.status(200).json({ received: true })
     }
 
-    // Process asynchronously after responding
-    processActivity(object_id).catch(err => {
+    // Process synchronously so Vercel doesn't kill the function after response.
+    // Strava retries are safe — upsert on strava_id prevents duplicates.
+    try {
+      await processActivity(object_id)
+    } catch (err) {
       console.error(`[strava-webhook] Processing failed for activity ${object_id}:`, err.message)
-    })
-
-    return
+      // Still return 200 — never let Strava see a 5xx
+    }
+    return res.status(200).json({ received: true })
   }
 
   return res.status(405).json({ error: 'Method not allowed' })

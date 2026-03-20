@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/strava-webhook.js": {
+      "maxDuration": 60
+    }
+  }
+}
