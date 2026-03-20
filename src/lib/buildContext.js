@@ -24,7 +24,7 @@ export async function buildContext() {
       .from('activities')
       .select('name,date,type,distance_km,duration_min,avg_hr,max_hr,elevation_m,pace_per_km,zone_data')
       .order('date', { ascending: false })
-      .limit(5),
+      .limit(10),
 
     supabase
       .from('scheduled_sessions')

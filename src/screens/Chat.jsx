@@ -120,8 +120,9 @@ export default function Chat() {
     setInput('')
 
     const contextBlock = ctx ? formatContext(ctx) : ''
+    const sessionInstruction = '\n\nBefore interpreting any user message that refers to a training session, check the RECENT ACTIVITIES in the context above. If an activity exists today or yesterday that matches the session being described (by type, effort level, or duration), treat the message as referring to a COMPLETED session — not a planned one. Do not ask for clarification if the activity data already makes this clear. Only treat a session as planned or hypothetical if no matching activity exists. When a session is already completed, do not re-litigate whether it should have been done — focus only on forward-looking advice.'
     const jsonInstruction = '\n\nRespond in JSON only: {"response":"<your message>","planChange":null}. Set planChange to {"change_type":"reschedule","title":"...","reasoning":"...","new_date":"YYYY-MM-DD or null","new_notes":"... or null","new_intensity":"easy|moderate|hard or null"} ONLY when the athlete explicitly asks to change a training session.'
-    const systemPrompt = buildSystemPrompt(settings) + (contextBlock ? '\n\n' + contextBlock : '') + jsonInstruction
+    const systemPrompt = buildSystemPrompt(settings) + (contextBlock ? '\n\n' + contextBlock : '') + sessionInstruction + jsonInstruction
 
     const newMessages = [...messages, { role: 'user', content: userText }]
     setMessages(newMessages)
@@ -138,11 +139,21 @@ export default function Chat() {
       let reply = rawText
       let planChange = null
       try {
-        const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim())
-        reply = parsed.response || rawText
-        planChange = parsed.planChange || null
-      } catch {
-        // Not JSON — use raw text as reply
+        // Strip markdown code fences (handles ```json ... ``` and ``` ... ```)
+        let cleaned = rawText.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '').trim()
+        // If not a bare JSON object, try extracting one embedded in text
+        if (!cleaned.startsWith('{')) {
+          const match = cleaned.match(/\{[\s\S]*\}/)
+          if (match) cleaned = match[0]
+        }
+        const parsed = JSON.parse(cleaned)
+        if (parsed && typeof parsed.response === 'string') {
+          reply = parsed.response
+          planChange = parsed.planChange || null
+        }
+      } catch (e) {
+        console.error('Chat JSON parse failed:', e.message, '| Raw:', rawText.slice(0, 200))
+        // Fall back to raw text — reply stays as rawText, planChange stays null
       }
       setMessages(prev => [...prev, { role: 'assistant', content: reply, planChange }])
 
