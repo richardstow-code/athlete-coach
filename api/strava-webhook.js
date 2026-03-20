@@ -126,12 +126,13 @@ ${splitsText ? `\nSplits:\n${splitsText}` : ''}
 
 Athlete context: 79kg male, marathon training, target Munich Marathon 12 Oct 2026, goal sub-3:00.`
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  // Route through Supabase claude-proxy (holds the Anthropic key in its secrets)
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/claude-proxy`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': process.env.VITE_ANTHROPIC_KEY,
-      'anthropic-version': '2023-06-01',
+      'Authorization': `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+      'apikey': process.env.SUPABASE_SECRET_KEY,
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
@@ -139,8 +140,9 @@ Athlete context: 79kg male, marathon training, target Munich Marathon 12 Oct 202
       messages: [{ role: 'user', content: prompt }],
     }),
   })
-  if (!res.ok) throw new Error(`Claude call failed: ${res.status}`)
+  if (!res.ok) throw new Error(`claude-proxy call failed: ${res.status}`)
   const data = await res.json()
+  if (data?.type === 'error') throw new Error(data.error?.message || 'Claude error')
   return data.content?.[0]?.text || ''
 }
 
