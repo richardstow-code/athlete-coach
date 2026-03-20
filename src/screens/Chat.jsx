@@ -81,7 +81,7 @@ export default function Chat() {
 
   useEffect(() => {
     if (!settings.cycle_tracking_enabled) return
-    const today = new Date().toISOString().slice(0, 10)
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' })
     const dismissKey = `cycle_nudge_dismissed_${today}`
     if (localStorage.getItem(dismissKey)) return
     supabase.from('cycle_logs').select('id').eq('log_date', today).maybeSingle()
@@ -120,7 +120,7 @@ export default function Chat() {
     setInput('')
 
     const contextBlock = ctx ? formatContext(ctx) : ''
-    const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    const todayLabel = new Date().toLocaleDateString('en-GB', { timeZone: 'Europe/Vienna', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     const dateInstruction = `\n\nToday's date is ${todayLabel}.`
     const sessionInstruction = '\n\nBefore interpreting any user message that refers to a training session, check the RECENT ACTIVITIES in the context above. If an activity exists today or yesterday that matches the session being described (by type, effort level, or duration), treat the message as referring to a COMPLETED session — not a planned one. Do not ask for clarification if the activity data already makes this clear. Only treat a session as planned or hypothetical if no matching activity exists. When a session is already completed, do not re-litigate whether it should have been done — focus only on forward-looking advice.'
     const jsonInstruction = '\n\nRespond in JSON only: {"response":"<your message>","planChange":null}. Set planChange to {"change_type":"reschedule","title":"...","reasoning":"...","new_date":"YYYY-MM-DD or null","new_notes":"... or null","new_intensity":"easy|moderate|hard or null"} ONLY when the athlete explicitly asks to change a training session.'
@@ -193,7 +193,7 @@ export default function Chat() {
       {showCycleNudge && (
         <CycleLogNudge
           onDismiss={() => {
-            const today = new Date().toISOString().slice(0, 10)
+            const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' })
             localStorage.setItem(`cycle_nudge_dismissed_${today}`, '1')
             setShowCycleNudge(false)
           }}

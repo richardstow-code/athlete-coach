@@ -6,9 +6,11 @@ import { inferCyclePhase, daysSincePeriod } from './inferCyclePhase'
  * All table queries are automatically scoped to the authenticated user via RLS
  * (user_id = auth.uid()), including athlete_settings.
  */
+const TZ = 'Europe/Vienna'
+
 export async function buildContext() {
-  const today = new Date().toISOString().slice(0, 10)
-  const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
+  const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: TZ })
 
   const [
     { data: activities },
@@ -79,7 +81,7 @@ export async function buildContext() {
       cycleLogs || []
     )
     const daysSince = daysSincePeriod(settings.cycle_last_period_date)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
     const todayLog = cycleLogs?.find(l => l.log_date === today) || null
     cycleContext = {
       tracking_enabled: true,
@@ -137,7 +139,7 @@ export function formatContext({
     }
     if (settings.current_level) lines.push(`Level: ${settings.current_level}`)
     const upcoming = (settings.races || [])
-      .filter(r => r.date >= new Date().toISOString().slice(0, 10))
+      .filter(r => r.date >= new Date().toLocaleDateString('en-CA', { timeZone: TZ }))
       .sort((a, b) => a.date.localeCompare(b.date))
     if (upcoming.length > 0) {
       const next = upcoming[0]
@@ -177,8 +179,8 @@ export function formatContext({
   // ── Recent activities ────────────────────────────────────
   if (activities.length > 0) {
     // Use local-time dates so relative labels are correct for the user's timezone
-    const todayLocal = new Date().toLocaleDateString('en-CA')
-    const yesterdayLocal = new Date(Date.now() - 86400000).toLocaleDateString('en-CA')
+    const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
+    const yesterdayLocal = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: TZ })
     parts.push(
       'RECENT ACTIVITIES:\n' +
       activities.map(a => {
