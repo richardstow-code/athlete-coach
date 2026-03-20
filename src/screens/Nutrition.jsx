@@ -30,7 +30,7 @@ function InsightsGraph({ entries7Days, active }) {
   for (let i = 6; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    const ds = d.toISOString().slice(0, 10)
+    const ds = d.toLocaleDateString('en-CA')
     const dayEntries = entries7Days.filter(e => e.date === ds)
     days.push({
       label: d.toLocaleDateString('en-GB', { weekday: 'short' }),
@@ -73,7 +73,7 @@ function InsightsGraph({ entries7Days, active }) {
       {/* Day labels */}
       <div style={{ display: 'flex', gap: 4 }}>
         {days.map((d, i) => (
-          <div key={i} style={{ flex: 1, fontSize: 9, color: d.date === new Date().toISOString().slice(0,10) ? Z.accent : Z.muted, textAlign: 'center', fontWeight: d.date === new Date().toISOString().slice(0,10) ? 600 : 400 }}>{d.label}</div>
+          <div key={i} style={{ flex: 1, fontSize: 9, color: d.date === new Date().toLocaleDateString('en-CA') ? Z.accent : Z.muted, textAlign: 'center', fontWeight: d.date === new Date().toLocaleDateString('en-CA') ? 600 : 400 }}>{d.label}</div>
         ))}
       </div>
       {/* Legend */}
@@ -201,7 +201,7 @@ export default function Nutrition() {
   const [imageData, setImageData] = useState(null)
   const [imageMime, setImageMime] = useState('image/jpeg')
   const [context, setContext] = useState('')
-  const [logDate, setLogDate] = useState(new Date().toISOString().slice(0, 10))
+  const [logDate, setLogDate] = useState(new Date().toLocaleDateString('en-CA'))
   const [activeMetrics, setActiveMetrics] = useState(['kcal', 'protein', 'units'])
   const [todaySession, setTodaySession] = useState(null)
   const [todayActivity, setTodayActivity] = useState(null)
@@ -215,14 +215,14 @@ export default function Nutrition() {
   const weekUnits = entries7.filter(e => e.meal_type === 'alcohol').reduce((s, e) => s + parseFloat(e.alcohol_units || 0), 0)
 
   const load = useCallback(async () => {
-    const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString().slice(0,10)
-    const todayStr = new Date().toISOString().slice(0, 10)
+    const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toLocaleDateString('en-CA')
+    const todayStr = new Date().toLocaleDateString('en-CA')
     const [{ data: all }, { data: w7 }, { data: sessions }, { data: acts }, { data: cLog }] = await Promise.all([
       supabase.from('nutrition_logs').select('*').eq('date', logDate).order('logged_at', { ascending: false }),
       supabase.from('nutrition_logs').select('*').gte('date', sevenDaysAgo).order('date'),
       supabase.from('scheduled_sessions').select('session_type,name,zone,duration_min_low,duration_min_high').eq('planned_date', todayStr).limit(3),
       supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec,created_at').eq('date', todayStr).order('date', { ascending: false }).limit(1),
-      supabase.from('cycle_logs').select('phase_reported, override_intensity, notes').eq('log_date', new Date().toISOString().slice(0,10)).maybeSingle(),
+      supabase.from('cycle_logs').select('phase_reported, override_intensity, notes').eq('log_date', todayStr).maybeSingle(),
     ])
     setEntries(all || [])
     setEntries7(w7 || [])
@@ -298,7 +298,7 @@ export default function Nutrition() {
 
   async function deleteEntry(id) { await supabase.from('nutrition_logs').delete().eq('id', id); load() }
 
-  const isToday = logDate === new Date().toISOString().slice(0, 10)
+  const isToday = logDate === new Date().toLocaleDateString('en-CA')
 
   return (
     <div ref={nutriContainerRef} style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
@@ -312,7 +312,7 @@ export default function Nutrition() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700 }}>Fuel</div>
           {/* Date picker */}
-          <input type="date" value={logDate} max={new Date().toISOString().slice(0,10)}
+          <input type="date" value={logDate} max={new Date().toLocaleDateString('en-CA')}
             onChange={e => setLogDate(e.target.value)}
             style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 6, padding: '5px 8px', color: isToday ? Z.muted : Z.accent, fontFamily: "'DM Mono', monospace", fontSize: 11, outline: 'none', cursor: 'pointer' }} />
         </div>

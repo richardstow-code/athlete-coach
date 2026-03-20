@@ -92,7 +92,7 @@ export default function Home({ onActivityClick, onOpenSettings }) {
   const backfillCheckRef = useRef(false)
 
   const load = useCallback(async () => {
-    const todayStr = new Date().toISOString().slice(0, 10)
+    const todayStr = new Date().toLocaleDateString('en-CA')
     const dismissKey = `checkin_dismissed_${todayStr}`
     if (localStorage.getItem(dismissKey)) setCheckinDismissed(true)
     const [{ data: acts }, { data: brief }, { data: nutri }, { data: todaySess }] = await Promise.all([
@@ -206,7 +206,8 @@ export default function Home({ onActivityClick, onOpenSettings }) {
   const lastRun = activities.find(a => a.type?.toLowerCase().includes('run'))
 
   // Check-in card: session today, no activity today, before 18:00, not dismissed
-  const todayStr = new Date().toISOString().slice(0, 10)
+  // Use local date (en-CA returns YYYY-MM-DD) to correctly match Strava's local activity dates
+  const todayStr = new Date().toLocaleDateString('en-CA')
   const todayActivityExists = activities.some(a => a.date === todayStr)
   const currentHour = new Date().getHours()
   const showCheckin = todaySession && !todayActivityExists && currentHour < 18 && !checkinDismissed

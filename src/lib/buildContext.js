@@ -176,11 +176,18 @@ export function formatContext({
 
   // ── Recent activities ────────────────────────────────────
   if (activities.length > 0) {
+    // Use local-time dates so relative labels are correct for the user's timezone
+    const todayLocal = new Date().toLocaleDateString('en-CA')
+    const yesterdayLocal = new Date(Date.now() - 86400000).toLocaleDateString('en-CA')
     parts.push(
       'RECENT ACTIVITIES:\n' +
       activities.map(a => {
+        const actDate = a.date?.slice(0, 10)
+        const relLabel = actDate === todayLocal ? 'today'
+          : actDate === yesterdayLocal ? 'yesterday'
+          : actDate || '?'
         const bits = [
-          a.date?.slice(0, 10),
+          relLabel,
           a.type,
           a.distance_km ? `${a.distance_km}km` : null,
           a.duration_min ? `${Math.round(a.duration_min)}min` : null,
