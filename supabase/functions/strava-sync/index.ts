@@ -176,7 +176,7 @@ async function syncUser(supabase: ReturnType<typeof createClient>, userId: strin
 
     const { error: upsertError } = await supabase
       .from('activities')
-      .upsert(rows, { onConflict: 'strava_id' })
+      .upsert(rows, { onConflict: 'strava_id', ignoreDuplicates: true })
 
     if (upsertError) throw upsertError
 
