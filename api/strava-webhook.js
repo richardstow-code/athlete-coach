@@ -174,11 +174,12 @@ async function insertCoachingMemory(activityId, date, feedback) {
     method: 'POST',
     headers: supabaseHeaders(),
     body: JSON.stringify({
+      type: 'activity_feedback',
       source: 'activity-trigger',
       category: 'activity_feedback',
       content: feedback,
       activity_id: parseInt(activityId, 10),
-      date,
+      date: date.slice(0, 10), // ensure plain YYYY-MM-DD
       user_id: ATHLETE_USER_ID,
     }),
   })
