@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { inferAthleteContext } from '../lib/inferAthleteContext'
+import { runBackfill } from '../lib/stravaBackfill'
+import { generatePlanDraft } from '../lib/planGenerator'
 import SportsPriorities from './SportsPriorities'
+import PlanReviewPanel from '../components/PlanReviewPanel'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -77,6 +80,10 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
   const [stravaToken, setStravaToken] = useState(null)   // null = loading, false = not connected
   const [stravaStatus, setStravaStatus] = useState(null) // 'syncing' | 'synced' | 'error' | null
   const [userId, setUserId] = useState(null)
+  const [backfillStatus, setBackfillStatus] = useState(null) // null | 'syncing' | {n} | 'error:<msg>'
+  const [newRaceJustAdded, setNewRaceJustAdded] = useState(null) // race object | null
+  const [generatingPlan, setGeneratingPlan] = useState(false)
+  const [planDraftId, setPlanDraftId] = useState(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data?.user?.id ?? null))
@@ -166,7 +173,8 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
 
   async function addRace() {
     if (!newRace.name || !newRace.date) return
-    const updated = { ...settings, races: [...(settings.races || []), newRace] }
+    const raceToAdd = { ...newRace }
+    const updated = { ...settings, races: [...(settings.races || []), raceToAdd] }
     setSettings(updated)
     setNewRace({ name:'', date:'', type:'Run', distance:'42.2', target:'3:10:00', elevation:'' })
     setShowRaceForm(false)
@@ -174,6 +182,38 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
     await supabase.from('athlete_settings').upsert({ user_id: userId, ...updated, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+    // Prompt to generate a training plan for the new race
+    setNewRaceJustAdded(raceToAdd)
+  }
+
+  async function handleResync() {
+    setBackfillStatus('syncing')
+    const result = await runBackfill()
+    if (result.error) {
+      setBackfillStatus(`error:${result.error}`)
+      setTimeout(() => setBackfillStatus(null), 5000)
+    } else {
+      setBackfillStatus(result.activitiesImported)
+      setTimeout(() => setBackfillStatus(null), 4000)
+    }
+  }
+
+  async function handleGeneratePlan(race) {
+    setGeneratingPlan(true)
+    setNewRaceJustAdded(null)
+    try {
+      const { data: settingsData } = await supabase.from('athlete_settings').select('*').maybeSingle()
+      const id = await generatePlanDraft({
+        trigger: 'new_race',
+        race: { name: race.name, date: race.date, targetTime: race.target },
+        currentDate: new Date().toISOString().slice(0, 10),
+        athleteSettings: settingsData,
+      })
+      setPlanDraftId(id)
+    } catch (e) {
+      alert('Plan generation failed: ' + e.message)
+    }
+    setGeneratingPlan(false)
   }
 
   function removeRace(i) {
@@ -203,6 +243,47 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
       {showSports && <SportsPriorities onClose={() => setShowSports(false)} />}
+
+      {/* Plan Review Panel — shown after plan generation */}
+      {planDraftId && (
+        <PlanReviewPanel
+          draftId={planDraftId}
+          onCommit={() => setPlanDraftId(null)}
+          onDiscard={() => setPlanDraftId(null)}
+          onClose={() => setPlanDraftId(null)}
+        />
+      )}
+
+      {/* New race → generate plan prompt */}
+      {newRaceJustAdded && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 250, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div onClick={() => setNewRaceJustAdded(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)' }} />
+          <div style={{ position: 'relative', background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: '16px 16px 0 0', padding: '24px 20px 40px', width: '100%', maxWidth: 430 }}>
+            <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 17, fontWeight: 700, color: Z.text, marginBottom: 8 }}>
+              New race added!
+            </div>
+            <div style={{ fontSize: 13, color: Z.muted, marginBottom: 20, lineHeight: 1.5 }}>
+              {newRaceJustAdded.name} · {newRaceJustAdded.date}<br />
+              Generate a personalised training plan for this race?
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => handleGeneratePlan(newRaceJustAdded)}
+                disabled={generatingPlan}
+                style={{ flex: 1, background: generatingPlan ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 8, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: 13, cursor: generatingPlan ? 'wait' : 'pointer', color: generatingPlan ? Z.muted : Z.bg, fontWeight: 700 }}
+              >
+                {generatingPlan ? '⏳ Generating plan...' : 'Yes, generate plan'}
+              </button>
+              <button
+                onClick={() => setNewRaceJustAdded(null)}
+                style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '12px 16px', fontFamily: "'DM Mono', monospace", fontSize: 13, cursor: 'pointer', color: Z.muted }}
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${Z.border}`, background: Z.bg }}>
         <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 17, color: Z.text }}>Settings</div>
@@ -552,6 +633,32 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
               </div>
             </div>
           )}
+        </div>
+
+        {/* DATA & SYNC */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontSize: 11, color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>Data &amp; Sync</div>
+          <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: 16 }}>
+            <div style={{ fontSize: 12, color: Z.muted, lineHeight: 1.6, marginBottom: 12 }}>
+              Re-imports the last 90 days from Strava and generates a baseline training analysis.
+            </div>
+            <button
+              onClick={handleResync}
+              disabled={backfillStatus === 'syncing'}
+              style={{ width: '100%', background: backfillStatus === 'syncing' ? '#1a1a1a' : 'none', border: `1px solid ${backfillStatus === 'syncing' ? Z.border : Z.accent}`, borderRadius: 7, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: backfillStatus === 'syncing' ? 'wait' : 'pointer', color: backfillStatus === 'syncing' ? Z.muted : Z.accent }}
+            >
+              {backfillStatus === 'syncing'
+                ? '⏳ Syncing...'
+                : typeof backfillStatus === 'number'
+                ? `✓ Synced ${backfillStatus} activities`
+                : 'Re-sync Strava history (90 days)'}
+            </button>
+            {typeof backfillStatus === 'string' && backfillStatus.startsWith('error:') && (
+              <div style={{ marginTop: 8, fontSize: 11, color: Z.red, wordBreak: 'break-word' }}>
+                {backfillStatus.replace('error:', '')}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* LOGOUT */}

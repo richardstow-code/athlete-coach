@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
 import { usePrimarySport } from '../lib/usePrimarySport'
 import { usePullToRefresh } from '../lib/usePullToRefresh'
+import { runBackfill } from '../lib/stravaBackfill'
 
 const S = {
   page: { overflowY: 'auto', height: '100%' },
@@ -74,6 +75,8 @@ export default function Home({ onActivityClick }) {
   const [loading, setLoading] = useState(true)
   const [todayNutrition, setTodayNutrition] = useState({ kcal: 0, protein: 0, logged: false })
   const [statFilter, setStatFilter] = useState('All')
+  const [backfillStatus, setBackfillStatus] = useState(null) // null | 'syncing' | 'done' | 'error'
+  const backfillCheckRef = useRef(false)
 
   const load = useCallback(async () => {
     const todayStr = new Date().toISOString().slice(0, 10)
@@ -96,6 +99,31 @@ export default function Home({ onActivityClick }) {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Auto-backfill: if user has no activities, silently sync Strava history
+  useEffect(() => {
+    if (backfillCheckRef.current) return
+    backfillCheckRef.current = true
+
+    async function checkAndBackfill() {
+      const { count } = await supabase
+        .from('activities')
+        .select('*', { count: 'exact', head: true })
+      if (count === 0) {
+        setBackfillStatus('syncing')
+        const result = await runBackfill()
+        if (result.error) {
+          setBackfillStatus('error')
+          setTimeout(() => setBackfillStatus(null), 5000)
+        } else {
+          setBackfillStatus('done')
+          load()
+          setTimeout(() => setBackfillStatus(null), 3000)
+        }
+      }
+    }
+    checkAndBackfill()
+  }, [load])
 
   const { containerRef, pullDistance, refreshing } = usePullToRefresh(load)
 
@@ -132,6 +160,15 @@ export default function Home({ onActivityClick }) {
       {(pullDistance > 0 || refreshing) && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: Math.max(pullDistance, refreshing ? 48 : 0), overflow: 'hidden', transition: refreshing ? 'none' : 'height 0.1s', color: '#888580', fontSize: '12px', letterSpacing: '0.06em' }}>
           {refreshing ? 'Refreshing...' : pullDistance > 72 ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      )}
+
+      {/* BACKFILL STATUS INDICATOR */}
+      {backfillStatus && (
+        <div style={{ padding: '8px 20px', fontSize: 11, letterSpacing: '0.06em', color: backfillStatus === 'error' ? '#ff5c5c' : '#e8ff47', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          {backfillStatus === 'syncing' && '⟳ Syncing Strava history...'}
+          {backfillStatus === 'done' && '✓ Strava history synced'}
+          {backfillStatus === 'error' && '⚠ Strava sync failed — check Settings'}
         </div>
       )}
       <div style={S.hero}>

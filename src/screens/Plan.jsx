@@ -1,4 +1,5 @@
 import SessionDetail from '../components/SessionDetail'
+import PlanReviewPanel from '../components/PlanReviewPanel'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
@@ -6,6 +7,7 @@ import { usePrimarySport } from '../lib/usePrimarySport'
 import { buildSystemPrompt, fetchAndBuildPrompt } from '../lib/coachingPrompt'
 import { callClaude } from '../lib/claudeProxy'
 import { usePullToRefresh } from '../lib/usePullToRefresh'
+import { generatePlanDraft } from '../lib/planGenerator'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -358,6 +360,8 @@ export default function Plan({ onActivityClick }) {
   const [mismatchLoading, setMismatchLoading] = useState(false)
   const mismatchRef = useRef(false)
   const [selectedSession, setSelectedSession] = useState(null)
+  const [generatingPlan, setGeneratingPlan] = useState(false)
+  const [planDraftId, setPlanDraftId] = useState(null)
   const today = localDateStr(new Date())
   const raceLabel = primarySport?.current_goal_raw || 'your race'
 
@@ -594,6 +598,26 @@ export default function Plan({ onActivityClick }) {
     } catch(e) { console.error('Parse error', e); throw e }
   }
 
+  async function handleRebuildPlan() {
+    setGeneratingPlan(true)
+    try {
+      const race = primarySport?.target_date
+        ? { name: primarySport.current_goal_raw || 'Race', date: primarySport.target_date, targetTime: primarySport.target_metric || null }
+        : (settings.races || [])[0] || null
+      const id = await generatePlanDraft({
+        trigger: 'manual',
+        race,
+        currentDate: today,
+        athleteSettings: settings,
+      })
+      setPlanDraftId(id)
+    } catch (e) {
+      console.error('Plan generation failed:', e)
+      alert('Plan generation failed: ' + e.message)
+    }
+    setGeneratingPlan(false)
+  }
+
   const races = settings.races || []
   const weekLabel = weekOffset === 0 ? 'This week' : weekOffset === -1 ? 'Last week' : weekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   const plannedRuns = sessions.filter(s => s.session_type === 'run' || s.session_type === 'trail').length
@@ -625,7 +649,26 @@ export default function Plan({ onActivityClick }) {
             No goal set yet — complete your profile to add a target.
           </div>
         )}
+
+        {/* REVIEW & REBUILD PLAN BUTTON */}
+        <button
+          onClick={handleRebuildPlan}
+          disabled={generatingPlan}
+          style={{ width: '100%', background: 'none', border: `1px solid ${generatingPlan ? Z.border : 'rgba(232,255,71,0.3)'}`, borderRadius: 8, padding: '9px', fontFamily: "'DM Mono', monospace", fontSize: 11, cursor: generatingPlan ? 'wait' : 'pointer', color: generatingPlan ? Z.muted : Z.accent, letterSpacing: '0.04em', marginTop: 8, marginBottom: 14 }}
+        >
+          {generatingPlan ? '⏳ Generating plan...' : '↺ Review & Rebuild Plan'}
+        </button>
       </div>
+
+      {/* PLAN REVIEW PANEL */}
+      {planDraftId && (
+        <PlanReviewPanel
+          draftId={planDraftId}
+          onCommit={() => { setPlanDraftId(null); loadWeek() }}
+          onDiscard={() => setPlanDraftId(null)}
+          onClose={() => setPlanDraftId(null)}
+        />
+      )}
 
       {/* MISMATCH PROMPT */}
       {(mismatchLoading || mismatch) && weekOffset === 0 && (
