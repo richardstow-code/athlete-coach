@@ -55,6 +55,7 @@ export default function Chat() {
   const [ctx, setCtx] = useState(null)
   const [nudgeDismissed, setNudgeDismissed] = useState(false)
   const [showCycleNudge, setShowCycleNudge] = useState(false)
+  const [planChangeStatuses, setPlanChangeStatuses] = useState({}) // { msgIndex: 'accepted'|'dismissed' }
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -87,13 +88,40 @@ export default function Chat() {
       .then(({ data }) => { if (!data) setShowCycleNudge(true) })
   }, [settings.cycle_tracking_enabled])
 
+  async function acceptPlanChange(msgIndex, planChange) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      await supabase.from('schedule_changes').insert({
+        status: 'pending',
+        change_type: planChange.change_type || 'adjust',
+        title: planChange.title,
+        reasoning: planChange.reasoning,
+        proposed_by: 'coach',
+        new_date: planChange.new_date || null,
+        new_notes: planChange.new_notes || null,
+        new_intensity: planChange.new_intensity || null,
+        original_session_id: planChange.original_session_id || null,
+        context: 'chat',
+        user_id: session?.user?.id,
+      })
+      setPlanChangeStatuses(prev => ({ ...prev, [msgIndex]: 'accepted' }))
+    } catch (e) {
+      console.error('Failed to save plan change:', e)
+    }
+  }
+
+  function dismissPlanChange(msgIndex) {
+    setPlanChangeStatuses(prev => ({ ...prev, [msgIndex]: 'dismissed' }))
+  }
+
   async function sendMessage(text) {
     const userText = text || input.trim()
     if (!userText || loading) return
     setInput('')
 
     const contextBlock = ctx ? formatContext(ctx) : ''
-    const systemPrompt = buildSystemPrompt(settings) + (contextBlock ? '\n\n' + contextBlock : '')
+    const jsonInstruction = '\n\nRespond in JSON only: {"response":"<your message>","planChange":null}. Set planChange to {"change_type":"reschedule","title":"...","reasoning":"...","new_date":"YYYY-MM-DD or null","new_notes":"... or null","new_intensity":"easy|moderate|hard or null"} ONLY when the athlete explicitly asks to change a training session.'
+    const systemPrompt = buildSystemPrompt(settings) + (contextBlock ? '\n\n' + contextBlock : '') + jsonInstruction
 
     const newMessages = [...messages, { role: 'user', content: userText }]
     setMessages(newMessages)
@@ -101,13 +129,22 @@ export default function Chat() {
 
     try {
       const data = await callClaude({
-        model: 'claude-haiku-4-5',
-        max_tokens: 500,
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 600,
         system: systemPrompt,
         messages: newMessages.map(m => ({ role: m.role, content: m.content })),
       })
-      const reply = data.content?.[0]?.text || 'Something went wrong.'
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }])
+      const rawText = data.content?.[0]?.text || ''
+      let reply = rawText
+      let planChange = null
+      try {
+        const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim())
+        reply = parsed.response || rawText
+        planChange = parsed.planChange || null
+      } catch {
+        // Not JSON — use raw text as reply
+      }
+      setMessages(prev => [...prev, { role: 'assistant', content: reply, planChange }])
 
       // Save to coaching_memory
       supabase.auth.getSession().then(({ data: { session } }) => {
@@ -153,7 +190,7 @@ export default function Chat() {
       {/* MESSAGES */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {messages.map((m, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '100%' }}>
+          <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
             <div style={{ maxWidth: '85%' }}>
               <div style={{
                 padding: '12px 14px', borderRadius: '12px', fontSize: '13px', lineHeight: 1.6,
@@ -170,6 +207,21 @@ export default function Chat() {
                 {m.role === 'user' ? 'You' : 'Coach'}
               </div>
             </div>
+            {/* Plan change proposal card */}
+            {m.role === 'assistant' && m.planChange && !planChangeStatuses[i] && (
+              <div style={{ marginTop: 8, maxWidth: '90%', background: 'rgba(232,255,71,0.06)', border: '1px solid rgba(232,255,71,0.25)', borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ fontSize: 10, color: '#e8ff47', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Plan change proposed</div>
+                <div style={{ fontSize: 13, color: '#f0ede8', fontWeight: 500, marginBottom: 4 }}>{m.planChange.title}</div>
+                {m.planChange.reasoning && <div style={{ fontSize: 11, color: '#888580', lineHeight: 1.5, marginBottom: 10 }}>{m.planChange.reasoning}</div>}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => acceptPlanChange(i, m.planChange)} style={{ flex: 1, background: '#e8ff47', border: 'none', borderRadius: 6, padding: '7px', fontFamily: "'DM Mono', monospace", fontSize: 11, cursor: 'pointer', color: '#0a0a0a', fontWeight: 600 }}>✓ Accept</button>
+                  <button onClick={() => dismissPlanChange(i)} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 6, padding: '7px 12px', fontFamily: "'DM Mono', monospace", fontSize: 11, cursor: 'pointer', color: '#888580' }}>Dismiss</button>
+                </div>
+              </div>
+            )}
+            {m.role === 'assistant' && m.planChange && planChangeStatuses[i] === 'accepted' && (
+              <div style={{ marginTop: 6, fontSize: 11, color: '#4dff91', padding: '0 4px' }}>✓ Change queued in Plan tab</div>
+            )}
           </div>
         ))}
 

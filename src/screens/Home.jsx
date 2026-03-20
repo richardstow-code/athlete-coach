@@ -67,7 +67,17 @@ function ActivityRow({ activity, onActivityClick }) {
   )
 }
 
-export default function Home({ onActivityClick }) {
+const CHECKIN_MSGS = [
+  "You've got a session today. Shoes on?",
+  "Training day. Your future self is watching.",
+  "Today's session won't run itself.",
+  "Are you going to do the thing? You're going to do the thing.",
+  "Session reminder: the hardest part is starting.",
+  "Coach here. Session on the plan. You know what to do.",
+  "Today has a workout in it. That's already a win — just show up.",
+]
+
+export default function Home({ onActivityClick, onOpenSettings }) {
   const settings = useSettings()
   const { primarySport } = usePrimarySport()
   const [activities, setActivities] = useState([])
@@ -76,14 +86,20 @@ export default function Home({ onActivityClick }) {
   const [todayNutrition, setTodayNutrition] = useState({ kcal: 0, protein: 0, logged: false })
   const [statFilter, setStatFilter] = useState('All')
   const [backfillStatus, setBackfillStatus] = useState(null) // null | 'syncing' | 'done' | 'error'
+  const [todaySession, setTodaySession] = useState(null)
+  const [checkinDismissed, setCheckinDismissed] = useState(false)
+  const [goalPromptDismissed, setGoalPromptDismissed] = useState(false)
   const backfillCheckRef = useRef(false)
 
   const load = useCallback(async () => {
     const todayStr = new Date().toISOString().slice(0, 10)
-    const [{ data: acts }, { data: brief }, { data: nutri }] = await Promise.all([
+    const dismissKey = `checkin_dismissed_${todayStr}`
+    if (localStorage.getItem(dismissKey)) setCheckinDismissed(true)
+    const [{ data: acts }, { data: brief }, { data: nutri }, { data: todaySess }] = await Promise.all([
       supabase.from('activities').select('*').order('date', { ascending: false }).limit(20),
       supabase.from('daily_briefings').select('id, date, briefing_text, created_at').order('created_at', { ascending: false }).limit(1),
       supabase.from('nutrition_logs').select('calories,protein_g,meal_type').eq('date', todayStr),
+      supabase.from('scheduled_sessions').select('id,session_type,name,zone,duration_min_low,duration_min_high').eq('planned_date', todayStr).eq('status', 'planned').maybeSingle(),
     ])
     if (acts) setActivities(acts)
     if (brief && brief[0]) setBriefing(brief[0])
@@ -95,6 +111,7 @@ export default function Home({ onActivityClick }) {
         logged: nutri.length > 0,
       })
     }
+    setTodaySession(todaySess || null)
     setLoading(false)
   }, [])
 
@@ -125,6 +142,40 @@ export default function Home({ onActivityClick }) {
     checkAndBackfill()
   }, [load])
 
+  async function dismissGoalPrompt() {
+    setGoalPromptDismissed(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await supabase.from('athlete_settings')
+          .update({ last_goal_prompt_date: new Date().toISOString().slice(0, 10) })
+          .eq('user_id', user.id)
+      }
+    } catch (e) {
+      console.warn('Could not update last_goal_prompt_date:', e)
+    }
+  }
+
+  async function handleCheckinAction() {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    localStorage.setItem(`checkin_dismissed_${todayStr}`, '1')
+    setCheckinDismissed(true)
+    if (todaySession?.id) {
+      const now = new Date().toTimeString().slice(0, 5)
+      try {
+        await supabase.from('scheduled_sessions').update({ planned_start_time: now }).eq('id', todaySession.id)
+      } catch (e) {
+        console.warn('planned_start_time not available yet (run schema migration):', e)
+      }
+    }
+  }
+
+  function dismissCheckin() {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    localStorage.setItem(`checkin_dismissed_${todayStr}`, '1')
+    setCheckinDismissed(true)
+  }
+
   const { containerRef, pullDistance, refreshing } = usePullToRefresh(load)
 
   // Calculate this week's stats (week starts Monday)
@@ -154,6 +205,22 @@ export default function Home({ onActivityClick }) {
   // Last run for zone bars
   const lastRun = activities.find(a => a.type?.toLowerCase().includes('run'))
 
+  // Check-in card: session today, no activity today, before 18:00, not dismissed
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayActivityExists = activities.some(a => a.date === todayStr)
+  const currentHour = new Date().getHours()
+  const showCheckin = todaySession && !todayActivityExists && currentHour < 18 && !checkinDismissed
+  const checkinMsg = CHECKIN_MSGS[new Date().getDay() % CHECKIN_MSGS.length]
+  const sessionTypeIcon = { run: '🏃', trail: '⛰️', strength: '🏋️', rest: '😴' }
+
+  // Quarterly goal prompt: no races, not dismissed, >90 days since last prompt
+  const races = settings.races || []
+  const lastGoalPrompt = settings.last_goal_prompt_date
+  const daysSincePrompt = lastGoalPrompt
+    ? Math.floor((Date.now() - new Date(lastGoalPrompt).getTime()) / (1000 * 60 * 60 * 24))
+    : Infinity
+  const showGoalPrompt = !goalPromptDismissed && races.length === 0 && daysSincePrompt >= 90 && settings.lifecycle_state != null
+
   return (
     <div ref={containerRef} style={S.page}>
       {/* PULL-TO-REFRESH INDICATOR */}
@@ -171,6 +238,52 @@ export default function Home({ onActivityClick }) {
           {backfillStatus === 'error' && '⚠ Strava sync failed — check Settings'}
         </div>
       )}
+      {/* QUARTERLY GOAL PROMPT */}
+      {showGoalPrompt && (
+        <div style={{ margin: '12px 20px 0', padding: '14px 16px', background: 'rgba(232,255,71,0.06)', border: '1px solid rgba(232,255,71,0.2)', borderRadius: 12 }}>
+          <div style={{ fontSize: 10, color: '#e8ff47', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Your goals</div>
+          <div style={{ fontSize: 14, color: '#f0ede8', fontWeight: 600, marginBottom: 4 }}>No races or events set</div>
+          <div style={{ fontSize: 12, color: '#888580', lineHeight: 1.5, marginBottom: 12 }}>Having a goal helps your coach give you more focused, relevant advice. What are you training for?</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => { dismissGoalPrompt(); onOpenSettings?.() }}
+              style={{ flex: 1, background: '#e8ff47', border: 'none', borderRadius: 7, padding: '9px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: '#0a0a0a', fontWeight: 600 }}
+            >
+              Set a goal
+            </button>
+            <button
+              onClick={dismissGoalPrompt}
+              style={{ background: 'none', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 7, padding: '9px 14px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: '#888580' }}
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* DAILY CHECK-IN CARD */}
+      {showCheckin && (
+        <div style={{ margin: '12px 20px 0', padding: '14px 16px', background: '#111111', border: '1px solid rgba(232,255,71,0.2)', borderRadius: 12, position: 'relative' }}>
+          <button onClick={dismissCheckin} style={{ position: 'absolute', top: 10, right: 12, background: 'none', border: 'none', color: '#888580', fontSize: 16, cursor: 'pointer', lineHeight: 1 }}>×</button>
+          <div style={{ fontSize: 10, color: '#e8ff47', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+            {sessionTypeIcon[todaySession.session_type] || '📋'} Today's session
+          </div>
+          <div style={{ fontSize: 13, color: '#f0ede8', fontWeight: 500, marginBottom: 2 }}>{todaySession.name}</div>
+          {todaySession.zone && (
+            <div style={{ fontSize: 11, color: '#888580', marginBottom: 8 }}>
+              {todaySession.zone}{todaySession.duration_min_low ? ` · ${todaySession.duration_min_low}${todaySession.duration_min_high !== todaySession.duration_min_low ? `–${todaySession.duration_min_high}` : ''}min` : ''}
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: '#888580', lineHeight: 1.5, marginBottom: 12 }}>{checkinMsg}</div>
+          <button
+            onClick={handleCheckinAction}
+            style={{ background: '#e8ff47', border: 'none', borderRadius: 7, padding: '8px 16px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: '#0a0a0a', fontWeight: 600 }}
+          >
+            I'm on it →
+          </button>
+        </div>
+      )}
+
       <div style={S.hero}>
         <div style={S.label}>{today}</div>
         <div style={S.greeting}>

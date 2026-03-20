@@ -43,7 +43,55 @@ function Slider({ config, value, onChange }) {
   )
 }
 
-function RaceItem({ race, onRemove }) {
+function CancelRaceModal({ race, onConfirm, onClose }) {
+  const [reason, setReason] = useState('')
+  const [nextStep, setNextStep] = useState('')
+  const reasons = [
+    'Injury / health issue',
+    'Life circumstances changed',
+    'Not enough time to train',
+    'Race cancelled or rescheduled',
+    'Changed goals / priorities',
+    'Other',
+  ]
+  const inp2 = { background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 6, padding: '8px 12px', color: Z.text, fontFamily: "'DM Mono', monospace", fontSize: 12, width: '100%', outline: 'none', boxSizing: 'border-box' }
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 350, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)' }} />
+      <div style={{ position: 'relative', background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: '16px 16px 0 0', padding: '24px 20px 40px', width: '100%', maxWidth: 430 }}>
+        <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 16, fontWeight: 700, color: Z.text, marginBottom: 4 }}>Cancel event</div>
+        <div style={{ fontSize: 12, color: Z.muted, marginBottom: 18 }}>{race.name} · {race.date}</div>
+        <div style={{ fontSize: 11, color: Z.muted, marginBottom: 6 }}>What happened?</div>
+        <select value={reason} onChange={e => setReason(e.target.value)} style={{ ...inp2, marginBottom: 14, cursor: 'pointer' }}>
+          <option value="">Select a reason...</option>
+          {reasons.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <div style={{ fontSize: 11, color: Z.muted, marginBottom: 6 }}>What's next? (optional)</div>
+        <textarea
+          value={nextStep}
+          onChange={e => setNextStep(e.target.value)}
+          placeholder="e.g. Focusing on base fitness for now, targeting a race next year..."
+          rows={2}
+          style={{ ...inp2, resize: 'none', lineHeight: 1.5, marginBottom: 16 }}
+        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => reason && onConfirm(reason, nextStep)}
+            disabled={!reason}
+            style={{ flex: 1, background: reason ? Z.red : '#1a1a1a', border: 'none', borderRadius: 7, padding: '11px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: reason ? 'pointer' : 'not-allowed', color: reason ? '#fff' : Z.muted, fontWeight: 600 }}
+          >
+            Remove event
+          </button>
+          <button onClick={onClose} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 7, padding: '11px 16px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.muted }}>
+            Keep it
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RaceItem({ race, onCancel }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: Z.surface, borderRadius: 8, border: `1px solid ${Z.border2}`, marginBottom: 8 }}>
       <div>
@@ -52,7 +100,7 @@ function RaceItem({ race, onRemove }) {
           {race.date} · {race.distance}km · Target: {race.target}
         </div>
       </div>
-      <button onClick={onRemove} style={{ background: 'none', border: 'none', color: Z.muted, cursor: 'pointer', fontSize: 16, padding: 4 }}>×</button>
+      <button onClick={onCancel} style={{ background: 'none', border: `1px solid rgba(255,92,92,0.2)`, borderRadius: 6, padding: '3px 8px', color: Z.muted, cursor: 'pointer', fontSize: 11, fontFamily: "'DM Mono', monospace" }}>Cancel</button>
     </div>
   )
 }
@@ -84,6 +132,10 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
   const [newRaceJustAdded, setNewRaceJustAdded] = useState(null) // race object | null
   const [generatingPlan, setGeneratingPlan] = useState(false)
   const [planDraftId, setPlanDraftId] = useState(null)
+  const [cancelModal, setCancelModal] = useState(null) // null | { race, index }
+  const [deleteAccountStep, setDeleteAccountStep] = useState(0) // 0=hidden, 1=confirm, 2=final
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data?.user?.id ?? null))
@@ -220,6 +272,61 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
     setSettings(s => ({ ...s, races: s.races.filter((_, idx) => idx !== i) }))
   }
 
+  async function cancelRace(index, reason, nextStep) {
+    const race = settings.races[index]
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      await supabase.from('coaching_memory').insert({
+        source: 'app-settings',
+        category: 'race_cancellation',
+        content: `Race cancelled: ${race.name} (${race.date})\nReason: ${reason}\nNext steps: ${nextStep || 'Not specified'}`,
+        user_id: user?.id,
+        date: new Date().toISOString().slice(0, 10),
+      })
+    } catch (e) {
+      console.warn('Could not save cancellation to coaching_memory:', e)
+    }
+    const newRaces = settings.races.filter((_, idx) => idx !== index)
+    const updated = { ...settings, races: newRaces }
+    setSettings(updated)
+    await supabase.from('athlete_settings').upsert(
+      { user_id: userId, ...updated, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' }
+    )
+    setCancelModal(null)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  async function deleteAccount() {
+    if (deleteConfirmText !== 'DELETE') return
+    setDeleting(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const uid = user.id
+      await Promise.all([
+        supabase.from('activities').delete().eq('user_id', uid),
+        supabase.from('nutrition_logs').delete().eq('user_id', uid),
+        supabase.from('coaching_memory').delete().eq('user_id', uid),
+        supabase.from('daily_briefings').delete().eq('user_id', uid),
+        supabase.from('scheduled_sessions').delete().eq('user_id', uid),
+        supabase.from('plan_drafts').delete().eq('user_id', uid),
+        supabase.from('strava_tokens').delete().eq('user_id', uid),
+        supabase.from('cycle_logs').delete().eq('user_id', uid),
+        supabase.from('schedule_changes').delete().eq('user_id', uid),
+        supabase.from('athlete_sports').delete().eq('user_id', uid),
+      ])
+      await supabase.from('athlete_settings').delete().eq('user_id', uid)
+      await supabase.auth.signOut()
+      onLogout?.()
+      onClose?.()
+    } catch (e) {
+      alert('Delete failed: ' + e.message)
+      setDeleting(false)
+    }
+  }
+
   async function deleteCycleData() {
     if (!userId) return
     await Promise.all([
@@ -243,6 +350,15 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
       {showSports && <SportsPriorities onClose={() => setShowSports(false)} />}
+
+      {/* Cancel race modal */}
+      {cancelModal && (
+        <CancelRaceModal
+          race={cancelModal.race}
+          onConfirm={(reason, nextStep) => cancelRace(cancelModal.index, reason, nextStep)}
+          onClose={() => setCancelModal(null)}
+        />
+      )}
 
       {/* Plan Review Panel — shown after plan generation */}
       {planDraftId && (
@@ -603,7 +719,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
             <div style={{ fontSize: 11, color: Z.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Races</div>
             <button onClick={() => setShowRaceForm(true)} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 6, padding: '4px 10px', color: Z.accent, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>+ Add race</button>
           </div>
-          {(settings.races || []).map((r, i) => <RaceItem key={i} race={r} onRemove={() => removeRace(i)} />)}
+          {(settings.races || []).map((r, i) => <RaceItem key={i} race={r} onCancel={() => setCancelModal({ race: r, index: i })} />)}
           {settings.races?.length === 0 && !showRaceForm && (
             <div style={{ fontSize: 13, color: Z.muted, padding: '12px 0' }}>No races added yet.</div>
           )}
@@ -662,7 +778,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
         </div>
 
         {/* LOGOUT */}
-        <div style={{ padding: '24px 20px 40px', borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 8 }}>
+        <div style={{ padding: '24px 0 16px', borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 8 }}>
           <button
             onClick={async () => {
               await supabase.auth.signOut()
@@ -673,6 +789,52 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
           >
             Sign out
           </button>
+        </div>
+
+        {/* DELETE ACCOUNT */}
+        <div style={{ paddingBottom: 40 }}>
+          {deleteAccountStep === 0 && (
+            <button
+              onClick={() => setDeleteAccountStep(1)}
+              style={{ width: '100%', background: 'none', border: 'none', color: 'rgba(255,92,92,0.35)', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: '6px 0', textDecoration: 'underline', textAlign: 'center' }}
+            >
+              Delete account
+            </button>
+          )}
+          {deleteAccountStep === 1 && (
+            <div style={{ background: 'rgba(255,92,92,0.06)', border: '1px solid rgba(255,92,92,0.2)', borderRadius: 10, padding: 16 }}>
+              <div style={{ fontSize: 13, color: Z.red, fontWeight: 500, marginBottom: 8 }}>Delete account?</div>
+              <div style={{ fontSize: 12, color: Z.muted, lineHeight: 1.5, marginBottom: 14 }}>
+                This will permanently delete all your data — activities, nutrition logs, coaching history, plans, and settings. This cannot be undone.
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setDeleteAccountStep(2)} style={{ flex: 1, background: Z.red, border: 'none', borderRadius: 7, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: '#fff', fontWeight: 600 }}>Yes, delete everything</button>
+                <button onClick={() => setDeleteAccountStep(0)} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 7, padding: '10px 14px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.muted }}>Cancel</button>
+              </div>
+            </div>
+          )}
+          {deleteAccountStep === 2 && (
+            <div style={{ background: 'rgba(255,92,92,0.06)', border: '1px solid rgba(255,92,92,0.4)', borderRadius: 10, padding: 16 }}>
+              <div style={{ fontSize: 13, color: Z.red, fontWeight: 500, marginBottom: 8 }}>Are you absolutely sure?</div>
+              <div style={{ fontSize: 12, color: Z.muted, lineHeight: 1.5, marginBottom: 10 }}>Type DELETE to confirm. This action is permanent.</div>
+              <input
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value)}
+                placeholder="Type DELETE"
+                style={{ ...inp, marginBottom: 10, borderColor: 'rgba(255,92,92,0.3)' }}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={deleteAccount}
+                  disabled={deleteConfirmText !== 'DELETE' || deleting}
+                  style={{ flex: 1, background: deleteConfirmText === 'DELETE' && !deleting ? Z.red : '#1a1a1a', border: 'none', borderRadius: 7, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: deleteConfirmText === 'DELETE' && !deleting ? 'pointer' : 'not-allowed', color: deleteConfirmText === 'DELETE' && !deleting ? '#fff' : Z.muted, fontWeight: 600 }}
+                >
+                  {deleting ? 'Deleting...' : 'Delete my account'}
+                </button>
+                <button onClick={() => { setDeleteAccountStep(0); setDeleteConfirmText('') }} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 7, padding: '10px 14px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.muted }}>Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

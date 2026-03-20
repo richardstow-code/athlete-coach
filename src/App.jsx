@@ -412,7 +412,7 @@ export default function App() {
           <ActivityDetail stravaId={detailId} onBack={closeActivity} />
         ) : (
           <>
-            {activeTab === 'home'      && <ErrorBoundary><Home key={refreshKey} onActivityClick={openActivity} /></ErrorBoundary>}
+            {activeTab === 'home'      && <ErrorBoundary><Home key={refreshKey} onActivityClick={openActivity} onOpenSettings={() => setShowSettings(true)} /></ErrorBoundary>}
             {activeTab === 'chat'      && <ErrorBoundary><Chat /></ErrorBoundary>}
             {activeTab === 'plan'      && <ErrorBoundary><Plan key={refreshKey} onActivityClick={openActivity} /></ErrorBoundary>}
             {activeTab === 'stats'     && <ErrorBoundary><Progress key={refreshKey} onActivityClick={openActivity} /></ErrorBoundary>}

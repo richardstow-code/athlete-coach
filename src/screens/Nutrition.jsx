@@ -221,7 +221,7 @@ export default function Nutrition() {
       supabase.from('nutrition_logs').select('*').eq('date', logDate).order('logged_at', { ascending: false }),
       supabase.from('nutrition_logs').select('*').gte('date', sevenDaysAgo).order('date'),
       supabase.from('scheduled_sessions').select('session_type,name,zone,duration_min_low,duration_min_high').eq('planned_date', todayStr).limit(3),
-      supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec').eq('date', todayStr).order('date', { ascending: false }).limit(1),
+      supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec,created_at').eq('date', todayStr).order('date', { ascending: false }).limit(1),
       supabase.from('cycle_logs').select('phase_reported, override_intensity, notes').eq('log_date', new Date().toISOString().slice(0,10)).maybeSingle(),
     ])
     setEntries(all || [])
@@ -260,12 +260,15 @@ export default function Nutrition() {
     if (!imageData && !context.trim()) return
     setAnalyzing(true)
     try {
+      const trainingCtx = todayActivity
+        ? ` Training today: ${todayActivity.name} (${todayActivity.distance_km ? `${todayActivity.distance_km}km ` : ''}${todayActivity.type}).`
+        : todaySession ? ` Planned session today: ${todaySession.name} (${todaySession.session_type}).` : ''
       const userContent = imageData
         ? [
             { type: 'image', source: { type: 'base64', media_type: imageMime.includes('png') ? 'image/png' : imageMime.includes('gif') ? 'image/gif' : imageMime.includes('webp') ? 'image/webp' : 'image/jpeg', data: imageData } },
-            { type: 'text', text: `Analyse this meal. Context: ${context || 'none'}. Eaten today so far: ${todayKcal} kcal, ${Math.round(todayProtein)}g protein. Respond ONLY in JSON: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence reason"}` }
+            { type: 'text', text: `Analyse this meal. Context: ${context || 'none'}.${trainingCtx} Eaten today so far: ${todayKcal} kcal, ${Math.round(todayProtein)}g protein. Respond ONLY in JSON: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence reason"}` }
           ]
-        : `Estimate this meal: ${context}. Eaten today so far: ${todayKcal} kcal. Respond ONLY in JSON: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence reason"}`
+        : `Estimate this meal: ${context}.${trainingCtx} Eaten today so far: ${todayKcal} kcal, ${Math.round(todayProtein)}g protein. Respond ONLY in JSON: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence reason"}`
 
       const data = await callClaude({
         model: 'claude-sonnet-4-6',
@@ -336,7 +339,8 @@ export default function Nutrition() {
           label = 'Workout done'
           bg = 'rgba(77,255,145,0.07)'
           border = 'rgba(77,255,145,0.25)'
-          const statStr = [distKm > 0 && `${distKm.toFixed(1)}km`, elevM > 0 && `${Math.round(elevM)}m elev`, durationMin && `${durationMin}min`].filter(Boolean).join(' · ')
+          const calBurn = isRun && distKm > 0 ? Math.round(distKm * 70 * 1.05) : null
+          const statStr = [distKm > 0 && `${distKm.toFixed(1)}km`, elevM > 0 && `${Math.round(elevM)}m elev`, durationMin && `${durationMin}min`, calBurn && `~${calBurn} kcal`].filter(Boolean).join(' · ')
           const isHardRun = sess?.zone?.includes('Z4') || sess?.zone?.includes('Z5') || sess?.intensity?.toLowerCase().includes('hard')
           if (isRun) {
             const carbNote = distKm > 16 || isHardRun ? 'High carb run — aim for 400–500g carbs today to refill glycogen.' : 'Moderate run — 250–300g carbs sufficient, focus on hitting protein.'
@@ -375,6 +379,22 @@ export default function Nutrition() {
           )
         }
         return null
+      })()}
+
+      {/* Post-workout 45-min refuel nudge */}
+      {isToday && todayActivity?.created_at && (() => {
+        const msSinceActivity = Date.now() - new Date(todayActivity.created_at).getTime()
+        const inWindow = msSinceActivity > 0 && msSinceActivity < 45 * 60 * 1000
+        const fedSinceActivity = entries.some(e => e.meal_type !== 'alcohol' && e.logged_at && new Date(e.logged_at) > new Date(todayActivity.created_at))
+        if (!inWindow || fedSinceActivity) return null
+        const minAgo = Math.floor(msSinceActivity / 60000)
+        return (
+          <div style={{ margin: '10px 20px 0', padding: '10px 14px', background: 'rgba(77,255,145,0.08)', border: '1px solid rgba(77,255,145,0.3)', borderRadius: 10 }}>
+            <div style={{ fontSize: 10, color: Z.green, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Refuel window · {minAgo}min ago</div>
+            <div style={{ fontSize: 13, color: Z.text, fontWeight: 500, marginBottom: 2 }}>Time to eat</div>
+            <div style={{ fontSize: 11, color: '#a8a5a0', lineHeight: 1.5 }}>Post-workout window is open. Log your recovery meal to hit that protein target — 30–40g now makes a real difference.</div>
+          </div>
+        )
       })()}
 
       {/* Cycle nutrition banner */}
