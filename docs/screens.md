@@ -143,10 +143,20 @@ Overlays rendered from App.jsx: Settings, Onboarding, WorkoutIngest, PostWorkout
 
 ### Settings (`src/screens/Settings.jsx` or overlay in `App.jsx`)
 
-**Purpose**: Athlete profile, coaching preferences, Strava connection, sport management.
+**Purpose**: Athlete profile, coaching preferences, Strava connection, sport management. Structured as 7 expandable accordion sections (one open at a time).
+
+| Section | Contents |
+|---------|----------|
+| Personal | Name, DOB, height, weight, email (read-only from auth) |
+| Goals & Races | Link to SportsPriorities, goal type selector, race list, add race |
+| Training Zones | Editable 5-zone HR inputs with contiguity validation, per-section save |
+| Health & Injuries | Health flags (add/edit/resolve), cycle tracking toggle + settings |
+| Coaching Preferences | Tone, stakes, detail, scope sliders with per-section save |
+| Connected Services | Strava connect/disconnect with OAuth flow |
+| Subscription | Tier badge, account email, sign out, delete account |
 
 **Data sources (reads/writes)**:
-- `athlete_settings` — all profile fields, slider values, races jsonb
+- `athlete_settings` — all profile fields, slider values, races, training_zones, health_flags, subscription_tier
 - `athlete_sports` — via SportsPriorities component
 
 **Claude calls**:

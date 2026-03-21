@@ -70,6 +70,9 @@ One row per user. Stores all athlete profile, preferences, and inferred fields.
 | cycle_notes | text | free-text notes on cycle |
 | onboarding_nudges_sent | jsonb | tracks which nudge keys have been sent |
 | last_goal_prompt_date | date | date of last quarterly goal prompt — added 2026-03-20 |
+| subscription_tier | text | 'founder' \| 'free' \| 'pro' — added 2026-03-21, default 'founder' |
+| training_zones | jsonb | `{z1_max, z2_min, z2_max, z3_min, z3_max, z4_min, z4_max, z5_min}` — added 2026-03-21 |
+| health_flags | jsonb | array of `{id, label, status, notes, updated_date}` — added 2026-03-21 |
 | updated_at | timestamptz | |
 
 **Actively used**: Yes — read by virtually every screen via `useSettings()` hook.
@@ -285,6 +288,9 @@ Gym/strength session exercise logs (from WorkoutIngest screen).
 |--------|-------|-------|---------|
 | `planned_start_time` | scheduled_sessions | 2026-03-20 | Records when athlete taps "I'm on it" on check-in card |
 | `last_goal_prompt_date` | athlete_settings | 2026-03-20 | Prevents quarterly goal prompt from re-appearing too soon |
+| `subscription_tier` | athlete_settings | 2026-03-21 | Athlete tier badge; default 'founder' |
+| `training_zones` | athlete_settings | 2026-03-21 | JSONB object: `{z1_max, z2_min, z2_max, z3_min, z3_max, z4_min, z4_max, z5_min}` — editable in Settings, used in coaching prompt |
+| `health_flags` | athlete_settings | 2026-03-21 | JSONB array of `{id, label, status, notes, updated_date}` — active/monitoring flags injected into coaching context |
 | `onboarding_nudges_sent` | athlete_settings | 2026-03-18 | Tracks which progressive onboarding nudges have been sent |
 | `cycle_*` columns | athlete_settings | 2026-03-18 | Opt-in menstrual cycle tracking |
 | `athlete_sports` table | — | 2026-03-18 | Entire table added for multi-sport support |

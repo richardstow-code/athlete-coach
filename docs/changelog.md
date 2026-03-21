@@ -4,6 +4,18 @@
 
 ## 2026-03-21
 
+- **Redesign**: Settings screen — full rewrite into 7 expandable accordion sections
+  - Personal, Goals & Races, Training Zones, Health & Injuries, Coaching Preferences, Connected Services, Subscription
+  - Per-section save buttons (not global save)
+  - Training Zones: editable 5-zone HR inputs with contiguity validation (z_n+1 min = z_n max + 1)
+  - Health Flags: structured add/edit/resolve flow; active/monitoring flags injected into coaching context
+  - Subscription section shows tier badge ('founder'); delete account moved here
+- **Schema**: `athlete_settings.subscription_tier` — added, default 'founder'
+- **Schema**: `athlete_settings.training_zones` — JSONB, editable from Settings, used in coaching system prompt
+- **Schema**: `athlete_settings.health_flags` — JSONB array; active/monitoring flags appear in coaching context
+- **Enhancement**: `buildContext.js` — adds `health_flags` + `training_zones` to athlete_settings select; injects ACTIVE HEALTH FLAGS block into formatted context
+- **Enhancement**: `coachingPrompt.js` — training zones now dynamic from `settings.training_zones` (was hardcoded)
+
 - **Fix**: Home screen briefing reverted to Thursday's on each reload
   - Root cause: DB query fetched most recent briefing ever (not today's); upsert lacked user_id so it failed silently under RLS
   - Fix: query now `.eq('date', todayStr).maybeSingle()`; upsert now includes `user_id`
