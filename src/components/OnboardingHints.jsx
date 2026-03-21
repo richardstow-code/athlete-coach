@@ -86,7 +86,7 @@ export default function OnboardingHints({ hintId, title, body, position = 'botto
   return (
     <div style={{
       position: 'fixed',
-      [position === 'top' ? 'top' : 'bottom']: position === 'top' ? 64 : 80,
+      [position === 'top' ? 'top' : 'bottom']: position === 'top' ? 64 : 148,
       left: 16,
       right: 16,
       maxWidth: 398,
