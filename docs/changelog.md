@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-03-21 (batch 2)
+
+- **New**: `HelpBot` component — floating `?` button on all screens, opens slide-up AI panel with Claude Haiku. Screen-aware quick chips. Ephemeral (not saved to coaching_memory). Links to roadmap and feature requests.
+- **New**: `OnboardingHints` component — per-screen hint cards (fixed position). Dismissal persisted to `athlete_settings.hints_dismissed`. 'Skip all' dismisses all hints at once. Reset link in Settings → Personal.
+- **New**: `ReleaseNotes` component — version comparison popup on app load. Reads `app_releases` table, writes `athlete_settings.last_seen_version`. Includes release history modal.
+- **New**: `Roadmap` screen — public feature request board grouped by status (in_dev / designing / in_review / triage / completed / declined). Completed and declined collapsed by default.
+- **New**: `FeatureRequestModal` (inline in Roadmap) — submits feature requests with Claude similarity dedup. If match confidence ≥ 0.75, votes on existing request instead of creating new row.
+- **Schema**: `athlete_settings.hints_dismissed` — added (jsonb)
+- **Schema**: `athlete_settings.last_seen_version` — added (text)
+- **Schema**: `feature_requests`, `feature_votes`, `feature_notifications` — new tables with RLS
+- **Schema**: `app_releases` — new table; seeded with v1.0.0 entry
+- **App.jsx**: mounts HelpBot + ReleaseNotes at root; notification badge on settings icon for unseen feature_notifications; Roadmap overlay; passes callbacks to Settings
+- **Settings.jsx**: 'Reset onboarding hints' link in Personal section; 'View roadmap' + 'Request a feature' links in Subscription section
+
 ## 2026-03-21
 
 - **Redesign**: Settings screen — full rewrite into 7 expandable accordion sections

@@ -73,6 +73,8 @@ One row per user. Stores all athlete profile, preferences, and inferred fields.
 | subscription_tier | text | 'founder' \| 'free' \| 'pro' — added 2026-03-21, default 'founder' |
 | training_zones | jsonb | `{z1_max, z2_min, z2_max, z3_min, z3_max, z4_min, z4_max, z5_min}` — added 2026-03-21 |
 | health_flags | jsonb | array of `{id, label, status, notes, updated_date}` — added 2026-03-21 |
+| hints_dismissed | jsonb | `{hint_id: "YYYY-MM-DD"}` — added 2026-03-21 |
+| last_seen_version | text | last release notes version seen — added 2026-03-21 |
 | updated_at | timestamptz | |
 
 **Actively used**: Yes — read by virtually every screen via `useSettings()` hook.
@@ -282,12 +284,98 @@ Gym/strength session exercise logs (from WorkoutIngest screen).
 
 ---
 
+### `feature_requests`
+Feature requests submitted by users, deduplicated by Claude similarity check.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| title | text | NOT NULL |
+| description | text | NOT NULL |
+| status | text | triage \| in_review \| designing \| in_dev \| completed \| declined |
+| vote_count | integer | default 1 — incremented when a duplicate is merged |
+| created_by | uuid | FK → auth.users |
+| merged_from | uuid[] | IDs of requests merged into this one |
+| similarity_hash | text | reserved for dedup |
+| admin_notes | text | set to 'similarity_check_failed' if Claude dedup call failed |
+| completed_at | timestamptz | |
+
+**RLS**: readable by all; insert/update by admin only.
+
+---
+
+### `feature_votes`
+One row per user per feature. Created when a user submits a request (new or matched).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| feature_id | uuid | FK → feature_requests |
+| user_id | uuid | FK → auth.users |
+| original_text | text | what the user typed (before dedup merge) |
+| — | — | UNIQUE (feature_id, user_id) |
+
+**RLS**: users can insert their own votes; read their own votes.
+
+---
+
+### `feature_notifications`
+Status change notifications sent to users who voted on a feature.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| user_id | uuid | FK → auth.users |
+| feature_id | uuid | FK → feature_requests |
+| type | text | 'status_change' \| 'completed' |
+| old_status | text | |
+| new_status | text | |
+| seen | boolean | default false |
+
+**RLS**: users can read and update their own notifications. Badge count shown on settings icon in app.
+
+To notify voters when status changes (run manually via Supabase SQL editor):
+```sql
+UPDATE feature_requests SET status = 'in_dev' WHERE id = '[feature_id]';
+INSERT INTO feature_notifications (user_id, feature_id, type, old_status, new_status)
+SELECT fv.user_id, '[feature_id]', 'status_change', 'in_review', 'in_dev'
+FROM feature_votes fv WHERE fv.feature_id = '[feature_id]';
+```
+
+---
+
+### `app_releases`
+One row per app version. Used to trigger the release notes popup.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| version | text | NOT NULL UNIQUE — semver e.g. '1.1.0' |
+| release_date | date | NOT NULL |
+| headline | text | NOT NULL — one-line summary |
+| changes | jsonb | array of `{title, description, tab}` objects |
+
+**RLS**: readable by all. To add a new release:
+```sql
+INSERT INTO app_releases (version, release_date, headline, changes)
+VALUES ('1.1.0', '2026-03-22', 'Headline here', '[{"title":"...","description":"...","tab":"Home"}]'::jsonb);
+```
+The popup fires automatically for all users on their next load.
+
+---
+
 ## Recently Added Columns
 
 | Column | Table | Added | Purpose |
 |--------|-------|-------|---------|
 | `planned_start_time` | scheduled_sessions | 2026-03-20 | Records when athlete taps "I'm on it" on check-in card |
 | `last_goal_prompt_date` | athlete_settings | 2026-03-20 | Prevents quarterly goal prompt from re-appearing too soon |
+| `hints_dismissed` | athlete_settings | 2026-03-21 | JSONB object `{hint_id: "YYYY-MM-DD"}` — dismissed onboarding hints by ID |
+| `last_seen_version` | athlete_settings | 2026-03-21 | Last app version the user saw the release notes for |
 | `subscription_tier` | athlete_settings | 2026-03-21 | Athlete tier badge; default 'founder' |
 | `training_zones` | athlete_settings | 2026-03-21 | JSONB object: `{z1_max, z2_min, z2_max, z3_min, z3_max, z4_min, z4_max, z5_min}` — editable in Settings, used in coaching prompt |
 | `health_flags` | athlete_settings | 2026-03-21 | JSONB array of `{id, label, status, notes, updated_date}` — active/monitoring flags injected into coaching context |

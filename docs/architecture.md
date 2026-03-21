@@ -89,7 +89,28 @@ Direct Anthropic API calls are made only from Supabase edge functions (`infer-at
 
 ## Frontend Routing
 
-Single-page app, no URL routing. Navigation is tab-based (5 tabs: Home, Plan, Chat, Fuel, Progress). Overlays (Settings, Onboarding, WorkoutIngest, PostWorkoutPopup, PostEventModal) are rendered conditionally in App.jsx.
+Single-page app, no URL routing. Navigation is tab-based (5 tabs: Home, Plan, Chat, Fuel, Progress). Overlays (Settings, Onboarding, WorkoutIngest, PostWorkoutPopup, PostEventModal, Roadmap) are rendered conditionally in App.jsx.
+
+## Root-Level Components (mounted once in App.jsx)
+
+These components are mounted at the app root and appear on every screen:
+
+| Component | Purpose |
+|-----------|---------|
+| `HelpBot` | Floating `?` button (fixed, bottom-right, above tab bar) opens slide-up AI assistant panel. Ephemeral conversation, screen-aware quick chips, links to roadmap and feature requests. |
+| `ReleaseNotes` | On app load, compares latest `app_releases.version` to `athlete_settings.last_seen_version`. Shows a popup with new features if the version is newer. Writes `last_seen_version` on dismiss. |
+
+## Per-Screen Components (mounted in each screen)
+
+| Component | Purpose |
+|-----------|---------|
+| `OnboardingHints` | Per-screen tooltip card. On mount, checks `athlete_settings.hints_dismissed` for the hint ID. Shows after 1s delay if not dismissed. Fixed position (above tab bar or below header). 'Got it' dismisses one; 'Skip all' dismisses all hint IDs. |
+
+## Feature Request Similarity Detection Pattern
+
+When a user submits a feature request, the app calls Claude Haiku to compare the new request against all existing open requests. Claude returns `{match, matched_id, confidence, reasoning}`. If `match=true` and `confidence>=0.75`, the user's text is added as a vote on the existing request rather than creating a new row. This prevents duplicate feature requests from fragmenting vote counts.
+
+If the Claude call fails, a new row is created and `admin_notes` is set to `'similarity_check_failed'` for manual review.
 
 ## Key Patterns
 

@@ -4,7 +4,11 @@
 
 5 tabs managed by `App.jsx`: Home, Plan, Chat, Fuel (Nutrition), Progress (Stats).
 
-Overlays rendered from App.jsx: Settings, Onboarding, WorkoutIngest, PostWorkoutPopup, PostEventModal.
+Overlays rendered from App.jsx: Settings, Onboarding, WorkoutIngest, PostWorkoutPopup, PostEventModal, Roadmap.
+
+Root-level components (mounted once in App.jsx, visible on every screen): HelpBot, ReleaseNotes.
+
+Per-screen components (mounted inside each screen): OnboardingHints — one instance per screen with a unique `hintId`.
 
 ---
 
@@ -208,3 +212,56 @@ Overlays rendered from App.jsx: Settings, Onboarding, WorkoutIngest, PostWorkout
 
 **Data sources (writes)**:
 - `athlete_sports` — updates `lifecycle_state` to recovery/what_next/maintenance
+
+---
+
+### HelpBot (`src/components/HelpBot.jsx`)
+
+**Purpose**: Floating `?` button (fixed, bottom-right, 88px from bottom to clear tab bar) on every screen. Opens a 76dvh slide-up panel with an AI assistant that explains app features. NOT a coaching assistant — directs training questions to the Chat tab.
+
+**AI call**: Claude Haiku, 400 tokens, ephemeral conversation (not saved to coaching_memory). Screen name passed as context so responses can be screen-specific.
+
+**Entry points to Roadmap/Feature Requests**: "Request a feature →" and "See what's coming →" links at bottom of panel.
+
+---
+
+### ReleaseNotes (`src/components/ReleaseNotes.jsx`)
+
+**Purpose**: On app load, checks if `app_releases.version` (latest) > `athlete_settings.last_seen_version`. If so, shows a slide-up modal listing new features with tab badges. Writes `last_seen_version` on dismiss.
+
+**Data sources (reads)**:
+- `app_releases` — latest row
+- `athlete_settings` — `last_seen_version`
+
+**Data sources (writes)**:
+- `athlete_settings` — `last_seen_version`
+
+---
+
+### OnboardingHints (`src/components/OnboardingHints.jsx`)
+
+**Purpose**: Per-screen hint card shown to new users. Fixed position (above tab bar). Checks `hints_dismissed` on mount and shows after 1s delay if the `hintId` has not been dismissed. 'Got it' dismisses one hint; 'Skip all' dismisses all known hint IDs.
+
+Hint IDs: `home_briefing`, `plan_sessions`, `chat_context`, `fuel_logging`, `progress_views`, `settings_overview`
+
+**Data sources (reads/writes)**: `athlete_settings.hints_dismissed`
+
+Reset via Settings → Personal section → "Reset onboarding hints" link.
+
+---
+
+### Roadmap (`src/screens/Roadmap.jsx`)
+
+**Purpose**: Public list of all feature requests, grouped by status. Includes inline FeatureRequestModal with Claude deduplication. Accessible from Settings → Subscription, Help Bot panel, or notification badge on settings icon.
+
+**Status groups**: In Dev (highlighted) → Designing → In Review → Triage → Completed (collapsed) → Declined (collapsed). Sorted by vote_count within each group.
+
+**Data sources (reads)**:
+- `feature_requests` — all rows (public)
+- `feature_votes` — current user's votes (to show "YOU REQUESTED" badge)
+
+**Data sources (writes)** (via FeatureRequestModal):
+- `feature_requests` — new row if no match found
+- `feature_votes` — one vote per user per feature
+
+**Claude call**: Haiku, 200 tokens, similarity check against existing open requests before creating a new row.
