@@ -48,7 +48,7 @@ const SCREEN_CHIPS = {
   stats: ['What is macro vs micro view?', 'Where are my personal bests?', 'How is compliance calculated?'],
 }
 
-export default function HelpBot({ currentScreen, onOpenRoadmap, onOpenFeatureRequest }) {
+export default function HelpBot({ currentScreen, onOpenRoadmap, onOpenFeatureRequest, onOpenBugReport }) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -247,13 +247,20 @@ export default function HelpBot({ currentScreen, onOpenRoadmap, onOpenFeatureReq
               </div>
             )}
 
-            {/* Feature request / roadmap chips */}
-            <div style={{ padding: '8px 20px 0', display: 'flex', gap: 8, background: Z.bg, flexShrink: 0 }}>
+            {/* Feature request / roadmap / bug report links */}
+            <div style={{ padding: '8px 20px 0', display: 'flex', gap: 8, flexWrap: 'wrap', background: Z.bg, flexShrink: 0 }}>
               <button
                 onClick={() => { handleClose(); onOpenFeatureRequest?.() }}
                 style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: 0, textDecoration: 'underline' }}
               >
                 Request a feature →
+              </button>
+              <span style={{ color: Z.border, fontSize: 11 }}>|</span>
+              <button
+                onClick={() => { handleClose(); onOpenBugReport?.() }}
+                style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: 0, textDecoration: 'underline' }}
+              >
+                Report a bug →
               </button>
               <span style={{ color: Z.border, fontSize: 11 }}>|</span>
               <button

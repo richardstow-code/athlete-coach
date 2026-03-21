@@ -87,7 +87,7 @@ function FeatureCard({ feature, myVoteIds }) {
   )
 }
 
-function FeatureRequestModal({ onClose, onSubmitted, userId }) {
+function FeatureRequestModal({ onClose, onSubmitted, userId, isBugReport = false }) {
   const [text, setText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState(null) // null | { matched: true, title } | { matched: false }
@@ -165,7 +165,7 @@ Respond ONLY with a JSON object:
         const adminNotes = existing === null ? 'similarity_check_failed' : null
         const { data: newReq } = await supabase
           .from('feature_requests')
-          .insert({ title: text.trim().slice(0, 80), description: text.trim(), created_by: uid, vote_count: 1, ...(adminNotes ? { admin_notes: adminNotes } : {}) })
+          .insert({ title: (isBugReport ? '[BUG] ' : '') + text.trim().slice(0, 80), description: text.trim(), created_by: uid, vote_count: 1, ...(adminNotes ? { admin_notes: adminNotes } : {}) })
           .select()
           .single()
         if (newReq) {
@@ -196,7 +196,7 @@ Respond ONLY with a JSON object:
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 16, color: Z.text }}>
-            Request a feature
+            {isBugReport ? 'Report a bug' : 'Request a feature'}
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 22, cursor: 'pointer', padding: 4, lineHeight: 1 }}>×</button>
         </div>
@@ -205,8 +205,8 @@ Respond ONLY with a JSON object:
           <div>
             <div style={{ fontSize: 12, color: Z.text, lineHeight: 1.7, marginBottom: 20 }}>
               {result.matched
-                ? `This is similar to an existing request: "${result.title}". Your vote has been added. Track it on the roadmap.`
-                : 'Feature request submitted. Track it on the roadmap.'}
+                ? `This is similar to an existing report: "${result.title}". Your report has been added. Track it on the roadmap.`
+                : isBugReport ? 'Bug report submitted. Thanks — we\'ll look into it.' : 'Feature request submitted. Track it on the roadmap.'}
             </div>
             <button onClick={onClose} style={{ width: '100%', padding: '13px', background: Z.accent, border: 'none', borderRadius: 10, fontFamily: "'DM Mono', monospace", fontSize: 13, fontWeight: 600, color: Z.bg, cursor: 'pointer' }}>
               Done
@@ -214,11 +214,13 @@ Respond ONLY with a JSON object:
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 12, color: Z.muted, marginBottom: 12 }}>What would you like to see?</div>
+            <div style={{ fontSize: 12, color: Z.muted, marginBottom: 12 }}>
+              {isBugReport ? 'What went wrong? Describe what you expected vs what happened.' : 'What would you like to see?'}
+            </div>
             <textarea
               value={text}
               onChange={e => setText(e.target.value)}
-              placeholder="Describe the feature..."
+              placeholder={isBugReport ? 'Describe the bug — what you did, what you expected, what happened...' : 'Describe the feature...'}
               rows={5}
               style={{
                 width: '100%', boxSizing: 'border-box',
@@ -251,12 +253,13 @@ Respond ONLY with a JSON object:
   )
 }
 
-export default function Roadmap({ onClose, userId, defaultShowRequest = false }) {
+export default function Roadmap({ onClose, userId, defaultShowRequest = false, defaultShowBugReport = false }) {
   const [features, setFeatures] = useState([])
   const [myVoteIds, setMyVoteIds] = useState([])
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState({ completed: true, declined: true })
   const [showRequest, setShowRequest] = useState(defaultShowRequest)
+  const [showBugReport, setShowBugReport] = useState(defaultShowBugReport)
 
   useEffect(() => {
     async function load() {
@@ -370,6 +373,16 @@ export default function Roadmap({ onClose, userId, defaultShowRequest = false })
           onClose={() => setShowRequest(false)}
           onSubmitted={() => {}}
           userId={userId}
+        />
+      )}
+
+      {/* Bug report modal */}
+      {showBugReport && (
+        <FeatureRequestModal
+          onClose={() => setShowBugReport(false)}
+          onSubmitted={() => {}}
+          userId={userId}
+          isBugReport
         />
       )}
     </div>

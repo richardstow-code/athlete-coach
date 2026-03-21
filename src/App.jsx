@@ -168,6 +168,7 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [showRoadmap, setShowRoadmap] = useState(false)
   const [showFeatureRequest, setShowFeatureRequest] = useState(false)
+  const [showBugReport, setShowBugReport] = useState(false)
   const [notifCount, setNotifCount] = useState(0)
   const [userId, setUserId] = useState(null)
 
@@ -353,14 +354,16 @@ export default function App() {
         currentScreen={activeTab}
         onOpenRoadmap={handleOpenRoadmap}
         onOpenFeatureRequest={() => { setShowFeatureRequest(true); setShowRoadmap(true) }}
+        onOpenBugReport={() => { setShowBugReport(true); setShowRoadmap(true) }}
       />
 
-      {/* ROADMAP OVERLAY — also hosts feature request modal */}
+      {/* ROADMAP OVERLAY — also hosts feature request and bug report modals */}
       {showRoadmap && (
         <Roadmap
-          onClose={() => { setShowRoadmap(false); setShowFeatureRequest(false) }}
+          onClose={() => { setShowRoadmap(false); setShowFeatureRequest(false); setShowBugReport(false) }}
           userId={userId}
           defaultShowRequest={showFeatureRequest}
+          defaultShowBugReport={showBugReport}
         />
       )}
 
