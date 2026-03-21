@@ -87,7 +87,7 @@ function ActivityRow({ activity, onActivityClick }) {
     ? `${Math.floor(activity.duration_min / activity.distance_km)}:${String(Math.round((activity.duration_min / activity.distance_km % 1) * 60)).padStart(2, '0')}`
     : '—')
   const dateStr = activity.date
-    ? new Date(activity.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    ? new Date(activity.date.slice(0, 10) + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
     : ''
   return (
     <div
@@ -333,7 +333,7 @@ export default function Home({ onActivityClick, onOpenSettings }) {
   const _dow = weekStart.getDay()
   weekStart.setDate(weekStart.getDate() - (_dow === 0 ? 6 : _dow - 1))
   weekStart.setHours(0, 0, 0, 0)
-  const weekActs = activities.filter(a => new Date(a.date + 'T12:00:00') >= weekStart)
+  const weekActs = activities.filter(a => new Date(a.date?.slice(0, 10) + 'T12:00:00') >= weekStart)
   const isRunAct    = a => a.type?.toLowerCase().includes('run')
   const isBikeAct   = a => a.type?.toLowerCase().includes('ride') || a.type?.toLowerCase().includes('cycl') || a.type?.toLowerCase().includes('bike')
   const isStrengthAct = a => a.type?.toLowerCase().includes('weight') || a.type?.toLowerCase().includes('strength') || a.type?.toLowerCase().includes('workout')
@@ -348,7 +348,7 @@ export default function Home({ onActivityClick, onOpenSettings }) {
 
   // ── Derived values ────────────────────────────────────────
   const todayStr       = viennaDate()
-  const todayActivities = activities.filter(a => a.date === todayStr)
+  const todayActivities = activities.filter(a => a.date?.slice(0, 10) === todayStr)
   const todayActivity   = todayActivities.length > 0
 
   const isMorning   = hour < 11
@@ -858,8 +858,8 @@ export default function Home({ onActivityClick, onOpenSettings }) {
         </div>
         {loading ? (
           <div style={{ color: '#888580', fontSize: '13px' }}>Loading activities...</div>
-        ) : activities.filter(a => a.date !== todayStr).length > 0 ? (
-          activities.filter(a => a.date !== todayStr).slice(0, 4).map((a, i) => (
+        ) : activities.filter(a => a.date?.slice(0, 10) !== todayStr).length > 0 ? (
+          activities.filter(a => a.date?.slice(0, 10) !== todayStr).slice(0, 4).map((a, i) => (
             <ActivityRow key={a.id || i} activity={a} onActivityClick={onActivityClick} />
           ))
         ) : (
