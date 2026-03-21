@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { callClaude } from './claudeProxy'
+import { classifyElevation, ELEVATION_TARGETS, elevationTargetRange } from './elevationUtils'
 
 /**
  * generatePlanDraft — builds a training plan draft using Claude and saves
@@ -41,8 +42,27 @@ export async function generatePlanDraft(triggerContext) {
     .order('week_day')
 
   // 3. Build context strings
+
+  // Elevation classification for the target race
+  let elevationStr = null
+  if (race) {
+    const elevM = parseFloat(race.elevation_m) || 0
+    const distKm = parseFloat(race.distance_km) || null
+    const classification = classifyElevation(elevM, distKm)
+    const gainPerKm = distKm && elevM ? (elevM / distKm).toFixed(1) : null
+    const targets = ELEVATION_TARGETS[classification]
+    if (elevM > 0 && distKm) {
+      elevationStr = `Race elevation profile: ${elevM}m total gain (${gainPerKm}m/km) — classified as ${classification}.
+Elevation training guidance: ${targets.label}.
+Weekly elevation targets: base phase ${targets.base[0]}–${targets.base[1]}m/week, peak phase ${targets.peak[0]}–${targets.peak[1]}m/week.
+Build weekly elevation progressively across the plan to hit peak-phase targets in the final build weeks.`
+    } else if (distKm) {
+      elevationStr = `Race elevation: unknown or flat. Generating a moderate rolling plan as default. Weekly elevation targets: 100–300m/week (incidental — pace and volume are the focus).`
+    }
+  }
+
   const raceStr = race
-    ? `Target event: ${race.name} on ${race.date}${race.targetTime ? ` (target time: ${race.targetTime})` : ''}`
+    ? `Target event: ${race.name} on ${race.date}${race.targetTime ? ` (target time: ${race.targetTime})` : ''}${race.distance_km ? ` — ${race.distance_km}km` : ''}`
     : 'No specific race — generate a general 12-week training block.'
 
   const athleteLines = athleteSettings
@@ -104,6 +124,7 @@ Tailor the session types to the athlete's sport — for strength athletes use mo
     `Trigger: ${trigger}`,
     `Current date: ${currentDate}`,
     raceStr,
+    elevationStr,
     sportsStr,
     athleteLines.length ? athleteLines.join('\n') : null,
     baselineAnalysis ? `Baseline analysis of recent training:\n${baselineAnalysis}` : 'No training history available — generate a plan appropriate for the athlete\'s stated level and goals.',

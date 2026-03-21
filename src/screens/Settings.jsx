@@ -176,7 +176,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
   const [newFlag, setNewFlag] = useState({ label:'', status:'active', notes:'' })
 
   // ── Races / plan ─────────────────────────────────────────
-  const [newRace, setNewRace] = useState({ name:'', date:'', type:'Run', distance:'42.2', target:'3:10:00', elevation:'' })
+  const [newRace, setNewRace] = useState({ name:'', date:'', type:'Run', distance:'42.2', target:'3:10:00', elevation_m:'' })
   const [showRaceForm, setShowRaceForm] = useState(false)
   const [newRaceJustAdded, setNewRaceJustAdded] = useState(null)
   const [generatingPlan, setGeneratingPlan] = useState(false)
@@ -290,7 +290,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
     const raceToAdd = { ...newRace }
     const updated = { ...settings, races: [...(settings.races || []), raceToAdd] }
     setSettings(updated)
-    setNewRace({ name:'', date:'', type:'Run', distance:'42.2', target:'3:10:00', elevation:'' })
+    setNewRace({ name:'', date:'', type:'Run', distance:'42.2', target:'3:10:00', elevation_m:'' })
     setShowRaceForm(false)
     await supabase.from('athlete_settings').upsert({ user_id: userId, ...updated, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
     setNewRaceJustAdded(raceToAdd)
@@ -320,7 +320,13 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
       const { data: settingsData } = await supabase.from('athlete_settings').select('*').maybeSingle()
       const id = await generatePlanDraft({
         trigger: 'new_race',
-        race: { name: race.name, date: race.date, targetTime: race.target },
+        race: {
+          name: race.name,
+          date: race.date,
+          targetTime: race.target,
+          distance_km: parseFloat(race.distance) || null,
+          elevation_m: parseFloat(race.elevation_m || race.elevation) || null,
+        },
         currentDate: new Date().toISOString().slice(0, 10),
         athleteSettings: settingsData,
       })
@@ -665,6 +671,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
                       <div style={{ fontSize: 13, color: Z.text, fontWeight: 500 }}>{r.name}</div>
                       <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>
                         {r.date}{daysTo !== null ? ` · ${daysTo}d` : ''} · {r.distance}km · {r.target}
+                        {(r.elevation_m > 0 || r.elevation > 0) ? ` · ↑ ${r.elevation_m || r.elevation}m` : ''}
                       </div>
                     </div>
                     <button onClick={() => setCancelModal({ race: r, index: i })}
@@ -699,9 +706,12 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
                       <input style={inp} type="number" value={newRace.distance} onChange={e => setNewRace(r => ({...r, distance: e.target.value}))} /></div>
                     <div><div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Target time</div>
                       <input style={inp} placeholder="3:10:00" value={newRace.target} onChange={e => setNewRace(r => ({...r, target: e.target.value}))} /></div>
-                    {['Trail Run','Bike','Skimo'].includes(newRace.type) && (
-                      <div><div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Elevation (m)</div>
-                        <input style={inp} type="number" placeholder="2500" value={newRace.elevation} onChange={e => setNewRace(r => ({...r, elevation: e.target.value}))} /></div>
+                    {['Run','Trail Run','Bike','Skimo','Triathlon'].includes(newRace.type) && (
+                      <div>
+                        <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Total elevation gain (m)</div>
+                        <input style={inp} type="number" placeholder="e.g. 650" value={newRace.elevation_m} onChange={e => setNewRace(r => ({...r, elevation_m: e.target.value}))} />
+                        <div style={{ fontSize: 10, color: Z.muted, marginTop: 4, lineHeight: 1.5 }}>Check your race's official course profile. Leave blank if flat or unknown.</div>
+                      </div>
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>

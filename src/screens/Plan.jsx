@@ -342,7 +342,12 @@ function RaceCard({ race }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: hasMetrics ? 10 : 0 }}>
         <div>
           <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 15, fontWeight: 700, color: Z.text }}>{race.name}</div>
-          {race.date && <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>{race.date}{race.distance ? ` · ${race.distance}km` : ''}</div>}
+          {race.date && (
+            <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>
+              {race.date}{race.distance ? ` · ${race.distance}km` : ''}
+              {(race.elevation_m > 0 || race.elevation > 0) ? ` · ↑ ${race.elevation_m || race.elevation}m` : ''}
+            </div>
+          )}
         </div>
         {days != null && (
           <div style={{ textAlign: 'right' }}>

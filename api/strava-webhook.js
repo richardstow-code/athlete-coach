@@ -104,6 +104,57 @@ function enrichActivity(activity) {
   }
 }
 
+// ── Elevation classification (inlined — can't import from src/lib in Vercel API) ──
+
+function classifyElevation(elevationM, distanceKm) {
+  if (!elevationM || elevationM === 0 || !distanceKm) return 'flat'
+  const gainPerKm = elevationM / distanceKm
+  if (gainPerKm < 5)  return 'flat'
+  if (gainPerKm < 15) return 'rolling'
+  if (gainPerKm < 30) return 'hilly'
+  return 'mountainous'
+}
+
+const ELEVATION_WEEK_TARGETS = {
+  flat:        [100, 300],
+  rolling:     [200, 500],
+  hilly:       [400, 700],
+  mountainous: [600, 1000],
+}
+
+// ── Fetch athlete context for activity feedback ───────────────────────────────
+
+async function fetchAthleteContext(activityDate) {
+  const headers = {
+    'apikey': process.env.SUPABASE_SECRET_KEY,
+    'Authorization': `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+  }
+  // Get athlete settings (races for elevation) and last 7 days of activities (weekly elevation)
+  const weekAgo = new Date(new Date(activityDate).getTime() - 6 * 24 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10)
+
+  const [settingsRes, activitiesRes] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/athlete_settings?user_id=eq.${ATHLETE_USER_ID}&select=races,name,weight_kg,goal_type`, { headers }),
+    fetch(`${SUPABASE_URL}/rest/v1/activities?user_id=eq.${ATHLETE_USER_ID}&date=gte.${weekAgo}&select=elevation_m,date`, { headers }),
+  ])
+
+  const settings = settingsRes.ok ? (await settingsRes.json())[0] || null : null
+  const weekActivities = activitiesRes.ok ? await activitiesRes.json() : []
+
+  const today = activityDate || new Date().toISOString().slice(0, 10)
+  const upcoming = (settings?.races || [])
+    .filter(r => r.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))
+  const nextRace = upcoming[0] || null
+
+  const raceElevM = nextRace ? parseFloat(nextRace.elevation_m || nextRace.elevation) || 0 : 0
+  const raceDistKm = nextRace ? parseFloat(nextRace.distance) || null : null
+  const raceClassification = classifyElevation(raceElevM, raceDistKm)
+  const weekElevTotal = Math.round(weekActivities.reduce((s, a) => s + parseFloat(a.elevation_m || 0), 0))
+
+  return { settings, nextRace, raceElevM, raceDistKm, raceClassification, weekElevTotal }
+}
+
 // ── Claude coaching feedback ──────────────────────────────────────────────────
 
 async function generateFeedback(activityRow, enriched) {
@@ -116,15 +167,45 @@ async function generateFeedback(activityRow, enriched) {
     return `  km${i + 1}: ${paceMin}:${String(paceSec).padStart(2, '0')}/km${hr}`
   }).filter(Boolean).join('\n')
 
-  const prompt = `You are a marathon coach. Analyse this activity and give 2-3 sentences of direct feedback covering effort level, HR zone discipline (Z2 ceiling is 140bpm for easy runs), and one specific takeaway. Be direct, no softening.
+  // Fetch athlete and elevation context (non-fatal — fall back to basics)
+  let athleteContext = ''
+  let elevationContext = ''
+  try {
+    const { settings, nextRace, raceElevM, raceClassification, weekElevTotal } =
+      await fetchAthleteContext(activityRow.date)
+
+    const name = settings?.name || 'athlete'
+    const weight = settings?.weight_kg ? `${settings.weight_kg}kg` : null
+    const goalType = settings?.goal_type || null
+    athleteContext = [name, weight, goalType].filter(Boolean).join(', ')
+
+    if (nextRace) {
+      const [tLow, tHigh] = ELEVATION_WEEK_TARGETS[raceClassification]
+      const sessionElev = activityRow.elevation_m || 0
+      const status = weekElevTotal >= tLow ? '✓ on track' : '⚠ below target'
+      const raceElevNote = raceElevM > 0
+        ? `Race course: ${raceClassification} (${raceElevM}m total gain)`
+        : `Race course: ${raceClassification}`
+      elevationContext = `${raceElevNote}
+Elevation this session: ${sessionElev}m | Weekly total so far: ${weekElevTotal}m (target ${tLow}–${tHigh}m/week — ${status})`
+    } else {
+      elevationContext = `Elevation this session: ${activityRow.elevation_m || 0}m`
+    }
+  } catch {
+    elevationContext = `Elevation: ${activityRow.elevation_m || 0}m`
+    athleteContext = '79kg male, marathon training, target Munich Marathon 12 Oct 2026, goal sub-3:00'
+  }
+
+  const prompt = `You are an endurance coach. Analyse this activity and give 2-3 sentences of direct feedback covering effort level, HR zone discipline (Z2 ceiling is 140bpm for easy runs), and one specific takeaway. Be direct, no softening. If elevation data is available, briefly note whether it contributes to the race build.
 
 Activity: ${activityRow.type}, ${activityRow.distance_km}km, ${activityRow.duration_min}min
-Avg HR: ${activityRow.avg_hr || 'N/A'} | Max HR: ${activityRow.max_hr || 'N/A'} | Elevation: ${activityRow.elevation_m || 0}m
+Avg HR: ${activityRow.avg_hr || 'N/A'} | Max HR: ${activityRow.max_hr || 'N/A'}
 Pace: ${activityRow.pace_per_km || 'N/A'}/km
+${elevationContext}
 Workout type: ${enriched.workoutType}${enriched.paceVariation > 0 ? ` (pace variation: ${enriched.paceVariation}s/km)` : ''}
 ${splitsText ? `\nSplits:\n${splitsText}` : ''}
 
-Athlete context: 79kg male, marathon training, target Munich Marathon 12 Oct 2026, goal sub-3:00.`
+Athlete context: ${athleteContext}`
 
   // Route through Supabase claude-proxy (holds the Anthropic key in its secrets)
   const res = await fetch(`${SUPABASE_URL}/functions/v1/claude-proxy`, {

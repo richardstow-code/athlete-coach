@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { inferCyclePhase, daysSincePeriod } from './inferCyclePhase'
+import { classifyElevation, ELEVATION_TARGETS, elevationTargetRange } from './elevationUtils'
 
 /**
  * Fetches all context needed for coaching prompts in a single parallel round-trip.
@@ -154,7 +155,11 @@ export function formatContext({
     if (upcoming.length > 0) {
       const next = upcoming[0]
       const daysTo = Math.ceil((new Date(next.date) - new Date()) / (24 * 60 * 60 * 1000))
-      lines.push(`Next race: ${next.name} on ${next.date} (${daysTo}d) — target ${next.target}`)
+      const elevM = parseFloat(next.elevation_m || next.elevation) || 0
+      const distKm = parseFloat(next.distance) || null
+      const classification = classifyElevation(elevM, distKm)
+      const elevNote = elevM > 0 ? ` | ↑ ${elevM}m (${classification})` : ''
+      lines.push(`Next race: ${next.name} on ${next.date} (${daysTo}d)${distKm ? ` — ${distKm}km` : ''} | target ${next.target}${elevNote}`)
     }
     if (settings.health_notes) lines.push(`Health: ${settings.health_notes}`)
     if (lines.length > 0) parts.push('ATHLETE:\n' + lines.map(l => `- ${l}`).join('\n'))
@@ -164,6 +169,39 @@ export function formatContext({
     if (activeFlags.length > 0) {
       const flagLines = activeFlags.map(f => `- ${f.label} (${f.status}): ${f.notes}`)
       parts.push('ACTIVE HEALTH FLAGS:\n' + flagLines.join('\n'))
+    }
+  }
+
+  // ── Weekly elevation tracking (for endurance sports) ─────
+  if (settings && activities.length > 0) {
+    const upcoming = (settings.races || [])
+      .filter(r => r.date >= new Date().toLocaleDateString('en-CA', { timeZone: TZ }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+    const nextRace = upcoming[0] || null
+    if (nextRace) {
+      const elevM = parseFloat(nextRace.elevation_m || nextRace.elevation) || 0
+      const distKm = parseFloat(nextRace.distance) || null
+      const classification = classifyElevation(elevM, distKm)
+      // Only add elevation tracking for non-flat races or if user regularly gets elevation
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: TZ })
+      const weekActivities = activities.filter(a => (a.date || '').slice(0, 10) >= weekAgo)
+      const weekElevTotal = Math.round(weekActivities.reduce((s, a) => s + parseFloat(a.elevation_m || 0), 0))
+      const targets = ELEVATION_TARGETS[classification]
+      if (weekElevTotal > 0 || classification !== 'flat') {
+        const targetStr = elevationTargetRange(classification, 'base')
+        const [tLow, tHigh] = targets.base
+        const status = weekElevTotal >= tLow && weekElevTotal <= tHigh * 1.3
+          ? '✓ on track'
+          : weekElevTotal < tLow
+            ? '⚠ below target'
+            : '↑ above target (check recovery)'
+        parts.push(
+          `ELEVATION TRACKING:\n` +
+          `- Race course: ${classification} (${elevM > 0 ? elevM + 'm total gain' : 'unknown elevation'})\n` +
+          `- Weekly elevation target (current phase): ${targetStr}\n` +
+          `- This week so far: ${weekElevTotal}m — ${status}`
+        )
+      }
     }
   }
 
