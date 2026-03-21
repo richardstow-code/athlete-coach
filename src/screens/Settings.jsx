@@ -5,6 +5,7 @@ import { runBackfill } from '../lib/stravaBackfill'
 import { generatePlanDraft } from '../lib/planGenerator'
 import SportsPriorities from './SportsPriorities'
 import PlanReviewPanel from '../components/PlanReviewPanel'
+import OnboardingHints from '../components/OnboardingHints'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -135,7 +136,7 @@ function CancelRaceModal({ race, onConfirm, onClose }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function Settings({ onClose, stravaConnectError, onLogout }) {
+export default function Settings({ onClose, stravaConnectError, onLogout, onOpenRoadmap, onOpenFeatureRequest }) {
   const [openSection, setOpenSection] = useState(null)
 
   // ── Core settings from DB ────────────────────────────────
@@ -513,8 +514,19 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
   })
   const sectionBody = { padding: '0 20px 20px' }
 
+  async function resetHints() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) await supabase.from('athlete_settings').update({ hints_dismissed: {} }).eq('user_id', user.id)
+  }
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
+      <OnboardingHints
+        hintId="settings_overview"
+        title="Your profile and preferences"
+        body="Set your training zones, health flags, and coaching tone here. Your coach reads this data live — updating your shoulder status or zones immediately affects coaching advice. Connected Services links your Strava account."
+        position="bottom"
+      />
       {showSports && <SportsPriorities onClose={() => setShowSports(false)} />}
 
       {cancelModal && (
@@ -594,6 +606,14 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
                 <div style={{ fontSize: 10, color: '#555', marginTop: 4 }}>To change your email contact support.</div>
               </div>
               <SaveBtn onClick={savePersonal} saving={personalSaving} saved={personalSaved} />
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${Z.border}` }}>
+                <button
+                  onClick={resetHints}
+                  style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: 0, textDecoration: 'underline' }}
+                >
+                  Reset onboarding hints
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1116,8 +1136,24 @@ export default function Settings({ onClose, stravaConnectError, onLogout }) {
               </div>
 
               {/* Billing placeholder */}
-              <div style={{ fontSize: 12, color: '#444', padding: '12px 14px', background: 'rgba(255,255,255,0.02)', border: `1px solid ${Z.border}`, borderRadius: 8, marginBottom: 20, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12, color: '#444', padding: '12px 14px', background: 'rgba(255,255,255,0.02)', border: `1px solid ${Z.border}`, borderRadius: 8, marginBottom: 16, lineHeight: 1.5 }}>
                 Billing and subscription management coming soon.
+              </div>
+
+              {/* Roadmap & feature request */}
+              <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
+                <button
+                  onClick={() => { onClose?.(); onOpenRoadmap?.() }}
+                  style={{ background: 'none', border: 'none', color: Z.accent, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: 0, textDecoration: 'underline' }}
+                >
+                  View roadmap
+                </button>
+                <button
+                  onClick={() => { onClose?.(); onOpenFeatureRequest?.() }}
+                  style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: 0, textDecoration: 'underline' }}
+                >
+                  Request a feature
+                </button>
               </div>
 
               {/* Sign out */}

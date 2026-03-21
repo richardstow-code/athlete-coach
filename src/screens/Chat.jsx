@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { callClaude } from '../lib/claudeProxy'
 import NudgeCard from '../components/NudgeCard'
 import CycleLogNudge from '../components/CycleLogNudge'
+import OnboardingHints from '../components/OnboardingHints'
 
 export default function Chat() {
   const settings = useSettings()
@@ -181,6 +182,13 @@ export default function Chat() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <OnboardingHints
+        hintId="chat_context"
+        title="Your coach knows your data"
+        body="Every conversation includes your recent activities, nutrition, upcoming sessions and health flags as context. You don't need to explain what you've done — just ask. Training changes agreed in chat appear in the Plan tab."
+        position="bottom"
+      />
+
       {/* NUDGE CARD — fires once per session for the next missing profile field */}
       {activeNudge && (
         <NudgeCard

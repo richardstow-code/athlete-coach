@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import OnboardingHints from '../components/OnboardingHints'
 import { useSettings } from '../lib/useSettings'
 import { usePrimarySport } from '../lib/usePrimarySport'
 import { usePullToRefresh } from '../lib/usePullToRefresh'
@@ -651,6 +652,13 @@ export default function Home({ onActivityClick, onOpenSettings }) {
           {refreshing ? 'Refreshing...' : pullDistance > 72 ? 'Release to refresh' : 'Pull to refresh'}
         </div>
       )}
+
+      <OnboardingHints
+        hintId="home_briefing"
+        title="Your daily briefing"
+        body="Your AI coach generates a personalised briefing each morning based on your recent training. Tap 'Refresh' any time to get an updated view. Pull down to reload today's activity and nutrition data."
+        position="bottom"
+      />
 
       {/* BACKFILL STATUS */}
       {backfillStatus && (

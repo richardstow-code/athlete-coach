@@ -1,5 +1,6 @@
 import SessionDetail from '../components/SessionDetail'
 import PlanReviewPanel from '../components/PlanReviewPanel'
+import OnboardingHints from '../components/OnboardingHints'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useSettings } from '../lib/useSettings'
@@ -630,6 +631,13 @@ export default function Plan({ onActivityClick }) {
           {planRefreshing ? 'Refreshing...' : planPullDist > 72 ? 'Release to refresh' : 'Pull to refresh'}
         </div>
       )}
+
+      <OnboardingHints
+        hintId="plan_sessions"
+        title="Your training plan"
+        body="This shows your scheduled sessions for the week. When your coach proposes a change — or when you discuss one in Chat — it appears here as a card to approve or reject. Tap any session for details."
+        position="bottom"
+      />
 
       {/* RACES */}
       <div style={{ padding: '14px 20px 0' }}>

@@ -114,6 +114,9 @@ import Onboarding from './screens/Onboarding'
 import PostWorkoutPopup from './components/PostWorkoutPopup'
 import PostEventModal from './components/PostEventModal'
 import WorkoutIngest from './screens/WorkoutIngest'
+import HelpBot from './components/HelpBot'
+import ReleaseNotes from './components/ReleaseNotes'
+import Roadmap from './screens/Roadmap'
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
@@ -163,10 +166,20 @@ export default function App() {
   const [stravaConnectError, setStravaConnectError] = useState(null)
   const [stravaConnected, setStravaConnected] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [showRoadmap, setShowRoadmap] = useState(false)
+  const [showFeatureRequest, setShowFeatureRequest] = useState(false)
+  const [notifCount, setNotifCount] = useState(0)
+  const [userId, setUserId] = useState(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      if (session?.user?.id) setUserId(session.user.id)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      if (session?.user?.id) setUserId(session.user.id)
+    })
     return () => subscription.unsubscribe()
   }, [])
 
@@ -274,6 +287,35 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
+  // Check for unseen feature notifications (badge on settings icon)
+  useEffect(() => {
+    if (!userId) return
+    async function checkNotifs() {
+      const { count } = await supabase
+        .from('feature_notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('seen', false)
+      setNotifCount(count || 0)
+    }
+    checkNotifs()
+    const interval = setInterval(checkNotifs, 120000)
+    return () => clearInterval(interval)
+  }, [userId])
+
+  async function handleOpenRoadmap() {
+    setShowRoadmap(true)
+    // Mark all notifications as seen
+    if (userId && notifCount > 0) {
+      await supabase
+        .from('feature_notifications')
+        .update({ seen: true })
+        .eq('user_id', userId)
+        .eq('seen', false)
+      setNotifCount(0)
+    }
+  }
+
   function openActivity(id) { setDetailId(id) }
   function closeActivity() { setDetailId(null) }
 
@@ -302,6 +344,25 @@ export default function App() {
       margin: '0 auto',
       position: 'relative',
     }}>
+
+      {/* RELEASE NOTES POPUP */}
+      <ReleaseNotes userId={userId} />
+
+      {/* HELP BOT — floating on all screens */}
+      <HelpBot
+        currentScreen={activeTab}
+        onOpenRoadmap={handleOpenRoadmap}
+        onOpenFeatureRequest={() => { setShowFeatureRequest(true); setShowRoadmap(true) }}
+      />
+
+      {/* ROADMAP OVERLAY — also hosts feature request modal */}
+      {showRoadmap && (
+        <Roadmap
+          onClose={() => { setShowRoadmap(false); setShowFeatureRequest(false) }}
+          userId={userId}
+          defaultShowRequest={showFeatureRequest}
+        />
+      )}
 
       {/* POST-WORKOUT POPUP */}
       <PostWorkoutPopup onViewDetail={(id) => { setShowSettings(false); setDetailId(id) }} />
@@ -336,7 +397,15 @@ export default function App() {
       )}
 
       {/* SETTINGS OVERLAY */}
-      {showSettings && <Settings onClose={() => { setShowSettings(false); setStravaConnectError(null) }} stravaConnectError={stravaConnectError} onLogout={() => setShowSettings(false)} />}
+      {showSettings && (
+        <Settings
+          onClose={() => { setShowSettings(false); setStravaConnectError(null) }}
+          stravaConnectError={stravaConnectError}
+          onLogout={() => setShowSettings(false)}
+          onOpenRoadmap={() => { setShowSettings(false); handleOpenRoadmap() }}
+          onOpenFeatureRequest={() => { setShowSettings(false); setShowFeatureRequest(true); setShowRoadmap(true) }}
+        />
+      )}
 
       {/* WORKOUT INGEST OVERLAY */}
       {showWorkoutIngest && <WorkoutIngest onClose={() => setShowWorkoutIngest(false)} />}
@@ -394,15 +463,29 @@ export default function App() {
           }}>
             📷
           </button>
-          <button onClick={() => setShowSettings(true)} style={{
-            width: 32, height: 32, borderRadius: '50%',
-            background: 'rgba(232,255,71,0.12)',
-            border: '1px solid rgba(232,255,71,0.25)',
-            cursor: 'pointer', fontSize: 14,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            👤
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowSettings(true)} style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: 'rgba(232,255,71,0.12)',
+              border: '1px solid rgba(232,255,71,0.25)',
+              cursor: 'pointer', fontSize: 14,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              👤
+            </button>
+            {notifCount > 0 && (
+              <div style={{
+                position: 'absolute', top: -2, right: -2,
+                width: 14, height: 14, borderRadius: '50%',
+                background: '#ff5c5c',
+                fontSize: 9, fontWeight: 700, color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: "'DM Mono', monospace",
+              }}>
+                {notifCount > 9 ? '9+' : notifCount}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

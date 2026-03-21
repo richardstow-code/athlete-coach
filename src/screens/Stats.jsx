@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import OnboardingHints from '../components/OnboardingHints'
 import { useSettings } from '../lib/useSettings'
 import { usePrimarySport } from '../lib/usePrimarySport'
 import { usePullToRefresh } from '../lib/usePullToRefresh'
@@ -581,6 +582,13 @@ export default function Progress({ onActivityClick }) {
           {statsRefreshing ? 'Refreshing...' : statsPullDist > 72 ? 'Release to refresh' : 'Pull to refresh'}
         </div>
       )}
+
+      <OnboardingHints
+        hintId="progress_views"
+        title="Macro and micro views"
+        body="Toggle between Macro (monthly volume by goal type) and Micro (event-specific phase compliance). Personal bests are tracked automatically from your activity data."
+        position="bottom"
+      />
 
       {/* HEADER + TOGGLE */}
       <div style={{ padding:'14px 20px', borderBottom:`1px solid ${Z.border}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>

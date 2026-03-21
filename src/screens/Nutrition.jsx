@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import OnboardingHints from '../components/OnboardingHints'
 import { useSettings } from '../lib/useSettings'
 import { buildSystemPrompt } from '../lib/coachingPrompt'
 import { callClaude } from '../lib/claudeProxy'
@@ -307,6 +308,13 @@ export default function Nutrition() {
           {nutriRefreshing ? 'Refreshing...' : nutriPullDist > 72 ? 'Release to refresh' : 'Pull to refresh'}
         </div>
       )}
+      <OnboardingHints
+        hintId="fuel_logging"
+        title="Log meals in seconds"
+        body="Describe what you ate or take a photo and your coach rates it against your training load. Alcohol is tracked separately against your weekly target. The coach uses this data in all coaching conversations."
+        position="bottom"
+      />
+
       {/* Header */}
       <div style={{ padding: '14px 20px 10px', borderBottom: `1px solid ${Z.border}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
