@@ -145,7 +145,7 @@ export default function Home({ onActivityClick, onOpenSettings }) {
 
     const [{ data: acts }, { data: brief }, { data: nutri }, { data: allSess }] = await Promise.all([
       supabase.from('activities').select('*').order('date', { ascending: false }).limit(20),
-      supabase.from('daily_briefings').select('id, date, briefing_text, created_at').order('created_at', { ascending: false }).limit(1),
+      supabase.from('daily_briefings').select('id, date, briefing_text, created_at').eq('date', todayStr).maybeSingle(),
       supabase.from('nutrition_logs')
         .select('id,calories,protein_g,carbs_g,fat_g,meal_type,meal_name,alcohol_units,logged_at')
         .eq('date', todayStr).order('logged_at', { ascending: true }),
@@ -155,7 +155,7 @@ export default function Home({ onActivityClick, onOpenSettings }) {
     ])
 
     if (acts) setActivities(acts)
-    if (brief?.[0]) setBriefing(brief[0])
+    if (brief) setBriefing(brief)
 
     if (nutri) {
       const food = nutri.filter(n => n.meal_type !== 'alcohol')
@@ -271,8 +271,9 @@ export default function Home({ onActivityClick, onOpenSettings }) {
         setRefreshedBriefing({ text, time })
         // Persist to daily_briefings so it survives a session refresh
         const todayStr = viennaDate()
+        const { data: { user } } = await supabase.auth.getUser()
         supabase.from('daily_briefings')
-          .upsert({ date: todayStr, briefing_text: text }, { onConflict: 'date' })
+          .upsert({ date: todayStr, briefing_text: text, user_id: user?.id }, { onConflict: 'date' })
           .then(() => {})
           .catch(e => console.warn('briefing upsert failed:', e))
       }
