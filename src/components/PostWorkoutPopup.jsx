@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { savePostRunCheckin } from '../lib/injuryWorkflow'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -16,15 +17,29 @@ function hrColor(hr) {
   return '#ff2222'
 }
 
+const FEEL_OPTIONS = [
+  { value: 1, emoji: '💀', label: 'Destroyed' },
+  { value: 2, emoji: '😓', label: 'Tough' },
+  { value: 3, emoji: '😐', label: 'Okay' },
+  { value: 4, emoji: '😊', label: 'Good' },
+  { value: 5, emoji: '🔥', label: 'Felt great' },
+]
+
 export default function PostWorkoutPopup({ onDismiss, onViewDetail }) {
   const [activity, setActivity] = useState(null)
   const [feedback, setFeedback] = useState(null)
   const [visible, setVisible] = useState(false)
 
+  // Check-in state
+  const [sessionFeel, setSessionFeel] = useState(null)
+  const [injuryChoice, setInjuryChoice] = useState(null) // null | 'good' | 'flag'
+  const [injuryNotes, setInjuryNotes] = useState('')
+  const [bodyLocation, setBodyLocation] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [checkinResult, setCheckinResult] = useState(null) // null | { severity, message }
 
   useEffect(() => {
     async function checkLatest() {
-      // Only look at activities from the last 4 hours
       const fourHoursAgo = new Date(Date.now() - 4*60*60*1000).toISOString()
       const { data: acts } = await supabase
         .from('activities')
@@ -32,11 +47,11 @@ export default function PostWorkoutPopup({ onDismiss, onViewDetail }) {
         .gte('date', fourHoursAgo)
         .order('date', { ascending: false })
         .limit(1)
-      
+
       if (!acts?.[0]) return
       const latest = acts[0]
       const alreadySeen = sessionStorage.getItem('seen_activity') === String(latest.strava_id)
-      
+
       if (!alreadySeen) {
         setActivity(latest)
         const { data: mem } = await supabase
@@ -56,10 +71,51 @@ export default function PostWorkoutPopup({ onDismiss, onViewDetail }) {
     return () => clearInterval(interval)
   }, [])
 
-  function dismiss() {
-    if (activity) {
-      sessionStorage.setItem('seen_activity', String(activity.strava_id))
+  async function handleSaveAndDismiss() {
+    if (saving || !activity) { dismiss(); return }
+
+    const hasFlag = injuryChoice === 'flag'
+    // Only save if something was selected
+    if (!sessionFeel && !hasFlag) { dismiss(); return }
+
+    setSaving(true)
+    try {
+      const activitySummary = [
+        activity.distance_km ? `${parseFloat(activity.distance_km).toFixed(1)}km` : null,
+        activity.pace_per_km ? `${activity.pace_per_km}/km pace` : null,
+        activity.duration_min ? `${Math.round(activity.duration_min)}min` : null,
+        activity.avg_hr ? `avg HR ${Math.round(activity.avg_hr)}` : null,
+      ].filter(Boolean).join(', ')
+
+      const result = await savePostRunCheckin({
+        activityId: activity.id,
+        sessionFeel,
+        hasInjuryFlag: hasFlag,
+        athleteNotes: hasFlag ? injuryNotes || null : null,
+        bodyLocation: hasFlag ? bodyLocation || null : null,
+        activitySummary,
+      })
+
+      if (result.injuryFlagged) {
+        const sev = result.severity
+        const msg = sev === 'minor'
+          ? "Noted — I'll check in tomorrow."
+          : "Got it. I've assessed this and proposed some plan changes for your review."
+        setCheckinResult({ severity: sev, message: msg })
+        // Show message briefly then dismiss
+        setTimeout(() => dismiss(), 3500)
+      } else {
+        dismiss()
+      }
+    } catch (e) {
+      console.error('Check-in save failed:', e)
+      dismiss()
     }
+    setSaving(false)
+  }
+
+  function dismiss() {
+    if (activity) sessionStorage.setItem('seen_activity', String(activity.strava_id))
     setVisible(false)
     onDismiss?.()
   }
@@ -82,15 +138,15 @@ export default function PostWorkoutPopup({ onDismiss, onViewDetail }) {
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
       {/* Backdrop */}
       <div onClick={dismiss} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)' }} />
-      
+
       {/* Sheet */}
-      <div style={{ position: 'relative', background: Z.bg, borderRadius: '16px 16px 0 0', border: `1px solid ${Z.border2}`, maxHeight: '85vh', overflowY: 'auto' }}>
+      <div style={{ position: 'relative', background: Z.bg, borderRadius: '16px 16px 0 0', border: `1px solid ${Z.border2}`, maxHeight: '90vh', overflowY: 'auto' }}>
         {/* Handle */}
         <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 0' }}>
           <div style={{ width: 36, height: 4, borderRadius: 2, background: Z.border2 }} />
         </div>
 
-        <div style={{ padding: '16px 20px 32px' }}>
+        <div style={{ padding: '16px 20px 36px' }}>
           {/* Badge */}
           <div style={{ display: 'inline-block', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '3px 8px', borderRadius: 4, background: 'rgba(232,255,71,0.15)', color: Z.accent, marginBottom: 12 }}>
             Workout complete
@@ -155,15 +211,119 @@ export default function PostWorkoutPopup({ onDismiss, onViewDetail }) {
             </div>
           )}
 
+          {/* ── HOW DID IT FEEL? ── */}
+          {!checkinResult && (
+            <div style={{ background: Z.surface, border: `1px solid ${Z.border}`, borderRadius: 12, padding: '16px', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>How did it feel?</div>
+
+              {/* Feel rating */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+                {FEEL_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setSessionFeel(sessionFeel === opt.value ? null : opt.value)}
+                    style={{
+                      minWidth: 44, minHeight: 44,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      background: sessionFeel === opt.value ? 'rgba(232,255,71,0.12)' : 'transparent',
+                      border: sessionFeel === opt.value ? `1.5px solid ${Z.accent}` : '1.5px solid transparent',
+                      borderRadius: 10, cursor: 'pointer', gap: 3, padding: '6px 4px',
+                    }}
+                  >
+                    <span style={{ fontSize: 22, filter: sessionFeel && sessionFeel !== opt.value ? 'opacity(0.35)' : 'none' }}>{opt.emoji}</span>
+                    <span style={{ fontSize: 9, color: sessionFeel === opt.value ? Z.accent : Z.muted, letterSpacing: '0.04em' }}>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Injury flag */}
+              <div style={{ fontSize: 11, color: Z.muted, marginBottom: 10 }}>Any pain, tightness or niggles to flag?</div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: injuryChoice === 'flag' ? 12 : 0 }}>
+                <button
+                  onClick={() => setInjuryChoice(injuryChoice === 'good' ? null : 'good')}
+                  style={{
+                    flex: 1, padding: '9px', borderRadius: 8, cursor: 'pointer',
+                    background: injuryChoice === 'good' ? 'rgba(77,255,145,0.12)' : 'rgba(255,255,255,0.04)',
+                    border: injuryChoice === 'good' ? `1px solid ${Z.green}` : `1px solid ${Z.border}`,
+                    color: injuryChoice === 'good' ? Z.green : Z.muted,
+                    fontFamily: "'DM Mono', monospace", fontSize: 12,
+                  }}
+                >
+                  All good 👍
+                </button>
+                <button
+                  onClick={() => setInjuryChoice(injuryChoice === 'flag' ? null : 'flag')}
+                  style={{
+                    flex: 1, padding: '9px', borderRadius: 8, cursor: 'pointer',
+                    background: injuryChoice === 'flag' ? 'rgba(255,179,71,0.12)' : 'rgba(255,255,255,0.04)',
+                    border: injuryChoice === 'flag' ? `1px solid ${Z.amber}` : `1px solid ${Z.border}`,
+                    color: injuryChoice === 'flag' ? Z.amber : Z.muted,
+                    fontFamily: "'DM Mono', monospace", fontSize: 12,
+                  }}
+                >
+                  Flag something ⚠️
+                </button>
+              </div>
+
+              {/* Expanded injury form */}
+              {injuryChoice === 'flag' && (
+                <div style={{ marginTop: 12 }}>
+                  <input
+                    value={bodyLocation}
+                    onChange={e => setBodyLocation(e.target.value)}
+                    placeholder="Body location — e.g. left knee, right calf, lower back"
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      background: '#161616', border: `1px solid ${Z.border2}`,
+                      borderRadius: 8, padding: '10px 12px', marginBottom: 8,
+                      color: Z.text, fontSize: 12, fontFamily: "'DM Mono', monospace", outline: 'none',
+                    }}
+                  />
+                  <textarea
+                    value={injuryNotes}
+                    onChange={e => setInjuryNotes(e.target.value)}
+                    placeholder="Describe it briefly — where, what it felt like, when it started."
+                    rows={3}
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      background: '#161616', border: `1px solid ${Z.border2}`,
+                      borderRadius: 8, padding: '10px 12px',
+                      color: Z.text, fontSize: 12, fontFamily: "'DM Mono', monospace",
+                      resize: 'none', outline: 'none', lineHeight: 1.5,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Coach check-in result message */}
+          {checkinResult && (
+            <div style={{ background: checkinResult.severity === 'minor' ? 'rgba(77,255,145,0.08)' : 'rgba(255,179,71,0.08)', border: `1px solid ${checkinResult.severity === 'minor' ? 'rgba(77,255,145,0.3)' : 'rgba(255,179,71,0.3)'}`, borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+              <div style={{ fontSize: 12, color: checkinResult.severity === 'minor' ? Z.green : Z.amber, lineHeight: 1.6 }}>
+                {checkinResult.message}
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={viewDetail} style={{ flex: 1, background: Z.accent, border: 'none', borderRadius: 8, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: 13, cursor: 'pointer', color: Z.bg, fontWeight: 500 }}>
-              Full breakdown →
-            </button>
-            <button onClick={dismiss} style={{ flex: 1, background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: 13, cursor: 'pointer', color: Z.muted }}>
-              Dismiss
-            </button>
-          </div>
+          {!checkinResult && (
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={handleSaveAndDismiss}
+                disabled={saving}
+                style={{ flex: 1, background: saving ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 8, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: 13, cursor: saving ? 'wait' : 'pointer', color: saving ? Z.muted : Z.bg, fontWeight: 500 }}
+              >
+                {saving ? 'Saving...' : 'Save check-in'}
+              </button>
+              <button
+                onClick={viewDetail}
+                style={{ flex: 1, background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '12px', fontFamily: "'DM Mono', monospace", fontSize: 13, cursor: 'pointer', color: Z.muted }}
+              >
+                Full breakdown →
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

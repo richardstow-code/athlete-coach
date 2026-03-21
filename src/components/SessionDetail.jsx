@@ -9,7 +9,7 @@ const Z = {
   accent:'#e8ff47', accent2:'#47d4ff', red:'#ff5c5c', green:'#4dff91', amber:'#ffb347'
 }
 
-const SESSION_ICON = { run: '🏃', trail: '⛰️', strength: '🏋️', rest: '😴' }
+const SESSION_ICON = { run: '🏃', trail: '⛰️', strength: '🏋️', rest: '😴', rehab: '🩹' }
 
 const WHY_TEXT = {
   run: {
@@ -106,12 +106,13 @@ export default function SessionDetail({ session, onClose }) {
   const [loading, setLoading] = useState(true)
 
   const isStrength = session.session_type === 'strength'
+  const isRehab = session.session_type === 'rehab'
   const icon = SESSION_ICON[session.session_type] || '📋'
   const zone = session.zone?.split('-')[0]?.trim()
   const whyMap = WHY_TEXT[session.session_type] || WHY_TEXT.rest
   const whyText = whyMap[zone] || whyMap.default
 
-  useEffect(() => { fetchCoaching() }, [])
+  useEffect(() => { if (!isRehab) fetchCoaching() }, [])
 
   async function fetchCoaching() {
     setLoading(true)
@@ -194,35 +195,61 @@ DONE RIGHT: How you'll know it was a good session` }],
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 4 }}>×</button>
           </div>
 
-          {/* Why this session */}
-          <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: 14, marginBottom: 14 }}>
-            <div style={{ fontSize: 10, color: Z.accent2, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Why this session</div>
-            <div style={{ fontSize: 13, color: '#c8c5bf', lineHeight: 1.6 }}>{whyText}</div>
-          </div>
+          {/* Rehab session — injury note + exercise list */}
+          {isRehab ? (
+            <>
+              <div style={{ background: '#1a1208', border: `1px solid #3d2a00`, borderRadius: 10, padding: 14, marginBottom: 14, display: 'flex', gap: 10 }}>
+                <span style={{ fontSize: 16 }}>⚠️</span>
+                <div style={{ fontSize: 13, color: '#c8a96e', lineHeight: 1.5 }}>This session was added due to a flagged injury. Complete what feels comfortable and stop if pain increases.</div>
+              </div>
 
-          {/* Location + elevation */}
-          {(session.location || session.elevation_target_m > 0) && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-              {session.location && (
-                <div style={{ flex: 1, background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '10px 12px' }}>
-                  <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 3 }}>Location</div>
-                  <div style={{ fontSize: 12, color: Z.text }}>{session.location}</div>
+              {session.notes && (
+                <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, overflow: 'hidden', marginBottom: 14 }}>
+                  <div style={{ padding: '10px 14px', borderBottom: `1px solid ${Z.border}` }}>
+                    <div style={{ fontSize: 10, color: '#4dd9c0', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Exercises</div>
+                  </div>
+                  {session.notes.split(',').map(ex => ex.trim()).filter(Boolean).map((ex, i) => (
+                    <div key={i} style={{ padding: '10px 14px 10px 26px', position: 'relative', borderBottom: `1px solid ${Z.border}`, fontSize: 13, color: Z.text, lineHeight: 1.4 }}>
+                      <span style={{ position: 'absolute', left: 12, top: 13, color: '#4dd9c0', fontSize: 10 }}>→</span>
+                      {ex}
+                    </div>
+                  ))}
                 </div>
               )}
-              {session.elevation_target_m > 0 && (
-                <div style={{ flex: 1, background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '10px 12px' }}>
-                  <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 3 }}>Vert target</div>
-                  <div style={{ fontSize: 12, color: Z.accent2 }}>⛰ {session.elevation_target_m}m</div>
+            </>
+          ) : (
+            <>
+              {/* Why this session */}
+              <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: 14, marginBottom: 14 }}>
+                <div style={{ fontSize: 10, color: Z.accent2, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Why this session</div>
+                <div style={{ fontSize: 13, color: '#c8c5bf', lineHeight: 1.6 }}>{whyText}</div>
+              </div>
+
+              {/* Location + elevation */}
+              {(session.location || session.elevation_target_m > 0) && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                  {session.location && (
+                    <div style={{ flex: 1, background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 3 }}>Location</div>
+                      <div style={{ fontSize: 12, color: Z.text }}>{session.location}</div>
+                    </div>
+                  )}
+                  {session.elevation_target_m > 0 && (
+                    <div style={{ flex: 1, background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 3 }}>Vert target</div>
+                      <div style={{ fontSize: 12, color: Z.accent2 }}>⛰ {session.elevation_target_m}m</div>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+
+              {/* Session plan — strength or run */}
+              {isStrength
+                ? <StrengthWorkout workout={coaching?.data} loading={loading} />
+                : <RunBrief brief={coaching?.data} loading={loading} />
+              }
+            </>
           )}
-
-          {/* Session plan — strength or run */}
-          {isStrength
-            ? <StrengthWorkout workout={coaching?.data} loading={loading} />
-            : <RunBrief brief={coaching?.data} loading={loading} />
-          }
         </div>
       </div>
     </div>

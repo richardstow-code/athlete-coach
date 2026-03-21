@@ -21,6 +21,7 @@ export async function buildContext() {
     { data: settings },
     { data: cycleLogs },
     { data: sportsData },
+    { data: injuryReports },
   ] = await Promise.all([
     supabase
       .from('activities')
@@ -69,6 +70,13 @@ export async function buildContext() {
       .select('*')
       .eq('is_active', true)
       .order('created_at'),
+
+    supabase
+      .from('injury_reports')
+      .select('body_location,severity,athlete_notes,claude_assessment,follow_up_due_date,status,reported_at')
+      .in('status', ['active', 'monitoring'])
+      .order('reported_at', { ascending: false })
+      .limit(5),
   ])
 
   // Cycle context — only populated if user has opted in
@@ -106,6 +114,7 @@ export async function buildContext() {
     primary_sport:    primarySport,
     supporting_sports: supportingSports,
     all_sports:       sportsData        || [],
+    injury_reports:   injuryReports    || [],
   }
 }
 
@@ -124,6 +133,7 @@ export function formatContext({
   primary_sport = null,
   supporting_sports = [],
   all_sports = [],
+  injury_reports = [],
 } = {}) {
   const parts = []
 
@@ -155,6 +165,18 @@ export function formatContext({
       const flagLines = activeFlags.map(f => `- ${f.label} (${f.status}): ${f.notes}`)
       parts.push('ACTIVE HEALTH FLAGS:\n' + flagLines.join('\n'))
     }
+  }
+
+  // ── Active injury reports ─────────────────────────────────
+  if (injury_reports.length > 0) {
+    const injuryLines = injury_reports.map(r => {
+      let assessment = null
+      try { assessment = typeof r.claude_assessment === 'string' ? JSON.parse(r.claude_assessment) : r.claude_assessment } catch {}
+      const date = r.reported_at?.slice(0, 10) || '?'
+      const coachMsg = assessment?.coachMessage ? ` — ${assessment.coachMessage}` : r.athlete_notes ? ` — "${r.athlete_notes}"` : ''
+      return `- ${r.body_location || 'Unspecified location'} (${r.severity || 'unknown severity'}, ${r.status}, reported ${date})${coachMsg}`
+    })
+    parts.push('ACTIVE INJURY REPORTS:\n' + injuryLines.join('\n'))
   }
 
   // ── Sports context ────────────────────────────────────────

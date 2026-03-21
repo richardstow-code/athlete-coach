@@ -16,8 +16,8 @@ const Z = {
   accent:'#e8ff47', accent2:'#47d4ff', red:'#ff5c5c', green:'#4dff91', amber:'#ffb347'
 }
 
-const typeColor = { run:'#e8ff47', trail:'#47d4ff', strength:'#ffb347', rest:'#888580' }
-const typeIcon  = { run:'🏃', trail:'⛰️', strength:'🏋️', rest:'😴' }
+const typeColor = { run:'#e8ff47', trail:'#47d4ff', strength:'#ffb347', rest:'#888580', rehab:'#4dd9c0' }
+const typeIcon  = { run:'🏃', trail:'⛰️', strength:'🏋️', rest:'😴', rehab:'🩹' }
 
 function localDateStr(d) {
   return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
@@ -179,15 +179,23 @@ function MismatchPrompt({ analysis, loading, onAdjust, onDismiss }) {
 // ── Change Card ──────────────────────────────────────────────
 function ChangeCard({ change, onApprove, onReject }) {
   const [loading, setLoading] = useState(false)
-  const typeColors = { reschedule: Z.amber, intensity_adjust: Z.accent2, rest_day: Z.green, skip: Z.muted, trip: Z.accent }
+  const typeColors = { reschedule: Z.amber, intensity_adjust: Z.accent2, rest_day: Z.green, skip: Z.muted, trip: Z.accent, add_session: '#4dd9c0', review: Z.amber }
   const col = typeColors[change.change_type] || Z.accent
+  const isRehabAdd = change.change_type === 'add_session' && change.proposed_session?.session_type === 'rehab'
+  const isInjuryChange = !!change.injury_report_id
 
   return (
     <div style={{ background: Z.surface, border: `1px solid ${col}40`, borderRadius: 12, padding: 14, marginBottom: 10 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8 }}>
         <div style={{ width: 6, height: 6, borderRadius: '50%', background: col, marginTop: 5, flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, color: Z.text, fontWeight: 600, marginBottom: 3 }}>{change.title}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+            {isRehabAdd && <span style={{ fontSize: 12 }}>🩹</span>}
+            <div style={{ fontSize: 13, color: Z.text, fontWeight: 600 }}>{change.title}</div>
+          </div>
+          {isInjuryChange && (
+            <div style={{ fontSize: 10, color: '#ffb347', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>⚠️ Injury-related</div>
+          )}
           <div style={{ fontSize: 12, color: Z.muted, lineHeight: 1.5 }}>{change.reasoning}</div>
           {change.new_date && (
             <div style={{ fontSize: 11, color: col, marginTop: 6 }}>
@@ -196,6 +204,11 @@ function ChangeCard({ change, onApprove, onReject }) {
           )}
           {change.new_notes && (
             <div style={{ fontSize: 11, color: Z.muted, marginTop: 3 }}>Note: {change.new_notes}</div>
+          )}
+          {isRehabAdd && change.proposed_session?.notes && (
+            <div style={{ fontSize: 11, color: '#4dd9c0', marginTop: 6 }}>
+              Exercises: {change.proposed_session.notes}
+            </div>
           )}
         </div>
       </div>
@@ -536,9 +549,12 @@ export default function Plan({ onActivityClick }) {
       }
     }
     // If it's a new session proposal, insert it
-    if (change.change_type === 'add_session' && change.context?.new_session) {
+    if (change.change_type === 'add_session') {
       const { data: { session } } = await supabase.auth.getSession()
-      await supabase.from('scheduled_sessions').insert({ ...change.context.new_session, user_id: session?.user?.id })
+      const newSession = change.proposed_session || change.context?.new_session
+      if (newSession) {
+        await supabase.from('scheduled_sessions').insert({ ...newSession, user_id: session?.user?.id, status: 'planned' })
+      }
     }
     await supabase.from('schedule_changes').update({ status: 'approved', resolved_at: new Date().toISOString(), resolved_by: 'athlete' }).eq('id', changeId)
     setChanges(prev => prev.filter(c => c.id !== changeId))

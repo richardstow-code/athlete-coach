@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import OnboardingHints from '../components/OnboardingHints'
+import { getActiveInjuryFollowUps, handleFollowUpResponse } from '../lib/injuryWorkflow'
 import { useSettings } from '../lib/useSettings'
 import { usePrimarySport } from '../lib/usePrimarySport'
 import { usePullToRefresh } from '../lib/usePullToRefresh'
@@ -129,6 +130,10 @@ export default function Home({ onActivityClick, onOpenSettings }) {
   const [generatingReadiness, setGeneratingReadiness] = useState(false)
   const [refreshedBriefing, setRefreshedBriefing] = useState(null) // { text, time }
   const [generatingBriefing, setGeneratingBriefing] = useState(false)
+  const [injuryFollowUps, setInjuryFollowUps] = useState([])
+  const [injuryFollowUpResults, setInjuryFollowUpResults] = useState({}) // reportId → 'resolved'|'improving'|'worse'
+  const [injuryWorseNotes, setInjuryWorseNotes] = useState({}) // reportId → string
+  const [injuryWorseExpanded, setInjuryWorseExpanded] = useState({}) // reportId → bool
   const backfillCheckRef = useRef(false)
   const readinessTriggeredRef = useRef(false)
 
@@ -177,6 +182,9 @@ export default function Home({ onActivityClick, onOpenSettings }) {
     }
 
     setLoading(false)
+
+    // Load injury follow-ups (non-blocking, after main load)
+    getActiveInjuryFollowUps().then(reports => setInjuryFollowUps(reports || [])).catch(() => {})
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -377,7 +385,83 @@ export default function Home({ onActivityClick, onOpenSettings }) {
       : null
   const briefingIsStale = !refreshedBriefing && briefing && !briefingIsToday
 
+  // ── Injury follow-up handler ─────────────────────────────────────────────────
+  async function handleInjuryFollowUp(reportId, feelingBetter) {
+    setInjuryFollowUpResults(prev => ({ ...prev, [reportId]: feelingBetter }))
+    await handleFollowUpResponse({ injuryReportId: reportId, feelingBetter })
+    // Remove from list after a brief delay
+    setTimeout(() => {
+      setInjuryFollowUps(prev => prev.filter(r => r.id !== reportId))
+    }, 2000)
+  }
+
   // ── Inline render helpers (called as functions, not <Components/>) ──────────
+
+  function renderInjuryFollowUpCards() {
+    if (injuryFollowUps.length === 0) return null
+    return injuryFollowUps.map(report => {
+      const result = injuryFollowUpResults[report.id]
+      const isWorse = injuryWorseExpanded[report.id]
+
+      // Parse followUpMessage from claude_assessment JSON
+      let followUpMsg = 'How is it feeling today?'
+      try {
+        const parsed = JSON.parse(report.claude_assessment || '{}')
+        if (parsed.followUpMessage) followUpMsg = parsed.followUpMessage
+      } catch { /* use default */ }
+
+      return (
+        <div key={report.id} style={{ margin: '0 20px 12px', background: 'rgba(255,179,71,0.06)', border: '1px solid rgba(255,179,71,0.3)', borderRadius: 12, padding: '14px 16px', fontFamily: "'DM Mono', monospace" }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 14 }}>⚠️</span>
+            <div style={{ fontSize: 10, color: '#ffb347', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Injury check-in</div>
+          </div>
+          {report.body_location && (
+            <div style={{ fontSize: 12, color: '#f0ede8', fontWeight: 500, marginBottom: 4 }}>{report.body_location}</div>
+          )}
+          <div style={{ fontSize: 12, color: '#888580', lineHeight: 1.5, marginBottom: 12 }}>{followUpMsg}</div>
+
+          {result ? (
+            <div style={{ fontSize: 12, color: result === 'resolved' ? '#4dff91' : result === 'improving' ? '#47d4ff' : '#ffb347' }}>
+              {result === 'resolved' ? '✓ Marked as resolved' : result === 'improving' ? '✓ Got it — checking in again next week' : '✓ Noted — coach will review'}
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button onClick={() => handleInjuryFollowUp(report.id, 'resolved')}
+                  style={{ flex: 1, minWidth: 0, padding: '8px 6px', borderRadius: 8, border: '1px solid rgba(77,255,145,0.3)', background: 'rgba(77,255,145,0.06)', color: '#4dff91', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>
+                  Resolved ✅
+                </button>
+                <button onClick={() => handleInjuryFollowUp(report.id, 'improving')}
+                  style={{ flex: 1, minWidth: 0, padding: '8px 6px', borderRadius: 8, border: '1px solid rgba(71,212,255,0.3)', background: 'rgba(71,212,255,0.06)', color: '#47d4ff', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>
+                  Improving 📈
+                </button>
+                <button onClick={() => setInjuryWorseExpanded(prev => ({ ...prev, [report.id]: !prev[report.id] }))}
+                  style={{ flex: 1, minWidth: 0, padding: '8px 6px', borderRadius: 8, border: '1px solid rgba(255,92,92,0.3)', background: 'rgba(255,92,92,0.06)', color: '#ff5c5c', fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>
+                  Still sore ⬇️
+                </button>
+              </div>
+              {isWorse && (
+                <div style={{ marginTop: 10 }}>
+                  <textarea
+                    value={injuryWorseNotes[report.id] || ''}
+                    onChange={e => setInjuryWorseNotes(prev => ({ ...prev, [report.id]: e.target.value }))}
+                    placeholder="Any notes? (optional)"
+                    rows={2}
+                    style={{ width: '100%', boxSizing: 'border-box', background: '#161616', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 8, padding: '8px 10px', color: '#f0ede8', fontSize: 11, fontFamily: "'DM Mono', monospace", resize: 'none', outline: 'none', marginBottom: 8 }}
+                  />
+                  <button onClick={() => handleInjuryFollowUp(report.id, 'worse')}
+                    style={{ width: '100%', padding: '8px', borderRadius: 8, border: 'none', background: '#ff5c5c', color: '#0a0a0a', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>
+                    Submit
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )
+    })
+  }
 
   function renderBriefingLines(text) {
     return text.split('\n').filter(l => l.trim()).map((line, i) => {
@@ -694,6 +778,9 @@ export default function Home({ onActivityClick, onOpenSettings }) {
           <div style={S.date}>{eventLabel || 'Your goal'}{daysToRace !== null ? ` · ${daysToRace} days` : ''}</div>
         )}
       </div>
+
+      {/* INJURY FOLLOW-UP CARDS */}
+      {renderInjuryFollowUpCards()}
 
       {/* CHECK-IN CARD (morning + afternoon only) */}
       {!isEvening && showCheckin && (
