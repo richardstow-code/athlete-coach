@@ -7,6 +7,8 @@ import { callClaude } from '../lib/claudeProxy'
 import { inferCyclePhase } from '../lib/inferCyclePhase'
 import { usePullToRefresh } from '../lib/usePullToRefresh'
 
+const TZ = 'Europe/Vienna'
+
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
   border2:'rgba(255,255,255,0.14)', text:'#f0ede8', muted:'#888580',
@@ -23,18 +25,64 @@ const ALCOHOL_UNITS = {
 const KCAL_TARGET = 2800
 const PROTEIN_TARGET = 150
 const UNITS_TARGET = 14
+const FIBRE_TARGET = 25
+
+// ── Timezone helper ───────────────────────────────────────────
+// Converts a Vienna local date + HH:MM time to a UTC ISO string
+function viennaTimeToUTC(dateStr, timeStr) {
+  const naive = new Date(`${dateStr}T${timeStr}:00.000Z`)
+  const viennaStr = naive.toLocaleString('sv-SE', { timeZone: TZ })
+  const viennaDate = new Date(viennaStr.replace(' ', 'T') + '.000Z')
+  const offsetMs = viennaDate.getTime() - naive.getTime()
+  return new Date(naive.getTime() - offsetMs).toISOString()
+}
+
+function getCurrentViennaTime() {
+  return new Date().toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+// ── Nutrition parsing prompt ──────────────────────────────────
+const NUTRITION_SYSTEM = `You are a nutrition analysis assistant. Parse the meal or food and return ONLY a raw JSON object. No markdown, no code fences, no explanation, no text before or after the JSON.
+
+Return EXACTLY this structure:
+{
+  "meal_name": "brief clean description of what was eaten",
+  "calories": <number>,
+  "protein_g": <number>,
+  "carbs_g": <number>,
+  "fat_g": <number>,
+  "fibre_g": <number>,
+  "sodium_mg": <number>,
+  "upf_score": <0|1|2|3>,
+  "alcohol_units": <number>,
+  "rating": "green|amber|red",
+  "notes": "one sentence coaching note on this meal relative to training"
+}
+
+Field guidance:
+- calories: total kcal estimate
+- protein_g / carbs_g / fat_g: grams
+- fibre_g: dietary fibre in grams. Oats ~4g/100g, white bread ~2g/slice, veg 2–5g/100g, legumes ~7g/100g, fruit ~2g/100g, processed snacks typically <1g
+- sodium_mg: estimated sodium. Homemade meals ~400–800mg, restaurant ~800–1500mg, crisps ~150–200mg per 30g, processed meats ~500mg/serving, plain cooked ~100–200mg
+- upf_score: NOVA classification 0–3:
+    0 = unprocessed (eggs, oats, fruit, veg, plain cooked meat, homemade meals)
+    1 = processed ingredient (cheese, canned goods, cured meat, artisan bread)
+    2 = processed food (protein bars, packaged snacks, ready sauces)
+    3 = ultra-processed (crisps, biscuits, fast food, fizzy drinks, sweetened cereals)
+- alcohol_units: UK units (1 unit = 10ml pure alcohol). 0 if none. Pint 4% ≈ 2.3u, 175ml wine 13% ≈ 2.3u, 25ml spirit 40% ≈ 1u
+- rating: green = well-balanced for training; amber = ok but room to improve; red = poor nutritional fit
+- If any value is genuinely unknown, use null (not 0)`
 
 // ── Shared Insights Graph ─────────────────────────────────────
 function InsightsGraph({ entries7Days, active }) {
-  // Build last 7 days of data
   const days = []
   for (let i = 6; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    const ds = d.toLocaleDateString('en-CA')
+    const ds = d.toLocaleDateString('en-CA', { timeZone: TZ })
     const dayEntries = entries7Days.filter(e => e.date === ds)
     days.push({
-      label: d.toLocaleDateString('en-GB', { weekday: 'short' }),
+      label: d.toLocaleDateString('en-GB', { weekday: 'short', timeZone: TZ }),
       date: ds,
       kcal: dayEntries.filter(e => e.meal_type !== 'alcohol').reduce((s, e) => s + (e.calories || 0), 0),
       protein: dayEntries.filter(e => e.meal_type !== 'alcohol').reduce((s, e) => s + parseFloat(e.protein_g || 0), 0),
@@ -54,9 +102,9 @@ function InsightsGraph({ entries7Days, active }) {
 
   if (METRICS.length === 0) return null
 
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
   return (
     <div style={{ padding: '0 0 8px' }}>
-      {/* Bar chart */}
       <div style={{ display: 'flex', gap: 4, height: 80, alignItems: 'flex-end', marginBottom: 4 }}>
         {days.map((day, di) => (
           <div key={di} style={{ flex: 1, display: 'flex', gap: 2, alignItems: 'flex-end', justifyContent: 'center', height: '100%' }}>
@@ -71,13 +119,11 @@ function InsightsGraph({ entries7Days, active }) {
           </div>
         ))}
       </div>
-      {/* Day labels */}
       <div style={{ display: 'flex', gap: 4 }}>
         {days.map((d, i) => (
-          <div key={i} style={{ flex: 1, fontSize: 9, color: d.date === new Date().toLocaleDateString('en-CA') ? Z.accent : Z.muted, textAlign: 'center', fontWeight: d.date === new Date().toLocaleDateString('en-CA') ? 600 : 400 }}>{d.label}</div>
+          <div key={i} style={{ flex: 1, fontSize: 9, color: d.date === todayStr ? Z.accent : Z.muted, textAlign: 'center', fontWeight: d.date === todayStr ? 600 : 400 }}>{d.label}</div>
         ))}
       </div>
-      {/* Legend */}
       <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
         {METRICS.map(m => (
           <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: Z.muted }}>
@@ -153,14 +199,19 @@ function AlcoholQuickLog({ onLog }) {
 function MealCard({ entry, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const isAlcohol = entry.meal_type === 'alcohol'
+  const upfColors = ['#4dff91', '#4dff91', '#ffb347', '#ff5c5c']
+  const upfLabels = ['Unprocessed', 'Minimally processed', 'Processed', 'Ultra-processed']
   return (
     <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
       <div onClick={() => setExpanded(e => !e)} style={{ padding: '11px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, color: Z.text, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isAlcohol ? '🍺 ' : ''}{entry.meal_name || 'Meal'}</div>
           <div style={{ fontSize: 10, color: Z.muted, marginTop: 1 }}>
-            {entry.date} {entry.logged_at ? '· ' + new Date(entry.logged_at).toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'}) : ''}
+            {entry.date} {entry.logged_at ? '· ' + new Date(entry.logged_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ }) : ''}
             {isAlcohol ? ` · ${parseFloat(entry.alcohol_units||0).toFixed(1)} units` : ` · ${entry.calories||'?'} kcal`}
+            {!isAlcohol && entry.upf_score != null && (
+              <span style={{ color: upfColors[entry.upf_score] || Z.muted }}> · UPF {entry.upf_score}</span>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -172,17 +223,237 @@ function MealCard({ entry, onDelete }) {
       {expanded && (
         <div style={{ padding: '0 14px 12px', borderTop: `1px solid ${Z.border}` }}>
           {!isAlcohol && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 8 }}>
-              {[['Protein', entry.protein_g + 'g'], ['Carbs', entry.carbs_g + 'g'], ['Fat', entry.fat_g + 'g']].map(([l, v]) => (
-                <div key={l} style={{ background: '#1a1a1a', borderRadius: 6, padding: '6px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, color: Z.accent, fontWeight: 600 }}>{v}</div>
-                  <div style={{ fontSize: 9, color: Z.muted, textTransform: 'uppercase' }}>{l}</div>
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 6 }}>
+                {[['Protein', entry.protein_g != null ? entry.protein_g + 'g' : '—'], ['Carbs', entry.carbs_g != null ? entry.carbs_g + 'g' : '—'], ['Fat', entry.fat_g != null ? entry.fat_g + 'g' : '—']].map(([l, v]) => (
+                  <div key={l} style={{ background: '#1a1a1a', borderRadius: 6, padding: '6px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 13, color: Z.accent, fontWeight: 600 }}>{v}</div>
+                    <div style={{ fontSize: 9, color: Z.muted, textTransform: 'uppercase' }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+              {(entry.fibre_g != null || entry.sodium_mg != null || entry.upf_score != null) && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 6 }}>
+                  {entry.fibre_g != null && (
+                    <div style={{ background: '#1a1a1a', borderRadius: 6, padding: '6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 13, color: Z.green, fontWeight: 600 }}>{entry.fibre_g}g</div>
+                      <div style={{ fontSize: 9, color: Z.muted, textTransform: 'uppercase' }}>Fibre</div>
+                    </div>
+                  )}
+                  {entry.sodium_mg != null && (
+                    <div style={{ background: '#1a1a1a', borderRadius: 6, padding: '6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 13, color: Z.accent2, fontWeight: 600 }}>{entry.sodium_mg}mg</div>
+                      <div style={{ fontSize: 9, color: Z.muted, textTransform: 'uppercase' }}>Sodium</div>
+                    </div>
+                  )}
+                  {entry.upf_score != null && (
+                    <div style={{ background: '#1a1a1a', borderRadius: 6, padding: '6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: upfColors[entry.upf_score] || Z.muted }}>{entry.upf_score}/3</div>
+                      <div style={{ fontSize: 9, color: Z.muted, textTransform: 'uppercase' }}>UPF</div>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
+              )}
+              {entry.upf_score != null && (
+                <div style={{ fontSize: 10, color: upfColors[entry.upf_score] || Z.muted, marginBottom: 6 }}>
+                  {upfLabels[entry.upf_score]}
+                </div>
+              )}
+            </>
           )}
           {entry.notes && <div style={{ fontSize: 12, color: Z.muted, lineHeight: 1.5, marginBottom: 8 }}>{entry.notes}</div>}
           <button onClick={() => onDelete(entry.id)} style={{ background: 'none', border: 'none', color: Z.red, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>Delete</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Weekly Digest ─────────────────────────────────────────────
+function WeeklyDigest({ entries14, activities7 }) {
+  // Build last 7 days and previous 7 days
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
+  const days7 = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i)
+    days7.push(d.toLocaleDateString('en-CA', { timeZone: TZ }))
+  }
+  const prevDays7 = []
+  for (let i = 13; i >= 7; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i)
+    prevDays7.push(d.toLocaleDateString('en-CA', { timeZone: TZ }))
+  }
+
+  const thisWeekFood = entries14.filter(e => days7.includes(e.date) && e.meal_type !== 'alcohol')
+  const prevWeekFood = entries14.filter(e => prevDays7.includes(e.date) && e.meal_type !== 'alcohol')
+  const daysWithLogs = [...new Set(thisWeekFood.map(e => e.date))]
+
+  if (daysWithLogs.length < 2) {
+    return (
+      <div style={{ padding: '12px 20px', borderBottom: `1px solid ${Z.border}` }}>
+        <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>This week</div>
+        <div style={{ fontSize: 13, color: Z.muted }}>Log a few more meals to see your weekly patterns.</div>
+      </div>
+    )
+  }
+
+  // Per-day totals for this week
+  const dayTotals = days7.map(ds => {
+    const food = thisWeekFood.filter(e => e.date === ds)
+    return {
+      date: ds,
+      kcal: food.reduce((s, e) => s + (e.calories || 0), 0),
+      protein: food.reduce((s, e) => s + parseFloat(e.protein_g || 0), 0),
+      fibre: food.reduce((s, e) => s + parseFloat(e.fibre_g || 0), 0),
+      hasLogs: food.length > 0,
+      maxUPF: food.length > 0 ? Math.max(...food.map(e => e.upf_score ?? -1)) : null,
+    }
+  })
+  const loggedDays = dayTotals.filter(d => d.hasLogs)
+  const avgKcal = loggedDays.length > 0 ? Math.round(loggedDays.reduce((s, d) => s + d.kcal, 0) / loggedDays.length) : 0
+  const avgProtein = loggedDays.length > 0 ? Math.round(loggedDays.reduce((s, d) => s + d.protein, 0) / loggedDays.length) : 0
+  const avgFibre = loggedDays.length > 0 ? parseFloat((loggedDays.reduce((s, d) => s + d.fibre, 0) / loggedDays.length).toFixed(1)) : 0
+  const weeklyUnits = entries14.filter(e => days7.includes(e.date) && e.meal_type === 'alcohol').reduce((s, e) => s + parseFloat(e.alcohol_units || 0), 0)
+
+  // Trend arrows (week-on-week) — only if prev week has ≥3 log days
+  const prevLoggedDays = [...new Set(prevWeekFood.map(e => e.date))]
+  let trendKcal = null, trendProtein = null
+  if (prevLoggedDays.length >= 3) {
+    const prevAvgKcal = Math.round(prevLoggedDays.reduce((s, ds) => s + prevWeekFood.filter(e => e.date === ds).reduce((s2, e) => s2 + (e.calories || 0), 0), 0) / prevLoggedDays.length)
+    const prevAvgProtein = Math.round(prevLoggedDays.reduce((s, ds) => s + prevWeekFood.filter(e => e.date === ds).reduce((s2, e) => s2 + parseFloat(e.protein_g || 0), 0), 0) / prevLoggedDays.length)
+    const arrow = (curr, prev) => {
+      if (prev === 0) return null
+      const pct = (curr - prev) / prev * 100
+      if (Math.abs(pct) <= 5) return '→'
+      return pct > 0 ? '↑' : '↓'
+    }
+    trendKcal = arrow(avgKcal, prevAvgKcal)
+    trendProtein = arrow(avgProtein, prevAvgProtein)
+  }
+
+  // UPF strip
+  const upfDotColor = (maxUPF) => {
+    if (maxUPF === null || maxUPF < 0) return '#333'
+    if (maxUPF >= 3) return '#ff5c5c'
+    if (maxUPF >= 2) return '#ffb347'
+    return '#4dff91'
+  }
+  const upfStrip = dayTotals.map(d => ({ ...d, dotColor: upfDotColor(d.maxUPF) }))
+  const cleanCount = upfStrip.filter(d => d.hasLogs && d.maxUPF !== null && d.maxUPF <= 1).length
+  const amberCount = upfStrip.filter(d => d.dotColor === '#ffb347').length
+  const redCount = upfStrip.filter(d => d.dotColor === '#ff5c5c').length
+
+  // Post-run protein flag (most recent run only)
+  let postRunFlag = null
+  const recentRun = activities7.find(a => a.type?.toLowerCase().includes('run'))
+  if (recentRun) {
+    const actEndMs = new Date(recentRun.created_at || (recentRun.date + 'T10:00:00Z')).getTime() + (recentRun.duration_sec || 0) * 1000
+    const windowEndMs = actEndMs + 90 * 60 * 1000
+    const postRunLogs = entries14.filter(e => {
+      if (e.meal_type === 'alcohol') return false
+      const t = new Date(e.logged_at || e.created_at).getTime()
+      return t >= actEndMs && t <= windowEndMs
+    })
+    const postRunProtein = postRunLogs.reduce((s, e) => s + parseFloat(e.protein_g || 0), 0)
+    if (postRunLogs.length === 0 || postRunProtein < 25) {
+      const dayName = new Date((recentRun.date || todayStr) + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long' })
+      postRunFlag = `Post-run protein missed on ${dayName}`
+    }
+  }
+
+  // Streaks (computed from most recent days backwards)
+  let proteinStreak = 0
+  let cleanStreak = 0
+  for (let i = 0; i <= 6; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i)
+    const ds = d.toLocaleDateString('en-CA', { timeZone: TZ })
+    const dayFood = thisWeekFood.filter(e => e.date === ds)
+    if (dayFood.length === 0) { if (i === 0) continue; break }
+    if (dayFood.reduce((s, e) => s + parseFloat(e.protein_g || 0), 0) >= 130) proteinStreak++
+    else if (i > 0) { proteinStreak = 0 } // reset if gap
+  }
+  for (let i = 0; i <= 6; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i)
+    const ds = d.toLocaleDateString('en-CA', { timeZone: TZ })
+    const dayFood = thisWeekFood.filter(e => e.date === ds)
+    if (dayFood.length === 0) { if (i === 0) continue; break }
+    if (Math.max(...dayFood.map(e => e.upf_score ?? 0)) <= 1) cleanStreak++
+    else if (i > 0) { cleanStreak = 0 }
+  }
+
+  // Streak badges (min 3, max 2 shown)
+  const badges = [
+    proteinStreak >= 3 && { icon: '🔥', text: `${proteinStreak}-day protein streak` },
+    cleanStreak >= 3 && { icon: '✅', text: `${cleanStreak}-day clean eating streak` },
+  ].filter(Boolean).slice(0, 2)
+  const alcoholOnTrack = weeklyUnits < 10 && weeklyUnits > 0
+
+  return (
+    <div style={{ padding: '12px 20px', borderBottom: `1px solid ${Z.border}` }}>
+      <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>This week</div>
+
+      {/* Streak badges */}
+      {(badges.length > 0 || alcoholOnTrack) && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+          {badges.map((b, i) => (
+            <div key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(77,255,145,0.1)', border: '1px solid rgba(77,255,145,0.25)', borderRadius: 20, padding: '4px 10px', fontSize: 11, color: Z.green }}>
+              {b.icon} {b.text}
+            </div>
+          ))}
+          {alcoholOnTrack && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.04)', border: `1px solid ${Z.border2}`, borderRadius: 20, padding: '4px 10px', fontSize: 11, color: Z.muted }}>
+              Alcohol on track this week
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Daily averages */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+        {[
+          { label: 'Avg kcal', numVal: avgKcal, dispVal: String(avgKcal), target: KCAL_TARGET, col: Z.accent, trend: trendKcal },
+          { label: 'Avg protein', numVal: avgProtein, dispVal: avgProtein + 'g', target: PROTEIN_TARGET, col: Z.accent2, trend: trendProtein },
+          { label: 'Avg fibre', numVal: avgFibre, dispVal: avgFibre + 'g', target: FIBRE_TARGET, col: Z.green, trend: null },
+        ].map(({ label, numVal, dispVal, target, col, trend }) => {
+          const pct = Math.min(100, Math.round(numVal / target * 100))
+          return (
+            <div key={label} style={{ background: Z.surface, borderRadius: 8, padding: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700, color: col }}>{dispVal}</div>
+                {trend && <span style={{ fontSize: 11, color: trend === '↑' ? Z.green : trend === '↓' ? Z.red : Z.muted }}>{trend}</span>}
+              </div>
+              <div style={{ fontSize: 9, color: Z.muted, textTransform: 'uppercase', marginTop: 2, marginBottom: 5 }}>{label}</div>
+              <div style={{ height: 3, background: '#1a1a1a', borderRadius: 2 }}>
+                <div style={{ height: '100%', width: `${pct}%`, background: col, borderRadius: 2 }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* UPF 7-day strip */}
+      <div style={{ marginBottom: postRunFlag ? 10 : 0 }}>
+        <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>UPF this week</div>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+          {upfStrip.map((d, i) => {
+            const dayLetter = new Date(d.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' }).slice(0, 1)
+            return (
+              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <div style={{ width: 14, height: 14, borderRadius: '50%', background: d.dotColor, flexShrink: 0 }} />
+                <div style={{ fontSize: 9, color: d.date === todayStr ? Z.accent : Z.muted }}>{dayLetter}</div>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ fontSize: 11, color: Z.muted }}>
+          {[cleanCount > 0 && `${cleanCount} clean`, amberCount > 0 && `${amberCount} amber`, redCount > 0 && `${redCount} red`].filter(Boolean).join(', ') || 'No UPF data logged yet'}
+        </div>
+      </div>
+
+      {/* Post-run protein flag */}
+      {postRunFlag && (
+        <div style={{ fontSize: 11, color: Z.amber, marginTop: 10 }}>
+          ⚡ {postRunFlag}
         </div>
       )}
     </div>
@@ -195,14 +466,16 @@ export default function Nutrition() {
   const cameraRef = useRef(null)
   const libraryRef = useRef(null)
   const [entries, setEntries] = useState([])
-  const [entries7, setEntries7] = useState([])
+  const [entries14, setEntries14] = useState([]) // 14 days for trend + digest
+  const [activities7, setActivities7] = useState([])
   const [loading, setLoading] = useState(true)
   const [analyzing, setAnalyzing] = useState(false)
   const [preview, setPreview] = useState(null)
   const [imageData, setImageData] = useState(null)
   const [imageMime, setImageMime] = useState('image/jpeg')
   const [context, setContext] = useState('')
-  const [logDate, setLogDate] = useState(new Date().toLocaleDateString('en-CA'))
+  const [logDate, setLogDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: TZ }))
+  const [logTime, setLogTime] = useState(getCurrentViennaTime)
   const [activeMetrics, setActiveMetrics] = useState(['kcal', 'protein', 'units'])
   const [todaySession, setTodaySession] = useState(null)
   const [todayActivity, setTodayActivity] = useState(null)
@@ -211,29 +484,40 @@ export default function Nutrition() {
   const todayKcal = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + (e.calories || 0), 0)
   const todayProtein = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + parseFloat(e.protein_g || 0), 0)
 
-  // Weekly units
-  const weekStart = (() => { const d = new Date(); const dow = d.getDay(); d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1)); return d.toISOString().slice(0,10) })()
-  const weekUnits = entries7.filter(e => e.meal_type === 'alcohol').reduce((s, e) => s + parseFloat(e.alcohol_units || 0), 0)
+  const weekUnits = entries14.filter(e => {
+    const d = new Date(); const dow = d.getDay()
+    d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1))
+    return e.meal_type === 'alcohol' && e.date >= d.toLocaleDateString('en-CA', { timeZone: TZ })
+  }).reduce((s, e) => s + parseFloat(e.alcohol_units || 0), 0)
 
   const load = useCallback(async () => {
-    const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toLocaleDateString('en-CA')
-    const todayStr = new Date().toLocaleDateString('en-CA')
-    const [{ data: all }, { data: w7 }, { data: sessions }, { data: acts }, { data: cLog }] = await Promise.all([
+    const fourteenDaysAgo = new Date(Date.now() - 14*24*60*60*1000).toLocaleDateString('en-CA', { timeZone: TZ })
+    const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toLocaleDateString('en-CA', { timeZone: TZ })
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
+    const [{ data: all }, { data: w14 }, { data: sessions }, { data: acts }, { data: cLog }, { data: acts7 }] = await Promise.all([
       supabase.from('nutrition_logs').select('*').eq('date', logDate).order('logged_at', { ascending: false }),
-      supabase.from('nutrition_logs').select('*').gte('date', sevenDaysAgo).order('date'),
+      supabase.from('nutrition_logs').select('*').gte('date', fourteenDaysAgo).order('date'),
       supabase.from('scheduled_sessions').select('session_type,name,zone,duration_min_low,duration_min_high').eq('planned_date', todayStr).limit(3),
-      supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec,created_at').eq('date', todayStr).order('date', { ascending: false }).limit(1),
+      supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec,created_at,date').eq('date', todayStr).order('date', { ascending: false }).limit(1),
       supabase.from('cycle_logs').select('phase_reported, override_intensity, notes').eq('log_date', todayStr).maybeSingle(),
+      supabase.from('activities').select('name,type,distance_km,duration_sec,created_at,date').gte('date', sevenDaysAgo).order('date', { ascending: false }).limit(20),
     ])
     setEntries(all || [])
-    setEntries7(w7 || [])
+    setEntries14(w14 || [])
     setTodaySession(sessions?.[0] || null)
     setTodayActivity(acts?.[0] || null)
     setCycleLog(cLog || null)
+    setActivities7(acts7 || [])
     setLoading(false)
   }, [logDate])
 
   useEffect(() => { load() }, [load])
+
+  // Reset logTime to current time when logDate changes to today
+  useEffect(() => {
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
+    if (logDate === todayStr) setLogTime(getCurrentViennaTime())
+  }, [logDate])
 
   const { containerRef: nutriContainerRef, pullDistance: nutriPullDist, refreshing: nutriRefreshing } = usePullToRefresh(load)
 
@@ -251,7 +535,6 @@ export default function Nutrition() {
     reader.onload = ev => {
       const result = ev.target.result
       setPreview(result)
-      // Extract pure base64 without data URI prefix
       setImageData(result.split(',')[1])
     }
     reader.readAsDataURL(file)
@@ -264,25 +547,47 @@ export default function Nutrition() {
       const trainingCtx = todayActivity
         ? ` Training today: ${todayActivity.name} (${todayActivity.distance_km ? `${todayActivity.distance_km}km ` : ''}${todayActivity.type}).`
         : todaySession ? ` Planned session today: ${todaySession.name} (${todaySession.session_type}).` : ''
+
+      const mealCtx = `Eaten today so far: ${todayKcal} kcal, ${Math.round(todayProtein)}g protein.${trainingCtx}`
+
       const userContent = imageData
         ? [
             { type: 'image', source: { type: 'base64', media_type: imageMime.includes('png') ? 'image/png' : imageMime.includes('gif') ? 'image/gif' : imageMime.includes('webp') ? 'image/webp' : 'image/jpeg', data: imageData } },
-            { type: 'text', text: `Analyse this meal. Context: ${context || 'none'}.${trainingCtx} Eaten today so far: ${todayKcal} kcal, ${Math.round(todayProtein)}g protein. Respond ONLY in JSON: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence reason"}` }
+            { type: 'text', text: `Analyse this meal. Context: ${context || 'none'}. ${mealCtx}` }
           ]
-        : `Estimate this meal: ${context}.${trainingCtx} Eaten today so far: ${todayKcal} kcal, ${Math.round(todayProtein)}g protein. Respond ONLY in JSON: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence reason"}`
+        : `Estimate nutrition for: ${context}. ${mealCtx}`
 
       const data = await callClaude({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 300,
-        system: buildSystemPrompt(settings) + '\n\nTask: estimate meal nutrition. Return ONLY valid JSON, no markdown, no other text: {"meal_name":"...","calories":0,"protein_g":0,"carbs_g":0,"fat_g":0,"rating":"green|amber|red","notes":"one sentence"}',
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 400,
+        system: NUTRITION_SYSTEM,
         messages: [{ role: 'user', content: userContent }],
       })
       const raw = data.content?.[0]?.text
       if (!raw) throw new Error('No response')
-      const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim())
+      const fenced = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+      const cleaned = fenced ? fenced[1].trim() : raw.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(cleaned)
+
       const { data: { session } } = await supabase.auth.getSession()
-      await supabase.from('nutrition_logs').insert({ date: logDate, meal_name: parsed.meal_name, calories: parsed.calories, protein_g: parsed.protein_g, carbs_g: parsed.carbs_g, fat_g: parsed.fat_g, rating: parsed.rating, notes: parsed.notes, logged_at: new Date().toISOString(), meal_type: 'food', user_id: session?.user?.id })
+      await supabase.from('nutrition_logs').insert({
+        date: logDate,
+        meal_name: parsed.meal_name,
+        calories: parsed.calories,
+        protein_g: parsed.protein_g,
+        carbs_g: parsed.carbs_g,
+        fat_g: parsed.fat_g,
+        fibre_g: parsed.fibre_g ?? null,
+        sodium_mg: parsed.sodium_mg ?? null,
+        upf_score: parsed.upf_score ?? null,
+        rating: parsed.rating,
+        notes: parsed.notes,
+        logged_at: viennaTimeToUTC(logDate, logTime),
+        meal_type: 'food',
+        user_id: session?.user?.id,
+      })
       setPreview(null); setImageData(null); setContext('')
+      setLogTime(getCurrentViennaTime())
       load()
     } catch(e) {
       console.error('Nutrition analysis error:', e)
@@ -293,13 +598,26 @@ export default function Nutrition() {
 
   async function logAlcohol({ drink, quantity, units }) {
     const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('nutrition_logs').insert({ date: logDate, meal_name: `${quantity}x ${drink}`, alcohol_units: units, logged_at: new Date().toISOString(), meal_type: 'alcohol', user_id: session?.user?.id })
+    await supabase.from('nutrition_logs').insert({
+      date: logDate,
+      meal_name: `${quantity}x ${drink}`,
+      alcohol_units: units,
+      logged_at: viennaTimeToUTC(logDate, logTime),
+      meal_type: 'alcohol',
+      user_id: session?.user?.id,
+    })
     load()
   }
 
   async function deleteEntry(id) { await supabase.from('nutrition_logs').delete().eq('id', id); load() }
 
-  const isToday = logDate === new Date().toLocaleDateString('en-CA')
+  const isToday = logDate === new Date().toLocaleDateString('en-CA', { timeZone: TZ })
+
+  const inp = {
+    background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 8,
+    padding: '8px 12px', color: Z.text, fontFamily: "'DM Mono', monospace",
+    fontSize: 12, outline: 'none',
+  }
 
   return (
     <div ref={nutriContainerRef} style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
@@ -319,10 +637,9 @@ export default function Nutrition() {
       <div style={{ padding: '14px 20px 10px', borderBottom: `1px solid ${Z.border}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 700 }}>Fuel</div>
-          {/* Date picker */}
-          <input type="date" value={logDate} max={new Date().toLocaleDateString('en-CA')}
+          <input type="date" value={logDate} max={new Date().toLocaleDateString('en-CA', { timeZone: TZ })}
             onChange={e => setLogDate(e.target.value)}
-            style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 6, padding: '5px 8px', color: isToday ? Z.muted : Z.accent, fontFamily: "'DM Mono', monospace", fontSize: 11, outline: 'none', cursor: 'pointer' }} />
+            style={{ ...inp, color: isToday ? Z.muted : Z.accent, cursor: 'pointer' }} />
         </div>
         <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>
           {isToday ? 'Today' : new Date(logDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -342,7 +659,6 @@ export default function Nutrition() {
 
         let label, icon, bg, border, advice
         if (act) {
-          // Recovery mode — workout already done
           icon = isRun ? '🏃' : isStrength ? '🏋️' : '✓'
           label = 'Workout done'
           bg = 'rgba(77,255,145,0.07)'
@@ -352,9 +668,9 @@ export default function Nutrition() {
           const isHardRun = sess?.zone?.includes('Z4') || sess?.zone?.includes('Z5') || sess?.intensity?.toLowerCase().includes('hard')
           if (isRun) {
             const carbNote = distKm > 16 || isHardRun ? 'High carb run — aim for 400–500g carbs today to refill glycogen.' : 'Moderate run — 250–300g carbs sufficient, focus on hitting protein.'
-            advice = `${carbNote} Get 30–40g protein within 30min, then a full meal within 2hrs. Prioritise fluids — at least 500ml before your next meal.`
+            advice = `${carbNote} Get 30–40g protein within 30min, then a full meal within 2hrs.`
           } else if (isStrength) {
-            advice = 'Protein window is open — aim for 40g+ protein now, then again at your next meal. Moderate carbs to support recovery; no need to aggressively refuel like post-run.'
+            advice = 'Protein window is open — aim for 40g+ protein now, then again at your next meal.'
           } else {
             advice = 'Session complete — protein focus for recovery, hit your calorie target.'
           }
@@ -369,7 +685,6 @@ export default function Nutrition() {
             </div>
           )
         } else if (sess) {
-          // Pre-session mode — nothing logged yet
           icon = sess.session_type === 'run' ? '🏃' : sess.session_type === 'trail' ? '⛰️' : sess.session_type === 'strength' ? '🏋️' : '😴'
           label = "Today's session"
           bg = sess.session_type === 'rest' ? 'rgba(136,133,128,0.1)' : sess.session_type === 'strength' ? 'rgba(255,179,71,0.1)' : 'rgba(232,255,71,0.08)'
@@ -407,59 +722,47 @@ export default function Nutrition() {
 
       {/* Cycle nutrition banner */}
       {isToday && settings.cycle_tracking_enabled && (() => {
-        const phase = inferCyclePhase(
-          settings.cycle_last_period_date,
-          settings.cycle_length_avg,
-          settings.cycle_is_irregular || false,
-          cycleLog ? [cycleLog] : []
-        )
+        const phase = inferCyclePhase(settings.cycle_last_period_date, settings.cycle_length_avg, settings.cycle_is_irregular || false, cycleLog ? [cycleLog] : [])
         const override = cycleLog?.override_intensity
         const PHASE_NUTRITION = {
-          menstrual:  'You might find iron-rich foods and magnesium helpful right now — think leafy greens, nuts, dark chocolate. Cravings are completely normal and worth listening to.',
-          follicular: 'Rising energy — lighter, fresh foods tend to suit this phase well. A good time to build up protein if you\'re increasing training.',
-          ovulatory:  'Energy tends to be at its peak around now. No specific changes needed — keep fuelling well around sessions.',
-          luteal:     'Complex carbs and magnesium can help with energy and mood in the latter part of this phase. If you\'re noticing PMS symptoms, reducing caffeine might help a little.',
+          menstrual:  'Iron-rich foods and magnesium can help right now — think leafy greens, nuts, dark chocolate. Cravings are normal.',
+          follicular: 'Rising energy — lighter, fresh foods suit this phase well. Good time to build protein if training is increasing.',
+          ovulatory:  'Energy tends to peak around now. Keep fuelling well around sessions.',
+          luteal:     'Complex carbs and magnesium can help with energy and mood. If PMS symptoms, reducing caffeine may help.',
         }
         const tip = PHASE_NUTRITION[phase]
         if (!tip && phase !== 'unknown') return null
         if (phase === 'unknown' && !cycleLog) return null
-
-        const overrideNote = override === 'rest' ? ' Rest day — keep nutrition easy and hydration up.'
-          : override === 'reduce' ? ' Lighter session — moderate fuelling, no need to aggressively refuel.'
-          : null
-
+        const overrideNote = override === 'rest' ? ' Rest day — keep nutrition easy and hydration up.' : override === 'reduce' ? ' Lighter session — moderate fuelling.' : null
         return (
           <div style={{ margin: '10px 20px 0', padding: '10px 14px', background: 'rgba(232,255,71,0.05)', border: '1px solid rgba(232,255,71,0.15)', borderRadius: 10 }}>
             <div style={{ fontSize: 10, color: Z.accent, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Nutrition note</div>
-            <div style={{ fontSize: 12, color: '#c8c5bf', lineHeight: 1.6 }}>
-              {tip}{overrideNote}
-            </div>
+            <div style={{ fontSize: 12, color: '#c8c5bf', lineHeight: 1.6 }}>{tip}{overrideNote}</div>
           </div>
         )
       })()}
 
-      {/* Clickable stat cards + graph */}
+      {/* Stat cards + graph */}
       <div style={{ padding: '12px 20px', borderBottom: `1px solid ${Z.border}` }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
           <StatCard metricKey="kcal" val={todayKcal} target={KCAL_TARGET} label="Kcal" unit="kcal" col={Z.accent}
             active={activeMetrics} onToggle={toggleMetric}
-            insight={`Target: ${KCAL_TARGET} kcal/day in base build. Moderate surplus on training days helps muscle retention. Deficit on rest days is fine.`} />
+            insight={`Target: ${KCAL_TARGET} kcal/day. Moderate surplus on training days, deficit on rest days is fine.`} />
           <StatCard metricKey="protein" val={Math.round(todayProtein)} target={PROTEIN_TARGET} label="Protein" unit="g" col={Z.accent2}
             active={activeMetrics} onToggle={toggleMetric}
-            insight={`Target: ${PROTEIN_TARGET}g/day. At 79kg that's ~1.9g/kg — optimal for muscle retention during marathon training. Spread across 4+ meals.`} />
+            insight={`Target: ${PROTEIN_TARGET}g/day. Spread across 4+ meals for best absorption.`} />
           <StatCard metricKey="units" val={parseFloat(weekUnits.toFixed(1))} target={UNITS_TARGET} label="Units/wk" unit="" col={Z.amber}
             active={activeMetrics} onToggle={toggleMetric}
-            insight={`Weekly target: ≤${UNITS_TARGET} units. Current: ${weekUnits.toFixed(1)}. Alcohol disrupts sleep quality and HRV recovery — two things that determine how well you adapt to training.`} />
+            insight={`Weekly target: ≤${UNITS_TARGET} units. Current: ${weekUnits.toFixed(1)}. Alcohol disrupts sleep and HRV recovery.`} />
         </div>
-
-        {/* Shared toggle graph */}
         <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-            7 days · tap cards to toggle
-          </div>
-          <InsightsGraph entries7Days={entries7} active={activeMetrics} />
+          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>7 days · tap cards to toggle</div>
+          <InsightsGraph entries7Days={entries14} active={activeMetrics} />
         </div>
       </div>
+
+      {/* Weekly Digest */}
+      <WeeklyDigest entries14={entries14} activities7={activities7} />
 
       {/* Log section */}
       <div style={{ padding: '12px 20px', borderBottom: `1px solid ${Z.border}` }}>
@@ -485,6 +788,17 @@ export default function Nutrition() {
         <textarea value={context} onChange={e => setContext(e.target.value)} rows={2}
           placeholder="Describe meal: '2 scrambled eggs on toast with butter', 'chicken breast salad'..."
           style={{ width: '100%', background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '9px 12px', color: Z.text, fontFamily: "'DM Mono', monospace", fontSize: 12, resize: 'none', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
+
+        {/* When did you eat this? */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <span style={{ fontSize: 11, color: Z.muted, flexShrink: 0 }}>When?</span>
+          <input
+            type="time"
+            value={logTime}
+            onChange={e => setLogTime(e.target.value)}
+            style={{ ...inp, flex: 1, padding: '7px 10px', cursor: 'pointer' }}
+          />
+        </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={analyzeAndLog} disabled={analyzing || (!imageData && !context.trim())}
