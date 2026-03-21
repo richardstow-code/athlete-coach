@@ -88,7 +88,18 @@ export function buildSystemPrompt(settings = {}, primarySport = null) {
     phase ? `Current phase: ${phase}.` : null,
     settings.current_level ? `Athlete level: ${settings.current_level}.` : null,
     isEndurance
-      ? 'Training zones: Z1 <125bpm, Z2 125–140bpm, Z3 140–158bpm, Z4 158–172bpm, Z5 >172bpm.'
+      ? (() => {
+          const z = settings.training_zones || {}
+          const z1max  = z.z1_max  ?? 124
+          const z2min  = z.z2_min  ?? 125
+          const z2max  = z.z2_max  ?? 140
+          const z3min  = z.z3_min  ?? 141
+          const z3max  = z.z3_max  ?? 157
+          const z4min  = z.z4_min  ?? 158
+          const z4max  = z.z4_max  ?? 172
+          const z5min  = z.z5_min  ?? 173
+          return `Training zones: Z1 <${z1max}bpm, Z2 ${z2min}–${z2max}bpm, Z3 ${z3min}–${z3max}bpm, Z4 ${z4min}–${z4max}bpm, Z5 >${z5min}bpm.`
+        })()
       : null,
     isRunning
       ? null

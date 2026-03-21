@@ -55,7 +55,7 @@ export async function buildContext() {
 
     supabase
       .from('athlete_settings')
-      .select('name,dob,height_cm,weight_kg,races,goal_type,current_level,health_notes,cycle_tracking_enabled,cycle_length_avg,cycle_is_irregular,cycle_last_period_date,cycle_notes')
+      .select('name,dob,height_cm,weight_kg,races,goal_type,current_level,health_notes,cycle_tracking_enabled,cycle_length_avg,cycle_is_irregular,cycle_last_period_date,cycle_notes,health_flags,training_zones')
       .maybeSingle(),
 
     supabase
@@ -148,6 +148,13 @@ export function formatContext({
     }
     if (settings.health_notes) lines.push(`Health: ${settings.health_notes}`)
     if (lines.length > 0) parts.push('ATHLETE:\n' + lines.map(l => `- ${l}`).join('\n'))
+
+    // Health flags from structured health_flags column (overrides health_notes when present)
+    const activeFlags = (settings.health_flags || []).filter(f => f.status === 'active' || f.status === 'monitoring')
+    if (activeFlags.length > 0) {
+      const flagLines = activeFlags.map(f => `- ${f.label} (${f.status}): ${f.notes}`)
+      parts.push('ACTIVE HEALTH FLAGS:\n' + flagLines.join('\n'))
+    }
   }
 
   // ── Sports context ────────────────────────────────────────
