@@ -1,5 +1,5 @@
 # Athlete Coach — Strategic Handover
-*Last updated: 2026-03-21. Replaces March 2026 Technical Handover.*
+*Last updated: 2026-03-21 (session 2).*
 
 ---
 
@@ -22,13 +22,14 @@ An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg mal
 - Strava webhook → activity ingestion (Vercel serverless function)
 - Activity coaching feedback → coaching_memory (written on each new activity)
 - Auth (email/password via Supabase)
-- Chat coaching with context (buildContext layer is solid)
-- Nutrition logging and display
-- Plan tab: week view, session status, mismatch detection
-- Onboarding flow (4-step, multi-sport)
+- Chat coaching with context (buildContext layer is solid, includes active injury reports)
+- Nutrition logging with AI macro + fibre/sodium/UPF parsing, manual timestamps, weekly digest
+- Plan tab: week view, session status, mismatch detection, sport-aware metrics
+- Onboarding flow (5-step, multi-sport — Strava connect at step 2)
 - Settings: profile, sliders, race management, Strava connection
 - PostWorkoutPopup after new activity
 - Cycle tracking (opt-in)
+- Injury reporting workflow with rehab session type in SessionDetail
 
 ### What is partially built or known to be buggy
 
@@ -50,6 +51,11 @@ An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg mal
 - Backfill + baseline analysis: auto-runs on first empty load
 - Plan Review Panel: iterate on generated plan before committing
 - Quarterly goal prompt, cancel event, fuel context banner, delete account
+- **Injury workflow**: post-run injury reporting, Claude assessment, rehab sessions auto-added to schedule; SessionDetail handles `session_type === 'rehab'` (shows exercise list, skips AI coaching call); buildContext includes active injury reports
+- **Onboarding improvements**: fixed race condition loop bug (App.jsx functional state update); onboarding is now 5 steps with Strava connect at step 2; sport chips toggle off on re-click; profile completion nudge card on final step
+- **Sport-agnostic fixes**: Plan.jsx NaN fix for null target dates; sport-aware progress bars and metrics (running vs strength vs endurance); Stats.jsx shows session count (not km) for non-runners; empty state when no Strava data
+- **Plan generator fix**: robust JSON fence extraction when Claude wraps response in markdown; sport context added to generation prompt
+- **Nutrition enhancement**: manual time picker (Vienna tz); Claude now parses and saves `fibre_g`, `sodium_mg`, `upf_score` (NOVA 0–3); WeeklyDigest component with daily averages, trend arrows, UPF dot strip, post-run protein flag, streak badges; DB migration applied (logged_at, fibre_g, sodium_mg, upf_score columns)
 
 ---
 
@@ -109,6 +115,10 @@ Strava webhook → Vercel serverless function (`/api/strava-webhook.js`) → Sup
 
 ### Recent schema additions
 
+- `nutrition_logs.logged_at` TIMESTAMPTZ — manual timestamp from time picker (added 2026-03-21)
+- `nutrition_logs.fibre_g` NUMERIC — dietary fibre parsed by Claude (added 2026-03-21)
+- `nutrition_logs.sodium_mg` INTEGER — sodium parsed by Claude (added 2026-03-21)
+- `nutrition_logs.upf_score` INTEGER — NOVA ultra-processed food score 0–3 (added 2026-03-21)
 - `athlete_settings.last_goal_prompt_date` — prevents quarterly goal prompt repeating (added 2026-03-20)
 - `scheduled_sessions.planned_start_time` — set when athlete taps check-in card (added 2026-03-20)
 - `athlete_settings.onboarding_nudges_sent` — tracks progressive onboarding nudges (added 2026-03-18)
@@ -144,7 +154,7 @@ Conversational interface with full coaching context injected (activities, sessio
 
 ### Fuel
 
-Nutrition logging. AI parses free-text or image descriptions of meals into macros. Shows 7-day graph, alcohol tracking, cycle phase tips, and a training context banner.
+Nutrition logging. AI parses free-text or image descriptions of meals into macros (calories, protein, carbs, fat, fibre, sodium, UPF score). Manual time picker lets entries be backdated within the same day (Vienna timezone). Shows 7-day graph, alcohol tracking, cycle phase tips, training context banner, and a WeeklyDigest panel with daily averages, week-on-week trend arrows, UPF dot strip, post-run protein flag, and streak badges.
 
 ### Progress
 
@@ -162,6 +172,10 @@ Toggle: Macro (monthly overview, by goal type) vs Micro (event-specific phase pr
 - **Multi-sport coaching**: separate lifecycle state per sport
 - **Cycle tracking**: opt-in, affects coaching tone and suggestions
 - **Tier-2 nudges**: progressive onboarding questions in Chat header
+- **Injury workflow**: post-run injury report → Claude assessment → auto-added rehab session; SessionDetail handles rehab type; coaching context includes active injuries
+- **Onboarding v2**: 5-step flow, Strava at step 2, sport chip toggle, race condition fix, profile nudge
+- **Sport-agnostic UI**: Plan and Stats screens adapt metrics to sport type (runner vs strength vs endurance)
+- **Nutrition v2**: extended nutrient parsing (fibre/sodium/UPF), manual timestamps, WeeklyDigest with streaks and trend arrows
 
 ---
 
