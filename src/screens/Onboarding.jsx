@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { inferAthleteContext } from '../lib/inferAthleteContext'
+import { normaliseSport, getCanonicalSport } from '../lib/sportUtils'
 
 const STRAVA_CLIENT_ID = import.meta.env.VITE_STRAVA_CLIENT_ID
 
@@ -95,9 +96,19 @@ export default function Onboarding({ onComplete }) {
 
   function addSport(raw) {
     const trimmed = raw.trim()
-    if (!trimmed || sports.find(s => s.sport_raw.toLowerCase() === trimmed.toLowerCase())) return
+    if (!trimmed) return
+    const key = normaliseSport(trimmed)
+    // Deduplicate by canonical key
+    if (sports.find(s => s.sport_key === key)) return
+    const canonical = getCanonicalSport(key)
     const isFirst = sports.length === 0
-    setSports(prev => [...prev, { sport_raw: trimmed, priority: isFirst ? 'primary' : 'supporting', current_goal_raw: '' }])
+    setSports(prev => [...prev, {
+      sport_raw: trimmed,        // user's original input
+      sport_key: key,            // canonical key
+      display_name: canonical.label, // canonical label shown in UI
+      priority: isFirst ? 'primary' : 'supporting',
+      current_goal_raw: '',
+    }])
     setSportInput('')
   }
 
@@ -109,6 +120,18 @@ export default function Onboarding({ onComplete }) {
       }
       return { ...s, [field]: value }
     }))
+  }
+
+  function removeSportByKey(key) {
+    setSports(prev => {
+      const idx = prev.findIndex(s => s.sport_key === key)
+      if (idx === -1) return prev
+      const next = prev.filter((_, i) => i !== idx)
+      if (prev[idx].priority === 'primary' && next.length > 0) {
+        next[0] = { ...next[0], priority: 'primary' }
+      }
+      return next
+    })
   }
 
   function removeSport(index) {
@@ -131,7 +154,7 @@ export default function Onboarding({ onComplete }) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       await supabase.from('athlete_settings').upsert(
-        { user_id: user.id, updated_at: new Date().toISOString() },
+        { user_id: user.id, onboarding_complete: true, updated_at: new Date().toISOString() },
         { onConflict: 'user_id' }
       )
     } catch { /* non-fatal */ }
@@ -144,25 +167,31 @@ export default function Onboarding({ onComplete }) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
 
-      // 1. Write raw inputs collected across steps
-      await supabase.from('athlete_settings').upsert({
-        user_id:       user.id,
-        goal_type:     goalType,
-        current_level: LEVELS[levelIndex].value,
-        updated_at:    new Date().toISOString(),
+      // 1. Write athlete_settings — onboarding_complete marks this user as done
+      const { error: settingsErr } = await supabase.from('athlete_settings').upsert({
+        user_id:             user.id,
+        goal_type:           goalType,
+        current_level:       LEVELS[levelIndex].value,
+        onboarding_complete: true,
+        updated_at:          new Date().toISOString(),
       }, { onConflict: 'user_id' })
+      if (settingsErr) throw settingsErr
 
-      // 2. Insert sports into athlete_sports
+      // 2. Replace athlete_sports — delete then insert to avoid duplicates
+      await supabase.from('athlete_sports').delete().eq('user_id', user.id)
       if (sports.length > 0) {
-        await supabase.from('athlete_sports').insert(
+        const { error: sportsErr } = await supabase.from('athlete_sports').insert(
           sports.map(s => ({
-            user_id: user.id,
-            sport_raw: s.sport_raw,
-            priority: s.priority,
+            user_id:          user.id,
+            sport_raw:        s.sport_raw,
+            sport_key:        s.sport_key,
+            display_name:     s.display_name,
+            priority:         s.priority,
             current_goal_raw: s.current_goal_raw || null,
-            lifecycle_state: 'planning',
+            lifecycle_state:  'planning',
           }))
         )
+        if (sportsErr) throw sportsErr
       }
 
       // 3. AI inference — non-fatal
@@ -174,22 +203,16 @@ export default function Onboarding({ onComplete }) {
         })
       } catch { /* non-fatal */ }
 
-      // 4. Finalise athlete_settings
-      await supabase.from('athlete_settings').upsert({
-        user_id:    user.id,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' })
-
       console.log('[Onboarding] Save result: success')
 
-      // 5. Kick off historical Strava sync in background (non-blocking)
+      // 4. Kick off historical Strava sync in background (non-blocking)
       supabase.functions.invoke('strava-sync', {
         body: { after: Math.floor((Date.now() - 60 * 24 * 60 * 60 * 1000) / 1000) },
       }).catch(() => { /* non-fatal — user may not have Strava connected yet */ })
 
       onComplete()
     } catch (err) {
-      console.log('[Onboarding] Save result:', null, err)
+      console.error('[Onboarding] Save error:', err)
       setError(err.message || 'Something went wrong. Try again.')
       setStep(5)
     }
@@ -331,9 +354,10 @@ export default function Onboarding({ onComplete }) {
         {/* Chip suggestions */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 20 }}>
           {SPORT_CHIPS.map(chip => {
-            const already = sports.some(s => s.sport_raw.toLowerCase() === chip)
+            const chipKey = normaliseSport(chip)
+            const already = sports.some(s => s.sport_key === chipKey)
             return (
-              <button key={chip} onClick={() => already ? removeSport(sports.findIndex(s => s.sport_raw.toLowerCase() === chip)) : addSport(chip)} style={{
+              <button key={chip} onClick={() => already ? removeSportByKey(chipKey) : addSport(chip)} style={{
                 padding: '5px 11px', borderRadius: 20, cursor: 'pointer',
                 background: already ? 'rgba(232,255,71,0.12)' : 'transparent',
                 border: `1px solid ${already ? Z.accent : Z.border2}`,
@@ -359,7 +383,7 @@ export default function Onboarding({ onComplete }) {
               }}>
                 {/* Sport name + remove */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, color: Z.text, fontWeight: 600 }}>{sport.sport_raw}</div>
+                  <div style={{ fontSize: 13, color: Z.text, fontWeight: 600 }}>{sport.display_name}</div>
                   <button
                     onClick={() => removeSport(i)}
                     style={{ background: 'none', border: 'none', color: Z.muted, cursor: 'pointer', fontSize: 16, padding: '0 0 0 8px', lineHeight: 1 }}

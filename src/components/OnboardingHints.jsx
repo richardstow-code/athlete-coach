@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 
 const Z = {
@@ -23,6 +23,7 @@ export default function OnboardingHints({ hintId, title, body, position = 'botto
   const [dismissed, setDismissed] = useState(true) // start hidden until checked
   const [visible, setVisible] = useState(false)
   const timerRef = useRef(null)
+  const tipRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -54,20 +55,19 @@ export default function OnboardingHints({ hintId, title, body, position = 'botto
     }
   }, [hintId])
 
-  async function dismissOne() {
+  const dismissOne = useCallback(async () => {
     setVisible(false)
     setDismissed(true)
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' })
-    const { data: settings } = await supabase
-      .from('athlete_settings')
-      .select('hints_dismissed')
-      .maybeSingle()
+    const { data: settings } = await supabase.from('athlete_settings').select('hints_dismissed').maybeSingle()
     const existing = settings?.hints_dismissed || {}
-    await supabase
-      .from('athlete_settings')
-      .update({ hints_dismissed: { ...existing, [hintId]: today } })
-      .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
-  }
+    const { data: { user } } = await supabase.auth.getUser()
+    // Upsert so it works even if the row doesn't exist yet
+    await supabase.from('athlete_settings').upsert(
+      { user_id: user?.id, hints_dismissed: { ...existing, [hintId]: today } },
+      { onConflict: 'user_id' }
+    )
+  }, [hintId])
 
   async function dismissAll() {
     setVisible(false)
@@ -75,16 +75,28 @@ export default function OnboardingHints({ hintId, title, body, position = 'botto
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' })
     const allDismissed = {}
     ALL_HINT_IDS.forEach(id => { allDismissed[id] = today })
-    await supabase
-      .from('athlete_settings')
-      .update({ hints_dismissed: allDismissed })
-      .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+    const { data: { user } } = await supabase.auth.getUser()
+    // Upsert so it works even if the row doesn't exist yet
+    await supabase.from('athlete_settings').upsert(
+      { user_id: user?.id, hints_dismissed: allDismissed },
+      { onConflict: 'user_id' }
+    )
   }
+
+  // Click outside to dismiss
+  useEffect(() => {
+    if (!visible) return
+    function handler(e) {
+      if (tipRef.current && !tipRef.current.contains(e.target)) dismissOne()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [visible, dismissOne])
 
   if (dismissed || !visible) return null
 
   return (
-    <div style={{
+    <div ref={tipRef} style={{
       position: 'fixed',
       [position === 'top' ? 'top' : 'bottom']: position === 'top' ? 64 : 148,
       left: 16,

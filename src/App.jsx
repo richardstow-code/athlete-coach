@@ -189,13 +189,13 @@ export default function App() {
     if (!session) { setNeedsOnboarding(null); setPostEventSettings(null); return }
 
     Promise.all([
-      supabase.from('athlete_settings').select('goal_type').maybeSingle(),
+      supabase.from('athlete_settings').select('goal_type, onboarding_complete').maybeSingle(),
       supabase.from('athlete_sports').select('*').eq('is_active', true).order('created_at'),
     ]).then(([{ data: settingsData }, { data: sportsData }]) => {
-      // Use functional update: once needsOnboarding is false (set by onComplete),
-    // never flip it back — guards against session refresh re-triggering this check
-    // before the upsert row is visible to a subsequent read.
-    setNeedsOnboarding(prev => prev === false ? false : !settingsData)
+      // Guard: once set to false (by onComplete), never flip back due to a
+      // session refresh firing before the DB write is visible.
+      const notDone = settingsData?.onboarding_complete !== true
+      setNeedsOnboarding(prev => prev === false ? false : notDone)
 
       setProfileIncomplete(!!settingsData && !settingsData.goal_type)
 

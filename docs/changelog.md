@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-21 (batch 3)
+
+- **Fix**: Onboarding loop — users sent back to onboarding on every refresh because the `athlete_settings` upsert was silently failing and the app checked row existence (`!settingsData`) rather than an explicit flag. Added `onboarding_complete BOOLEAN` column; `handleComplete` and `handleSkip` now set it to `true` and surface any DB errors. App.jsx checks `onboarding_complete === true`.
+- **Fix**: "Skip all" tips not persisting across pages — `dismissAll()` used `.update()` which silently fails for users with no row. Changed to `.upsert()`. Same fix applied to `dismissOne()`.
+- **Fix**: Tips now dismiss on click-outside (mousedown on document outside the tip card).
+- **Fix**: Duplicate sports on repeated onboarding — `athlete_sports` INSERT now preceded by DELETE of existing rows for the user, preventing accumulation.
+- **New**: `src/lib/sportUtils.js` — canonical sport list (11 sports + metric types) with `normaliseSport()` and `getCanonicalSport()` exports. Aliases map typos and variants to canonical keys.
+- **Enhancement**: Onboarding sports step normalises input on entry; deduplication by canonical key; sport cards show canonical label.
+- **Schema**: `athlete_settings.onboarding_complete BOOLEAN` — added; back-filled TRUE for all existing users
+- **Schema**: `athlete_settings.id` — fixed stuck DEFAULT 1; now uses sequence starting at 4
+- **Schema**: `athlete_sports.sport_key TEXT` — canonical sport key
+- **Schema**: `athlete_sports.display_name TEXT` — canonical display label
+- **Data**: Created `athlete_settings` rows for 2 users who had none (causing their onboarding loop)
+- **Data**: Cleaned 14 duplicate `athlete_sports` rows for the test user caused by the onboarding loop
+
+---
+
 ## 2026-03-21 (batch 2)
 
 - **New**: `HelpBot` component — floating `?` button on all screens, opens slide-up AI panel with Claude Haiku. Screen-aware quick chips. Ephemeral (not saved to coaching_memory). Links to roadmap and feature requests.
