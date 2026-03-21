@@ -192,7 +192,10 @@ export default function App() {
       supabase.from('athlete_settings').select('goal_type').maybeSingle(),
       supabase.from('athlete_sports').select('*').eq('is_active', true).order('created_at'),
     ]).then(([{ data: settingsData }, { data: sportsData }]) => {
-      setNeedsOnboarding(!settingsData)
+      // Use functional update: once needsOnboarding is false (set by onComplete),
+    // never flip it back — guards against session refresh re-triggering this check
+    // before the upsert row is visible to a subsequent read.
+    setNeedsOnboarding(prev => prev === false ? false : !settingsData)
 
       setProfileIncomplete(!!settingsData && !settingsData.goal_type)
 

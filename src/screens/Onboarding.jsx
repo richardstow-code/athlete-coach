@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { inferAthleteContext } from '../lib/inferAthleteContext'
 
+const STRAVA_CLIENT_ID = import.meta.env.VITE_STRAVA_CLIENT_ID
+
 const Z = {
   bg: '#0a0a0a', surface: '#111111',
   border2: 'rgba(255,255,255,0.14)', border: 'rgba(255,255,255,0.08)',
@@ -38,11 +40,13 @@ const LEVELS = [
   { value: 'competitive', label: 'Competitive', desc: 'Performance-focused, serious about results' },
 ]
 
+// Steps: 1=goal, 2=strava, 3=sports, 4=target, 5=level
+const TOTAL_STEPS = 5
 
 function Dots({ step }) {
   return (
     <div style={{ display: 'flex', gap: 6, marginBottom: 36 }}>
-      {[1, 2, 3, 4].map(n => (
+      {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map(n => (
         <div key={n} style={{
           height: 4, borderRadius: 2, transition: 'all 0.25s',
           width: n === step ? 24 : 8,
@@ -100,7 +104,6 @@ export default function Onboarding({ onComplete }) {
   function updateSport(index, field, value) {
     setSports(prev => prev.map((s, i) => {
       if (i !== index) {
-        // If setting this sport to primary, demote others
         if (field === 'priority' && value === 'primary') return { ...s, priority: 'supporting' }
         return s
       }
@@ -111,12 +114,17 @@ export default function Onboarding({ onComplete }) {
   function removeSport(index) {
     setSports(prev => {
       const next = prev.filter((_, i) => i !== index)
-      // If we removed the primary, promote the first remaining to primary
       if (prev[index].priority === 'primary' && next.length > 0) {
         next[0] = { ...next[0], priority: 'primary' }
       }
       return next
     })
+  }
+
+  function connectStrava() {
+    const redirectUri = window.location.origin
+    const url = `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&approval_prompt=auto&scope=activity:read_all`
+    window.location.href = url
   }
 
   async function handleSkip() {
@@ -167,22 +175,23 @@ export default function Onboarding({ onComplete }) {
       } catch { /* non-fatal */ }
 
       // 4. Finalise athlete_settings
-      const final = {
+      await supabase.from('athlete_settings').upsert({
         user_id:    user.id,
         updated_at: new Date().toISOString(),
-      }
-      await supabase.from('athlete_settings').upsert(final, { onConflict: 'user_id' })
+      }, { onConflict: 'user_id' })
+
+      console.log('[Onboarding] Save result: success')
 
       // 5. Kick off historical Strava sync in background (non-blocking)
-      // Fetches last 20 activities (~60 days) so the app is useful immediately
       supabase.functions.invoke('strava-sync', {
         body: { after: Math.floor((Date.now() - 60 * 24 * 60 * 60 * 1000) / 1000) },
       }).catch(() => { /* non-fatal — user may not have Strava connected yet */ })
 
       onComplete()
     } catch (err) {
+      console.log('[Onboarding] Save result:', null, err)
       setError(err.message || 'Something went wrong. Try again.')
-      setStep(4)
+      setStep(5)
     }
   }
 
@@ -239,20 +248,64 @@ export default function Onboarding({ onComplete }) {
     </div>
   )
 
-  // ── Step 2: Sports (multi-sport) ──────────────────────────────────────────
+  // ── Step 2: Connect Strava ────────────────────────────────────────────────
   if (step === 2) return (
     <div style={shell}>
       <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
       <div style={body}>
         <Dots step={2} />
+        <div style={h1}>Connect Strava</div>
+        <div style={sub}>
+          Connecting Strava lets us instantly pull in your training history and start coaching you from day one.
+          We'll analyse your recent runs and generate your first coaching insights automatically.
+        </div>
+
+        <div style={{
+          background: Z.surface, border: `1px solid ${Z.border2}`,
+          borderRadius: 12, padding: '20px 18px', textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🔗</div>
+          <div style={{ fontSize: 13, color: Z.text, fontWeight: 600, marginBottom: 8 }}>
+            Sync your training history
+          </div>
+          <div style={{ fontSize: 12, color: Z.muted, lineHeight: 1.6, marginBottom: 0 }}>
+            We'll pull in your last 60 days of activities — runs, rides, swims — so your coaching starts with real data, not guesses.
+          </div>
+        </div>
+
+        <div style={{ flex: 1 }} />
+
+        {STRAVA_CLIENT_ID ? (
+          <button style={primaryBtn()} onClick={connectStrava}>
+            Connect Strava
+          </button>
+        ) : (
+          <button style={{ ...primaryBtn(false) }} disabled>
+            Connect Strava
+          </button>
+        )}
+        <button style={backBtn} onClick={() => setStep(3)}>I'll connect later →</button>
+        <button style={{ ...backBtn, marginTop: 4 }} onClick={() => setStep(1)}>← Back</button>
+      </div>
+    </div>
+  )
+
+  // ── Step 3: Sports (multi-sport) ──────────────────────────────────────────
+  if (step === 3) return (
+    <div style={shell}>
+      <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
+      <div style={body}>
+        <Dots step={3} />
         <div style={h1}>What do you train for?</div>
-        <div style={sub}>Add your sports or activities — you can have more than one.</div>
+        <div style={sub}>
+          Tell us which sports you train for. We'll tailor your coaching, plans, and briefings around your goals.
+        </div>
 
         {/* Text input + Add button */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
           <input
             style={{ ...inp, fontSize: 13, flex: 1 }}
-            placeholder="e.g. marathon running, olympic weightlifting…"
+            placeholder="e.g. Running, Cycling, Triathlon..."
             value={sportInput}
             onChange={e => setSportInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') addSport(sportInput) }}
@@ -270,20 +323,27 @@ export default function Onboarding({ onComplete }) {
           </button>
         </div>
 
+        {/* Hint text */}
+        <div style={{ fontSize: 11, color: Z.muted, marginBottom: 14 }}>
+          Type a sport above, or pick from popular options below:
+        </div>
+
         {/* Chip suggestions */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 20 }}>
           {SPORT_CHIPS.map(chip => {
             const already = sports.some(s => s.sport_raw.toLowerCase() === chip)
             return (
-              <button key={chip} onClick={() => addSport(chip)} style={{
-                padding: '5px 11px', borderRadius: 20, cursor: already ? 'default' : 'pointer',
+              <button key={chip} onClick={() => already ? removeSport(sports.findIndex(s => s.sport_raw.toLowerCase() === chip)) : addSport(chip)} style={{
+                padding: '5px 11px', borderRadius: 20, cursor: 'pointer',
                 background: already ? 'rgba(232,255,71,0.12)' : 'transparent',
                 border: `1px solid ${already ? Z.accent : Z.border2}`,
                 color: already ? Z.accent : Z.muted,
                 fontFamily: "'DM Mono', monospace", fontSize: 12,
-                transition: 'all 0.12s', opacity: already ? 0.6 : 1,
+                transition: 'all 0.12s',
+                display: 'flex', alignItems: 'center', gap: 5,
               }}>
                 {chip}
+                {already && <span style={{ fontSize: 14, lineHeight: 1 }}>×</span>}
               </button>
             )
           })}
@@ -343,21 +403,21 @@ export default function Onboarding({ onComplete }) {
         )}
 
         <div style={{ flex: 1 }} />
-        <button style={primaryBtn(sports.length > 0)} onClick={() => sports.length > 0 && setStep(3)}>Next →</button>
-        <button style={backBtn} onClick={() => setStep(1)}>← Back</button>
+        <button style={primaryBtn(sports.length > 0)} onClick={() => sports.length > 0 && setStep(4)}>Next →</button>
+        <button style={backBtn} onClick={() => setStep(2)}>← Back</button>
       </div>
     </div>
   )
 
-  // ── Step 3: Target ────────────────────────────────────────────────────────
-  if (step === 3) {
+  // ── Step 4: Target ────────────────────────────────────────────────────────
+  if (step === 4) {
     const cfg = TARGET_CONFIG[goalType] || { label: "What are you working towards?", placeholder: 'Describe your goal…' }
 
     return (
       <div style={shell}>
         <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
         <div style={body}>
-          <Dots step={3} />
+          <Dots step={4} />
           <div style={h1}>{cfg.label}</div>
           <div style={sub}>The more detail the better — events, dates, times, all of it.</div>
           <textarea
@@ -368,20 +428,20 @@ export default function Onboarding({ onComplete }) {
             autoFocus
           />
           <div style={{ flex: 1 }} />
-          <button style={primaryBtn(!!targetRaw.trim())} onClick={() => targetRaw.trim() && setStep(4)}>Next →</button>
-          <button style={backBtn} onClick={() => setStep(2)}>← Back</button>
+          <button style={primaryBtn(!!targetRaw.trim())} onClick={() => targetRaw.trim() && setStep(5)}>Next →</button>
+          <button style={backBtn} onClick={() => setStep(3)}>← Back</button>
         </div>
       </div>
     )
   }
 
-  // ── Step 4: Level slider ──────────────────────────────────────────────────
+  // ── Step 5: Level slider ──────────────────────────────────────────────────
   const level = LEVELS[levelIndex]
   return (
     <div style={shell}>
       <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
       <div style={body}>
-        <Dots step={4} />
+        <Dots step={5} />
         <div style={h1}>How would you describe your level?</div>
         <div style={sub}>Your coach calibrates training load and expectations around this.</div>
 
@@ -408,7 +468,7 @@ export default function Onboarding({ onComplete }) {
         {/* Selected level card */}
         <div style={{
           padding: '18px 20px', background: Z.surface,
-          borderRadius: 10, border: `1px solid ${Z.border2}`, textAlign: 'center',
+          borderRadius: 10, border: `1px solid ${Z.border2}`, textAlign: 'center', marginBottom: 16,
         }}>
           <div style={{
             fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: 16,
@@ -421,6 +481,17 @@ export default function Onboarding({ onComplete }) {
           </div>
         </div>
 
+        {/* Profile completion nudge */}
+        <div style={{
+          background: 'rgba(71,212,255,0.06)', border: '1px solid rgba(71,212,255,0.18)',
+          borderRadius: 10, padding: '14px 16px', display: 'flex', gap: 12, alignItems: 'flex-start',
+        }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>✨</span>
+          <div style={{ fontSize: 12, color: '#a0d8ef', lineHeight: 1.6 }}>
+            The more you share, the smarter your coaching gets. You can add your age, weight, target race, and training preferences in Settings any time — it takes 2 minutes and makes a big difference.
+          </div>
+        </div>
+
         {error && (
           <div style={{ marginTop: 16, fontSize: 12, color: Z.red, textAlign: 'center', lineHeight: 1.5 }}>
             {error}
@@ -429,7 +500,7 @@ export default function Onboarding({ onComplete }) {
 
         <div style={{ flex: 1 }} />
         <button style={primaryBtn()} onClick={handleComplete}>Let's go →</button>
-        <button style={backBtn} onClick={() => setStep(3)}>← Back</button>
+        <button style={backBtn} onClick={() => setStep(4)}>← Back</button>
       </div>
     </div>
   )
