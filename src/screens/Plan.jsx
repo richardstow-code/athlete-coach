@@ -488,7 +488,7 @@ export default function Plan({ onActivityClick }) {
       ).join('; ')
       const upcoming = allSessions.filter(s => s.planned_date > today).slice(0, 5).map(s => `${s.planned_date}: ${s.name} (${s.session_type}, ${s.zone || s.intensity})`).join('\n')
       const data = await callClaude({
-        model: 'claude-haiku-4-5',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 600,
         system: systemPrompt + `\n\nTask: analyse a training mismatch. Respond ONLY with valid JSON: {"summary": "one sentence", "what_changed": "what was planned vs what actually happened, including intensity and duration differences", "week_impact": "how this affects the rest of the week and ${raceLabel}", "proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence"}]}`,
         messages: [{ role: 'user', content: `Planned today: ${planned}\nActual done: ${actual}\n\nUpcoming sessions this week:\n${upcoming}\n\nAnalyse the mismatch — consider type, intensity (HR vs zone), and duration differences. Propose adjustments if needed.` }],
@@ -597,7 +597,7 @@ export default function Plan({ onActivityClick }) {
     const upcomingSess = sessions.map(s => `${s.planned_date} (${new Date(s.planned_date + 'T12:00:00').toLocaleDateString('en-GB', {weekday:'short'})}): ${s.name} — ${s.notes || ''}`).join('\n')
 
     const data = await callClaude({
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1000,
       system: buildSystemPrompt(settings) + `\n\nTask: propose schedule adjustments for the change described. Respond ONLY with valid JSON, no other text: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence on how this affects ${raceLabel}"}]}`,
       messages: [{ role: 'user', content: `Athlete says: "${text}"\n\nCurrent week schedule:\n${upcomingSess}\n\nPropose schedule changes to accommodate this.` }],
