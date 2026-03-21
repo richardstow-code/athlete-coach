@@ -17,7 +17,13 @@ import { callClaude } from './claudeProxy'
 export async function generatePlanDraft(triggerContext) {
   const { trigger, race, currentDate, athleteSettings } = triggerContext
 
-  // 1. Fetch most recent baseline analysis
+  // 1. Fetch most recent baseline analysis and athlete sports
+  const { data: sportsData } = await supabase
+    .from('athlete_sports')
+    .select('sport_raw, sport_category, priority, current_goal_raw, target_date, target_metric')
+    .eq('is_active', true)
+    .order('created_at')
+
   const { data: baselineRows } = await supabase
     .from('coaching_memory')
     .select('content')
@@ -64,9 +70,10 @@ export async function generatePlanDraft(triggerContext) {
           .join('\n')}`
       : 'No template available — generate a well-structured marathon training plan.'
 
-  const systemPrompt = `You are an expert running coach generating a personalised training plan.
+  const systemPrompt = `You are an expert coach generating a personalised training plan.
 
-Respond ONLY with valid JSON (no markdown fences, no explanation outside the JSON):
+IMPORTANT: Respond with ONLY a raw JSON object. Do not wrap it in markdown code fences. Do not include any text before or after the JSON object.
+
 {
   "summary": "plain English overview of the plan, 200-300 words covering weekly structure, key sessions, load progression, and assumptions",
   "sessions": [
@@ -77,21 +84,29 @@ Respond ONLY with valid JSON (no markdown fences, no explanation outside the JSO
       "duration_min_low": number,
       "duration_min_high": number,
       "intensity": "easy|moderate|hard|very hard",
-      "zone": "Z1|Z2|Z3|Z4|Z5 or null",
+      "zone": "Z1|Z2|Z3|Z4|Z5 or null for non-running",
       "notes": "specific coaching note for this session",
       "status": "planned"
     }
   ]
 }
 
-Generate sessions from today (${currentDate}) to the race date. Include rest days. Match the athlete's available training days. Build load progressively with a taper if there is enough time.`
+Generate sessions from today (${currentDate}) to the race/goal date if set, otherwise generate a 12-week block. Include rest days. Match the athlete's available training days. Build load progressively.
+If no training history is available, generate a beginner-appropriate plan based on the athlete's stated goals and profile only.
+Tailor the session types to the athlete's sport — for strength athletes use mostly strength sessions, for runners use run/trail/strength, etc.`
+
+  const primarySport = sportsData?.find(s => s.priority === 'primary') || sportsData?.[0] || null
+  const sportsStr = sportsData?.length
+    ? `Sports: ${sportsData.map(s => `${s.sport_raw} (${s.priority}${s.current_goal_raw ? ', goal: ' + s.current_goal_raw : ''})`).join(', ')}`
+    : null
 
   const userParts = [
     `Trigger: ${trigger}`,
     `Current date: ${currentDate}`,
     raceStr,
+    sportsStr,
     athleteLines.length ? athleteLines.join('\n') : null,
-    baselineAnalysis ? `Baseline analysis of recent training:\n${baselineAnalysis}` : null,
+    baselineAnalysis ? `Baseline analysis of recent training:\n${baselineAnalysis}` : 'No training history available — generate a plan appropriate for the athlete\'s stated level and goals.',
     templateStr,
   ].filter(Boolean)
 
@@ -104,7 +119,14 @@ Generate sessions from today (${currentDate}) to the race date. Include rest day
   })
 
   const raw = data?.content?.[0]?.text || ''
-  const cleaned = raw.replace(/```json\n?|```/g, '').trim()
+  // Extract JSON from markdown code fence if present (handles preamble text too)
+  let cleaned = raw.trim()
+  const fenceMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim()
+  } else {
+    cleaned = cleaned.replace(/^```(?:json)?[\r\n]*/i, '').replace(/[\r\n]*```\s*$/i, '').trim()
+  }
 
   let parsed
   try {

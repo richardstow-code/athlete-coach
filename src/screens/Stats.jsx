@@ -297,7 +297,7 @@ function MacroBodyComp({ settings, activities, chartWeeks }) {
   )
 }
 
-function MacroFitness({ activities, chartWeeks }) {
+function MacroFitness({ activities, chartWeeks, isRunning }) {
   const streak = consistencyStreak(activities)
   return (
     <>
@@ -309,9 +309,9 @@ function MacroFitness({ activities, chartWeeks }) {
       </div>
       <div style={{ padding:'16px 20px', borderBottom:`1px solid ${Z.border}` }}>
         <div style={{ fontSize:11, color:Z.muted, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>
-          Weekly volume · km (8 weeks)
+          {isRunning ? 'Weekly volume · km (8 weeks)' : 'Weekly sessions (8 weeks)'}
         </div>
-        <VolumeBars weeks={chartWeeks.map(w => ({ ...w, val: w.km }))} />
+        <VolumeBars weeks={chartWeeks.map(w => ({ ...w, val: isRunning ? w.km : w.sessionCount }))} unit={isRunning ? 'km' : 'sessions'} />
       </div>
     </>
   )
@@ -505,6 +505,7 @@ export default function Progress({ onActivityClick }) {
   const [nutritionLogs, setNutritionLogs] = useState([])
   const [loading,       setLoading]       = useState(true)
   const [view,          setView]          = useState('macro')
+  const [hasStrava,     setHasStrava]     = useState(null)
 
   const loadStats = useCallback(async () => {
     const { start, end } = getWeekBounds()
@@ -522,16 +523,18 @@ export default function Progress({ onActivityClick }) {
         })()
       : (() => { const d = new Date(); d.setMonth(d.getMonth()-4); return localDateStr(d) })()
 
-    const [{ data: acts }, { data: wSess }, { data: pSess }, { data: nLogs }] = await Promise.all([
+    const [{ data: acts }, { data: wSess }, { data: pSess }, { data: nLogs }, { data: stravaToken }] = await Promise.all([
       supabase.from('activities').select('*').order('date', { ascending: false }).limit(200),
       supabase.from('scheduled_sessions').select('*').gte('planned_date', weekStartStr).lte('planned_date', weekEndStr).order('planned_date'),
       supabase.from('scheduled_sessions').select('*').gte('planned_date', phaseStartStr).order('planned_date'),
       supabase.from('nutrition_logs').select('date').gte('date', weekStartStr).lte('date', weekEndStr),
+      supabase.from('strava_tokens').select('athlete_id').maybeSingle(),
     ])
     setActivities(acts || [])
     setWeekSessions(wSess || [])
     setPhaseSessions(pSess || [])
     setNutritionLogs(nLogs || [])
+    setHasStrava(!!stravaToken)
     setLoading(false)
   }, [primarySport?.target_date, primarySport?.sport_category]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -609,6 +612,21 @@ export default function Progress({ onActivityClick }) {
 
       {loading ? (
         <div style={{ padding:40, textAlign:'center', color:Z.muted, fontSize:13 }}>Loading…</div>
+      ) : activities.length === 0 ? (
+        <div style={{ padding:'40px 24px', textAlign:'center' }}>
+          <div style={{ fontSize:32, marginBottom:16 }}>📊</div>
+          <div style={{ fontSize:14, color:Z.text, fontWeight:600, marginBottom:8 }}>No activity data yet</div>
+          <div style={{ fontSize:13, color:Z.muted, lineHeight:1.6, marginBottom:24 }}>
+            {hasStrava === false
+              ? 'Connect Strava to automatically import your training, or log a workout manually to get started.'
+              : 'Your activities will appear here once synced.'}
+          </div>
+          {hasStrava === false && (
+            <div style={{ fontSize:12, color:Z.accent2, border:`1px solid rgba(71,212,255,0.3)`, borderRadius:8, padding:'8px 16px', display:'inline-block' }}>
+              Connect Strava in Settings → Connections
+            </div>
+          )}
+        </div>
       ) : (
         <>
           {/* ── MACRO ── */}
@@ -617,7 +635,7 @@ export default function Progress({ onActivityClick }) {
               {isEvent    && <MacroCompete  settings={mergedSettings} activities={activities} chartWeeks={chartWeeks} />}
               {isBodyComp && <MacroBodyComp settings={mergedSettings} activities={activities} chartWeeks={chartWeeks} />}
               {isRecovery && <MacroRecovery activities={activities} chartWeeks={chartWeeks} phaseSessions={phaseSessions} />}
-              {!isEvent && !isBodyComp && !isRecovery && <MacroFitness activities={activities} chartWeeks={chartWeeks} />}
+              {!isEvent && !isBodyComp && !isRecovery && <MacroFitness activities={activities} chartWeeks={chartWeeks} isRunning={isRunning} />}
             </>
           )}
 
@@ -669,3 +687,4 @@ export default function Progress({ onActivityClick }) {
     </div>
   )
 }
+

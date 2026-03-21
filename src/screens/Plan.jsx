@@ -24,7 +24,9 @@ function localDateStr(d) {
 }
 
 function daysUntil(d) {
+  if (!d) return null
   const diff = new Date(d) - new Date()
+  if (isNaN(diff)) return null
   return Math.ceil(diff / 86400000)
 }
 function fmtCountdown(days) {
@@ -333,29 +335,38 @@ function ProactiveChange({ onSubmit }) {
 function RaceCard({ race }) {
   const days = daysUntil(race.date)
   const pace = targetPace(race.target, parseFloat(race.distance))
-  const col = days < 14 ? Z.red : days < 60 ? Z.amber : Z.green
+  const col = days != null && days < 14 ? Z.red : days != null && days < 60 ? Z.amber : Z.green
+  const hasMetrics = race.target || pace
   return (
     <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 12, padding: 14, marginBottom: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: hasMetrics ? 10 : 0 }}>
         <div>
           <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 15, fontWeight: 700, color: Z.text }}>{race.name}</div>
-          <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>{race.date} · {race.distance}km</div>
+          {race.date && <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>{race.date}{race.distance ? ` · ${race.distance}km` : ''}</div>}
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 24, fontWeight: 800, color: col, lineHeight: 1 }}>{fmtCountdown(days)}</div>
-          <div style={{ fontSize: 10, color: Z.muted }}>to go</div>
-        </div>
+        {days != null && (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 24, fontWeight: 800, color: col, lineHeight: 1 }}>{fmtCountdown(days)}</div>
+            <div style={{ fontSize: 10, color: Z.muted }}>to go</div>
+          </div>
+        )}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <div style={{ background: '#1a1a1a', borderRadius: 8, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 2 }}>Target</div>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 17, fontWeight: 700, color: Z.accent }}>{race.target}</div>
+      {hasMetrics && (
+        <div style={{ display: 'grid', gridTemplateColumns: pace ? '1fr 1fr' : '1fr', gap: 8 }}>
+          {race.target && (
+            <div style={{ background: '#1a1a1a', borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 2 }}>Target</div>
+              <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 17, fontWeight: 700, color: Z.accent }}>{race.target}</div>
+            </div>
+          )}
+          {pace && (
+            <div style={{ background: '#1a1a1a', borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 2 }}>Pace</div>
+              <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 17, fontWeight: 700, color: Z.accent2 }}>{pace}</div>
+            </div>
+          )}
         </div>
-        <div style={{ background: '#1a1a1a', borderRadius: 8, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', marginBottom: 2 }}>Pace</div>
-          <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 17, fontWeight: 700, color: Z.accent2 }}>{pace || '—'}</div>
-        </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -477,8 +488,10 @@ export default function Plan({ onActivityClick }) {
         system: systemPrompt + `\n\nTask: analyse a training mismatch. Respond ONLY with valid JSON: {"summary": "one sentence", "what_changed": "what was planned vs what actually happened, including intensity and duration differences", "week_impact": "how this affects the rest of the week and ${raceLabel}", "proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence"}]}`,
         messages: [{ role: 'user', content: `Planned today: ${planned}\nActual done: ${actual}\n\nUpcoming sessions this week:\n${upcoming}\n\nAnalyse the mismatch — consider type, intensity (HR vs zone), and duration differences. Propose adjustments if needed.` }],
       })
-      const raw = data.content[0].text.replace(/```json|```/g, '').trim()
-      const parsed = JSON.parse(raw)
+      const rawMismatch = data.content[0].text
+      const fencedMismatch = rawMismatch.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+      const cleanedMismatch = fencedMismatch ? fencedMismatch[1].trim() : rawMismatch.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(cleanedMismatch)
       setMismatch(parsed)
     } catch(e) { console.error('Mismatch check failed', e) }
     setMismatchLoading(false)
@@ -584,7 +597,9 @@ export default function Plan({ onActivityClick }) {
       system: buildSystemPrompt(settings) + `\n\nTask: propose schedule adjustments for the change described. Respond ONLY with valid JSON, no other text: {"proposals": [{"title": "...", "reasoning": "...", "change_type": "reschedule|skip|intensity_adjust|rest_day", "original_date": "YYYY-MM-DD or null", "new_date": "YYYY-MM-DD or null", "new_notes": "string or null", "new_intensity": "string or null", "race_impact": "one sentence on how this affects ${raceLabel}"}]}`,
       messages: [{ role: 'user', content: `Athlete says: "${text}"\n\nCurrent week schedule:\n${upcomingSess}\n\nPropose schedule changes to accommodate this.` }],
     })
-    const raw = data.content[0].text.replace(/```json|```/g, '').trim()
+    const rawProactive = data.content[0].text
+    const fencedProactive = rawProactive.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+    const raw = fencedProactive ? fencedProactive[1].trim() : rawProactive.replace(/```json|```/g, '').trim()
     try {
       const parsed = JSON.parse(raw)
       const { data: { session } } = await supabase.auth.getSession()
@@ -640,6 +655,13 @@ export default function Plan({ onActivityClick }) {
   const plannedRuns = sessions.filter(s => s.session_type === 'run' || s.session_type === 'trail').length
   const plannedStrength = sessions.filter(s => s.session_type === 'strength').length
 
+  // Sport detection for conditional UI
+  const sportRaw = (primarySport?.sport_raw || '').toLowerCase()
+  const sportCat = (primarySport?.sport_category || '').toLowerCase()
+  const isRunningUser = sportRaw.includes('run') || sportCat === 'running'
+  const isCyclingUser = sportRaw.includes('cycl') || sportCat === 'cycling'
+  const isEnduranceUser = isRunningUser || isCyclingUser || sportCat === 'triathlon' || sportRaw.includes('triathlon')
+
   return (
     <div ref={planContainerRef} style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
       {(planPullDist > 0 || planRefreshing) && (
@@ -669,9 +691,17 @@ export default function Plan({ onActivityClick }) {
             : null
         }
         {!primarySport?.current_goal_raw && races.length === 0 && (
-          <div style={{ fontSize: 11, color: Z.muted, padding: '10px 0 14px' }}>
-            No goal set yet — complete your profile to add a target.
-          </div>
+          isEnduranceUser ? (
+            <div style={{ fontSize: 11, color: Z.muted, padding: '10px 0 14px' }}>
+              No goal set yet — complete your profile to add a target.
+            </div>
+          ) : (
+            <div style={{ background: 'rgba(71,212,255,0.05)', border: '1px solid rgba(71,212,255,0.15)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: '#a0d8ef', lineHeight: 1.5 }}>
+                Set a goal event or target in Settings to track your progress here.
+              </div>
+            </div>
+          )
         )}
 
         {/* REVIEW & REBUILD PLAN BUTTON */}
@@ -729,18 +759,21 @@ export default function Plan({ onActivityClick }) {
         <button onClick={() => setWeekOffset(w => w - 1)} style={{ background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 6, padding: '4px 12px', color: Z.muted, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>← prev</button>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 12, color: Z.text, fontWeight: 500 }}>{weekLabel}</div>
-          <div style={{ fontSize: 10, color: Z.muted, marginTop: 1 }}>{weekStats.sessions || 0} sessions · {weekStats.km.toFixed(1)}km · {Math.round(weekStats.elev)}m elev</div>
+          <div style={{ fontSize: 10, color: Z.muted, marginTop: 1 }}>
+            {weekStats.sessions || 0} sessions{isEnduranceUser ? ` · ${weekStats.km.toFixed(1)}km · ${Math.round(weekStats.elev)}m elev` : ''}
+          </div>
         </div>
         <button onClick={() => setWeekOffset(w => Math.min(4, w + 1))} disabled={weekOffset >= 4} style={{ background: 'none', border: `1px solid ${weekOffset >= 4 ? Z.border : Z.border2}`, borderRadius: 6, padding: '4px 12px', color: weekOffset >= 4 ? '#333' : Z.muted, fontSize: 11, cursor: weekOffset >= 4 ? 'default' : 'pointer', fontFamily: "'DM Mono', monospace" }}>next →</button>
       </div>
 
-      {/* PROGRESS BARS */}
+      {/* PROGRESS BARS — sport-aware */}
       <div style={{ padding: '10px 20px', borderBottom: `1px solid ${Z.border}` }}>
         {[
-          { label: 'Runs', val: weekStats.runs, target: plannedRuns, col: Z.accent },
-          { label: 'km', val: Math.round(weekStats.km), target: 32, col: Z.accent2 },
+          isRunningUser && { label: 'Runs', val: weekStats.runs, target: plannedRuns || 3, col: Z.accent },
+          isEnduranceUser && { label: 'km', val: Math.round(weekStats.km), target: 32, col: Z.accent2 },
+          !isEnduranceUser && { label: 'Sessions', val: weekStats.sessions || 0, target: sessions.filter(s => s.session_type !== 'rest').length || 3, col: Z.accent },
           { label: 'Strength', val: weekStats.strength, target: plannedStrength || 2, col: Z.amber },
-        ].map(({ label, val, target, col }) => (
+        ].filter(Boolean).map(({ label, val, target, col }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5 }}>
             <div style={{ width: 56, fontSize: 10, color: Z.muted, textAlign: 'right', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
             <div style={{ flex: 1, height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
