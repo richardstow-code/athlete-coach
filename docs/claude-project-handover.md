@@ -1,5 +1,5 @@
 # Athlete Coach — Strategic Handover
-*Last updated: 2026-03-21 (session 2).*
+*Last updated: 2026-03-22.*
 
 ---
 
@@ -9,7 +9,7 @@
 
 An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg male, marathon training, sub-3:00 target at Munich Marathon 12 Oct 2026). The app:
 
-- Automatically ingests Strava workouts via webhook and generates immediate coaching feedback
+- Automatically ingests Strava workouts via a two-stage webhook pipeline (Vercel Stage 1 → Supabase Stage 2 enrichment)
 - Shows a time-aware home dashboard (morning briefing / afternoon check-in / evening summary)
 - Provides conversational coaching via a Chat tab (Claude Haiku)
 - Tracks nutrition with AI-assisted logging
@@ -33,13 +33,26 @@ An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg mal
 
 ### What is partially built or known to be buggy
 
-- **HR zones on Home**: hardcoded percentages (52%/31%/17%) — not computed from actual data
 - **Plan commit from draft**: generating a plan draft works; committing it to scheduled_sessions may not be fully wired in all paths (unconfirmed — verify in code)
 - **Evening readiness note**: persists only to localStorage, not to DB; lost on hard refresh
 - **n8n workflows**: two workflows at https://lifeassistant.app.n8n.cloud are still active but now superseded — deactivation pending
   - Daily Briefing: `Dsws6deZc9bAlXkl`
   - Strava Sync: `RNTJRELH2Mj7rQtX`
-- **Zone data**: `activities.zone_data` column exists but is never populated
+- **cadence_stats.avg**: enrich-activity stores raw Strava cadence (84 spm, one foot) rather than total spm (168). The `activities.avg_cadence` column correctly doubles the raw value via strava-sync; cadence_stats is consistent internally but note the unit difference
+
+### Recently completed (2026-03-22)
+
+- **Two-stage webhook pipeline**: `strava-webhook.js` now Stage 1 only — write `enrichment_status='pending'`, return 200, done. No Claude calls in Vercel.
+- **`enrich-activity` edge function**: triggered by Supabase DB INSERT trigger via `pg_net`. Fetches 5 Strava stream types (HR, cadence, altitude, velocity, latlng), downsamples to 10s resolution, computes `zone_seconds` / `cadence_stats` / `grade_correlation`, writes to `activity_streams`, updates `activities.zone_data` + `enrichment_status='complete'`, generates coaching feedback via Claude Haiku. Auto-triggers zone calibration every 10th activity.
+- **`calibrate-zones` edge function**: `tt_5km` method uses avg HR from recent 5km effort as LTHR; `auto_detect` uses 95th percentile avg HR from hard long efforts. Stores calibrated zones in `athlete_settings.hr_zones` (% of LTHR model).
+- **`src/lib/hrZones.js`**: `resolveZones()` (hr_zones > training_zones > defaults), `classifyHR()`, `zonesPromptString()`, `triggerZoneCalibration()`, `getHRZones()`.
+- **Settings — ZoneCalibrationPanel**: shows zone table, source label (calibrated/manual/default), LTHR, last calibrated date, "Recalibrate zones" button.
+- **Home**: `ZoneBar` now reads from `activity.zone_data` (was hardcoded 52%/31%/17%); `hrColor` thresholds use `resolveZones()`.
+- **coachingPrompt.js + buildContext.js**: zones read from hr_zones → training_zones → defaults, with source note injected into prompts.
+- **PostWorkoutPopup async UX**: loading state with pulse animation + basic stats while `enrichment_status='pending'`; polls every 3s; 90s timeout error state; zone bars read from `zone_data`.
+- **DB trigger fix**: `trigger_enrich_activity()` was calling `net.http_post` with wrong argument types (body as text, not jsonb). Fixed to correct pg_net signature.
+- **notify-feature-request edge function**: writes to `admin_notifications` table, optionally sends email via Resend API (if secrets set). Handles feature/bug/vote types.
+- **Feature requests / bug reports system**: `FeatureRequestModal` with type toggle (feature/bug), Claude similarity dedup, roadmap board (`Roadmap.jsx`), `FeatureCard` with decline reason display.
 
 ### Recently completed (2026-03-20 and 2026-03-21)
 
@@ -80,7 +93,13 @@ Some Supabase edge functions (infer-athlete-context, daily-briefing) call the An
 
 ### How automation works currently
 
-Strava webhook → Vercel serverless function (`/api/strava-webhook.js`) → Supabase DB. The function runs synchronously (must complete before returning 200 to Strava). n8n is no longer needed for activity sync. Daily briefings are now generated on demand from the app, not by a scheduled job.
+**Two-stage pipeline:**
+1. **Stage 1 (Vercel)**: `strava-webhook.js` receives Strava event, fetches the activity, upserts to DB with `enrichment_status='pending'`, returns 200 immediately (must be fast — Strava times out at ~2s).
+2. **Stage 2 (Supabase)**: A Postgres trigger (`trigger_enrich_activity`) on `activities INSERT` calls `net.http_post()` (pg_net extension) to invoke the `enrich-activity` edge function asynchronously. This fetches Strava streams, computes stats, writes to `activity_streams`, generates Claude feedback, updates `enrichment_status='complete'`.
+
+The frontend polls `enrichment_status` every 3s in `PostWorkoutPopup` and transitions from loading → full feedback state.
+
+n8n is no longer needed for activity sync. Daily briefings are generated on demand from the app, not by a scheduled job.
 
 ### Dependencies being removed
 
@@ -105,6 +124,12 @@ Strava webhook → Vercel serverless function (`/api/strava-webhook.js`) → Sup
 | `cycle_logs` | Daily cycle tracking entries (opt-in) |
 | `strava_tokens` | Per-user Strava OAuth tokens |
 | `plan_drafts` | Claude-generated plan drafts pending review |
+| `activity_streams` | Per-activity 10s-downsampled stream data (HR, cadence, altitude, velocity, latlng) + zone_seconds, cadence_stats, grade_correlation |
+| `feature_requests` | User-submitted feature requests and bug reports |
+| `feature_votes` | Votes on feature requests |
+| `feature_notifications` | Notifications to users when voted features ship |
+| `admin_notifications` | Feature request / bug report submissions for admin review |
+| `app_releases` | Version history for release notes popup |
 
 ### Partially / rarely used
 
@@ -115,6 +140,16 @@ Strava webhook → Vercel serverless function (`/api/strava-webhook.js`) → Sup
 
 ### Recent schema additions
 
+- `activities.enrichment_status TEXT` — `pending|processing|complete|failed`; historical rows backfilled to `complete` (added 2026-03-22)
+- `athlete_settings.hr_zones JSONB` — calibrated zone boundaries from `calibrate-zones` edge function; schema: `{ source, calculated_at, threshold_hr, zones: { z1:{min,max}, ... } }` (added 2026-03-22)
+- `activity_streams` table — entire table (added 2026-03-22); see `/docs/streams.md` for full schema and computed field docs
+- `feature_requests`, `feature_votes`, `feature_notifications`, `admin_notifications`, `app_releases` — feature request system (added 2026-03-21)
+- `athlete_settings.hints_dismissed` JSONB — onboarding hint dismissal state (added 2026-03-21)
+- `athlete_settings.last_seen_version` TEXT — for release notes popup (added 2026-03-21)
+- `athlete_settings.subscription_tier` TEXT — default `'founder'` (added 2026-03-21)
+- `athlete_settings.training_zones` JSONB — manually editable 5-zone HR boundaries (added 2026-03-21)
+- `athlete_settings.health_flags` JSONB array — active/monitoring injury flags injected into coaching context (added 2026-03-21)
+- `athlete_settings.onboarding_complete` BOOLEAN — added to fix onboarding loop; backfilled TRUE for all existing users (added 2026-03-21)
 - `nutrition_logs.logged_at` TIMESTAMPTZ — manual timestamp from time picker (added 2026-03-21)
 - `nutrition_logs.fibre_g` NUMERIC — dietary fibre parsed by Claude (added 2026-03-21)
 - `nutrition_logs.sodium_mg` INTEGER — sodium parsed by Claude (added 2026-03-21)
@@ -127,8 +162,9 @@ Strava webhook → Vercel serverless function (`/api/strava-webhook.js`) → Sup
 
 ### Key data relationships
 
-- `activities` ← strava_id unique key, user_id for RLS
-- `coaching_memory` has `activity_id` FK linking feedback to activities
+- `activities` ← strava_id unique key (BIGINT), user_id for RLS
+- `activity_streams` has `activity_id BIGINT FK → activities(id)`, unique on `activity_id`
+- `coaching_memory` has `activity_id` FK linking feedback to activities (stored as BIGINT matching strava_id)
 - `schedule_changes` has `original_session_id` FK to scheduled_sessions
 - `daily_briefings` is upserted per `(user_id, date)` — one per day
 
@@ -160,7 +196,15 @@ Nutrition logging. AI parses free-text or image descriptions of meals into macro
 
 Toggle: Macro (monthly overview, by goal type) vs Micro (event-specific phase progress and compliance). Personal bests derived from activity data.
 
-### Recently added (not in March handover)
+### Recently added (2026-03-22)
+
+- **Two-stage webhook + activity streams**: Stage 1 (Vercel, fast) → Stage 2 (Supabase enrich-activity edge function, async via DB trigger). Streams, zone_seconds, cadence_stats, grade_correlation all computed automatically.
+- **Zone calibration system**: calibrate-zones edge function, ZoneCalibrationPanel in Settings, dynamic zone thresholds everywhere (Home ZoneBar, coachingPrompt, buildContext)
+- **PostWorkoutPopup async UX**: loading state while enrichment pending, polls enrichment_status, shows full feedback with zone bars once complete
+- **Feature requests / bug reports**: roadmap, bug/feature modal, Claude similarity dedup, admin_notifications, notify-feature-request edge function
+- **HR Zones on Home**: now reads from zone_data — no longer hardcoded
+
+### Recently added (pre-2026-03-22)
 
 - **n8n replacement**: Vercel serverless webhook + on-demand briefings
 - **Backfill + baseline analysis**: auto-syncs Strava history on first load, generates Claude baseline
@@ -185,13 +229,14 @@ Toggle: Macro (monthly overview, by goal type) vs Micro (event-specific phase pr
 
 - Deactivate n8n workflows manually at https://lifeassistant.app.n8n.cloud
 - Verify plan commit flow (draft → scheduled_sessions) end-to-end
-- Populate HR zone data properly (zone_data column in activities is unused)
 - Persist evening readiness note to DB instead of localStorage only
+- Run zone calibration for the first time (Settings → Training Zones → Recalibrate zones) to populate `athlete_settings.hr_zones`
 
 ### Open questions
 
 - Should calorie/protein targets (2800kcal / 150g) be derived from athlete_settings rather than hardcoded?
 - Is there an n8n API key saved anywhere? (Not confirmed — manual deactivation via UI may be needed)
+- Email notifications for feature requests: Supabase SMTP is auth-only; would need Resend API key (`RESEND_API_KEY` secret) for transactional email from `notify-feature-request`. Currently DB-only (`admin_notifications` table).
 
 ---
 
@@ -229,7 +274,11 @@ When writing instructions for Claude Code to build features in this app:
 - **Models**: all Claude calls use `claude-haiku-4-5-20251001`. Use Sonnet only if quality is clearly insufficient.
 - **Nested component anti-pattern**: do NOT define React components inside other components. Use plain render helper functions called as `{renderSomething()}` instead.
 - **Supabase service role key**: stored as `SUPABASE_SECRET_KEY` in Vercel (non-VITE). Not available in client-side code.
-- **Vercel async**: Vercel serverless functions are killed after the response is sent. All async processing must be `await`ed before calling `res.json()`.
+- **Vercel async**: Vercel serverless functions are killed after the response is sent. All async processing must be `await`ed before calling `res.json()`. The strava-webhook.js is Stage 1 only — don't add async work back into it.
+- **HR zones**: use `resolveZones(settings)` from `src/lib/hrZones.js` anywhere zone thresholds are needed. Never hardcode zone boundaries.
+- **enrich-activity trigger**: `trigger_enrich_activity()` in Postgres fires `AFTER INSERT ON activities` and calls `net.http_post()` (pg_net). The correct pg_net signature is `net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer)` — note `body` is jsonb, not text.
+- **activity_streams.activity_id**: is a BIGINT FK to `activities.id` (not UUID). The activities.id is a serial integer, not strava_id.
+- **Supabase Management API**: `POST https://api.supabase.com/v1/projects/yjuhzmknabedjklsgbje/database/query` with PAT from memory. Use for schema changes and data queries during development — no manual Supabase dashboard steps needed.
 
 ---
 
