@@ -9,8 +9,8 @@ test('@minor fuel — text meal logging parses and saves', async ({ page }) => {
   await page.fill('[data-testid="nutrition-input"]', 'Chicken and rice bowl with broccoli, about 400g')
   await page.click('[data-testid="nutrition-submit"]')
 
-  // Wait for AI parsing (up to 15 seconds)
-  await page.waitForSelector('[data-testid="nutrition-entries"]', { timeout: 15000 })
+  // Wait for AI parsing and entry to appear (up to 30s for Claude call)
+  await page.waitForSelector('[data-testid="nutrition-entry"]', { timeout: 30000 })
   const entries = await page.locator('[data-testid="nutrition-entry"]').count()
   expect(entries).toBeGreaterThan(0)
 
@@ -24,8 +24,9 @@ test('@minor fuel — photo meal logging', async ({ page }) => {
   await page.click('[data-testid="nav-fuel"]')
   await page.waitForSelector('[data-testid="fuel-screen"]')
 
-  // Upload test food image
+  // Upload test food image (input is hidden — use dispatchEvent to reveal then set files)
   const fileInput = page.locator('[data-testid="nutrition-image-input"]')
+  await fileInput.evaluate(el => { el.style.display = 'block' })
   await fileInput.setInputFiles('./tests/fixtures/food-images/teriyaki-bowl.jpg')
 
   // Wait for image to preview

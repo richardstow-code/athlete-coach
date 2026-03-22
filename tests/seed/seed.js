@@ -531,6 +531,20 @@ export async function seedAll() {
   }
   await ins('cycle_logs', cycleLogs)
 
+  // ── 9. schedule_changes — struggling persona (1 pending adjustment) ──
+  await ins('schedule_changes', [
+    {
+      user_id: PERSONA_IDS.struggling,
+      status: 'pending',
+      change_type: 'reschedule',
+      title: 'Move missed long run to this weekend',
+      reasoning: 'You missed 6 of your last 8 planned sessions. A makeup long run on Saturday will help get back on track before the next training block.',
+      proposed_by: 'coach',
+      new_date: daysFromNow(6),
+      context: 'mismatch',
+    },
+  ])
+
   console.log('Seeding complete. 6 personas created.')
   console.log('  bodybuilder:  Marcus Weber   (strength, no races)')
   console.log('  female_cycle: Sofia Müller   (marathon, cycle tracking, luteal phase)')

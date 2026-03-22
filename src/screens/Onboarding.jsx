@@ -248,7 +248,7 @@ export default function Onboarding({ onComplete }) {
           {GOAL_TILES.map(tile => {
             const on = goalType === tile.value
             return (
-              <button key={tile.value} onClick={() => setGoalType(tile.value)} style={{
+              <button key={tile.value} data-testid={`goal-tile-${tile.value}`} onClick={() => setGoalType(tile.value)} style={{
                 display: 'flex', alignItems: 'center', gap: 14,
                 padding: '13px 16px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
                 background: on ? 'rgba(232,255,71,0.07)' : Z.surface,

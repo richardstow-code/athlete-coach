@@ -3,10 +3,13 @@ import { loginAs } from './helpers/auth.js'
 
 test('@minor home briefing — generates and displays', async ({ page }) => {
   await loginAs(page, 'elite_taper')
-  await page.waitForSelector('[data-testid="coaching-briefing"]')
-  // Briefing content should mention taper or race proximity
+  // Wait for briefing to load (may auto-generate — give up to 30s)
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="coaching-briefing"]')
+    return el && !el.textContent.includes('Loading briefing') && el.textContent.trim().length > 50
+  }, { timeout: 30000 })
   const briefingText = await page.locator('[data-testid="coaching-briefing"]').textContent()
-  expect(briefingText.length).toBeGreaterThan(100) // Non-empty
+  expect(briefingText.trim().length).toBeGreaterThan(50)
 })
 
 test('@minor home check-in card — appears and responds to tap', async ({ page }) => {

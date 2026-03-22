@@ -15,8 +15,10 @@ test('@minor settings — profile weight saves and persists', async ({ page }) =
   await page.click('[data-testid="save-profile"]')
   await page.waitForTimeout(1000)
 
-  // Reload settings
+  // Reload and reopen settings (reload closes the modal)
   await page.reload()
+  await page.waitForSelector('[data-testid="home-screen"]')
+  await page.click('[data-testid="settings-button"]')
   await page.waitForSelector('[data-testid="settings-screen"]')
   await page.click('text=Personal')
   await page.waitForSelector('[data-testid="weight-input"]')
@@ -44,6 +46,8 @@ test('@minor settings — coaching sliders persist', async ({ page }) => {
   await page.waitForTimeout(1000)
 
   await page.reload()
+  await page.waitForSelector('[data-testid="home-screen"]')
+  await page.click('[data-testid="settings-button"]')
   await page.waitForSelector('[data-testid="settings-screen"]')
   await page.click('text=Coaching Preferences')
   await page.waitForSelector('[data-testid="slider-tone"]')

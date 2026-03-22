@@ -394,7 +394,14 @@ export default function Plan({ onActivityClick }) {
   const [selectedSession, setSelectedSession] = useState(null)
   const [generatingPlan, setGeneratingPlan] = useState(false)
   const [planDraftId, setPlanDraftId] = useState(null)
+  const [userId, setUserId] = useState(null)
   const today = localDateStr(new Date())
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) setUserId(session.user.id)
+    })
+  }, [])
   const raceLabel = primarySport?.current_goal_raw || 'your race'
 
   // Week date range
@@ -413,10 +420,11 @@ export default function Plan({ onActivityClick }) {
     const ws = localDateStr(weekStart)
     const we = localDateStr(weekEnd)
 
+    const uid = userId || (await supabase.auth.getSession()).data.session?.user?.id
     const [{data: sess}, {data: acts}, {data: chg}] = await Promise.all([
-      supabase.from('scheduled_sessions').select('*').gte('planned_date', ws).lte('planned_date', we).order('planned_date'),
-      supabase.from('activities').select('*').gte('date', ws).lte('date', we).order('date'),
-      supabase.from('schedule_changes').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('scheduled_sessions').select('*').eq('user_id', uid).gte('planned_date', ws).lte('planned_date', we).order('planned_date'),
+      supabase.from('activities').select('*').eq('user_id', uid).gte('date', ws).lte('date', we).order('date'),
+      supabase.from('schedule_changes').select('*').eq('user_id', uid).eq('status', 'pending').order('created_at', { ascending: false }),
     ])
     setSessions(sess || [])
     setActivities(acts || [])

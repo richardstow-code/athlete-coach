@@ -480,6 +480,13 @@ export default function Nutrition() {
   const [todaySession, setTodaySession] = useState(null)
   const [todayActivity, setTodayActivity] = useState(null)
   const [cycleLog, setCycleLog] = useState(null)
+  const [userId, setUserId] = useState(null)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) setUserId(session.user.id)
+    })
+  }, [])
 
   const todayKcal = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + (e.calories || 0), 0)
   const todayProtein = entries.filter(e => e.meal_type !== 'alcohol' && e.date === logDate).reduce((s, e) => s + parseFloat(e.protein_g || 0), 0)
@@ -491,16 +498,17 @@ export default function Nutrition() {
   }).reduce((s, e) => s + parseFloat(e.alcohol_units || 0), 0)
 
   const load = useCallback(async () => {
+    const uid = userId || (await supabase.auth.getSession()).data.session?.user?.id
     const fourteenDaysAgo = new Date(Date.now() - 14*24*60*60*1000).toLocaleDateString('en-CA', { timeZone: TZ })
     const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toLocaleDateString('en-CA', { timeZone: TZ })
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
     const [{ data: all }, { data: w14 }, { data: sessions }, { data: acts }, { data: cLog }, { data: acts7 }] = await Promise.all([
-      supabase.from('nutrition_logs').select('*').eq('date', logDate).order('logged_at', { ascending: false }),
-      supabase.from('nutrition_logs').select('*').gte('date', fourteenDaysAgo).order('date'),
-      supabase.from('scheduled_sessions').select('session_type,name,zone,duration_min_low,duration_min_high').eq('planned_date', todayStr).limit(3),
-      supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec,created_at,date').eq('date', todayStr).order('date', { ascending: false }).limit(1),
-      supabase.from('cycle_logs').select('phase_reported, override_intensity, notes').eq('log_date', todayStr).maybeSingle(),
-      supabase.from('activities').select('name,type,distance_km,duration_sec,created_at,date').gte('date', sevenDaysAgo).order('date', { ascending: false }).limit(20),
+      supabase.from('nutrition_logs').select('*').eq('user_id', uid).eq('date', logDate).order('logged_at', { ascending: false }),
+      supabase.from('nutrition_logs').select('*').eq('user_id', uid).gte('date', fourteenDaysAgo).order('date'),
+      supabase.from('scheduled_sessions').select('session_type,name,zone,duration_min_low,duration_min_high').eq('user_id', uid).eq('planned_date', todayStr).limit(3),
+      supabase.from('activities').select('name,type,distance_km,elevation_m,avg_hr,duration_sec,created_at,date').eq('user_id', uid).eq('date', todayStr).order('date', { ascending: false }).limit(1),
+      supabase.from('cycle_logs').select('phase_reported, override_intensity, notes').eq('user_id', uid).eq('log_date', todayStr).maybeSingle(),
+      supabase.from('activities').select('name,type,distance_km,duration_sec,created_at,date').eq('user_id', uid).gte('date', sevenDaysAgo).order('date', { ascending: false }).limit(20),
     ])
     setEntries(all || [])
     setEntries14(w14 || [])
