@@ -42,7 +42,7 @@ export const PERSONA_IDS = {
   elite_taper:  '00000000-0000-0001-0000-000000000004',
   struggling:   '00000000-0000-0001-0000-000000000005',
   multisport:   '00000000-0000-0001-0000-000000000006',
-  newuser:      '00000000-0000-0001-0000-000000000007',
+  newuser:      'ef880ec3-3a8a-40c9-adf7-e33d9322d413',
 }
 
 const ALL_IDS = Object.values(PERSONA_IDS)
