@@ -191,9 +191,10 @@ export default function App() {
   useEffect(() => {
     if (!session) { setNeedsOnboarding(null); setPostEventSettings(null); return }
 
+    const uid = session.user.id
     Promise.all([
-      supabase.from('athlete_settings').select('goal_type, onboarding_complete').maybeSingle(),
-      supabase.from('athlete_sports').select('*').eq('is_active', true).order('created_at'),
+      supabase.from('athlete_settings').select('goal_type, onboarding_complete').eq('user_id', uid).maybeSingle(),
+      supabase.from('athlete_sports').select('*').eq('user_id', uid).eq('is_active', true).order('created_at'),
     ]).then(([{ data: settingsData }, { data: sportsData }]) => {
       // Guard: once set to false (by onComplete), never flip back due to a
       // session refresh firing before the DB write is visible.
