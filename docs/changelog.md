@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-03-22 — AI Eval Test Suite
+
+- **Two-Claude evaluator**: Haiku answers test prompts as the coaching AI; Sonnet evaluates responses against per-persona rubrics. Exits code 1 on any critical failure.
+- **6 persona rubrics** in `tests/ai-eval/rubrics.js`: bodybuilder, female_cycle, injured, elite_taper, struggling, multisport.
+- **18 canonical test prompts**, **35 evaluation criteria** (15 critical). Critical criteria cover: no unsafe injury advice, no sport-category confusion, no volume increase in taper, cycle phase acknowledgement, honest-not-harsh tone for struggling persona.
+- **Regression detection**: compares criterion pass rates against previous archived run; prints warnings on any regression.
+- **Result archiving**: `tests/ai-eval/results/[timestamp].json` — last 20 retained locally, uploaded as GitHub Actions artifacts (90-day retention) on every major-tier run.
+- **GitHub Actions**: `test:ai-eval` runs in the MAJOR tier step; `latest.json` uploaded as artifact `ai-eval-results-{run_id}`.
+- **npm script**: `test:ai-eval` — `node tests/ai-eval/run-eval.js`
+
+---
+
 ## 2026-03-22 — Playwright UI Flow Tests
 
 - **Playwright installed**: `@playwright/test` added to devDependencies; `playwright.config.js` at repo root with 60s timeout, 2 workers, screenshot/video on failure, HTML + JSON reporters.

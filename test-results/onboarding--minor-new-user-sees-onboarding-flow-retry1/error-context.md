@@ -1,0 +1,124 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e4]: ⚠ TEST MODE — test database active
+  - button "Help" [ref=e5] [cursor=pointer]: "?"
+  - banner [ref=e6]:
+    - generic [ref=e7]: COACH
+    - generic [ref=e8]:
+      - button "📷" [ref=e9] [cursor=pointer]
+      - button "👤" [ref=e11] [cursor=pointer]
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e16]: ⓘ
+          - generic [ref=e17]:
+            - generic [ref=e18]: Your daily briefing
+            - generic [ref=e19]: Your AI coach generates a personalised briefing each morning based on your recent training. Tap 'Refresh' any time to get an updated view. Pull down to reload today's activity and nutrition data.
+        - generic [ref=e20]:
+          - button "Skip all" [ref=e21] [cursor=pointer]
+          - button "Got it" [ref=e22] [cursor=pointer]
+      - generic [ref=e23]:
+        - generic [ref=e24]: Sunday, 22 March 2026
+        - generic [ref=e25]: Planning
+      - generic [ref=e26]:
+        - generic [ref=e27]: Day summary
+        - generic [ref=e28]:
+          - generic [ref=e29]:
+            - generic [ref=e30]: ✗
+            - generic [ref=e31]: Taper Long Run
+          - generic [ref=e32]:
+            - generic [ref=e33]: ✗
+            - generic [ref=e34]: Open Water Sim
+          - generic [ref=e35]:
+            - generic [ref=e36]: ✗
+            - generic [ref=e37]: Long Run
+          - generic [ref=e38]:
+            - generic [ref=e39]: ✗
+            - generic [ref=e40]: ITB Rehab + Strength
+        - button "Generate readiness note" [ref=e41] [cursor=pointer]
+      - generic [ref=e42]:
+        - generic [ref=e44]: Today's Feed
+        - generic [ref=e46] [cursor=pointer]:
+          - generic [ref=e47]: 💪
+          - generic [ref=e48]:
+            - generic [ref=e49]: Legs
+            - generic [ref=e50]: · 51min
+          - generic [ref=e51]: ✓
+      - generic [ref=e52]:
+        - button "All" [ref=e53] [cursor=pointer]
+        - button "Runs" [ref=e54] [cursor=pointer]
+        - button "Bike" [ref=e55] [cursor=pointer]
+        - button "Strength" [ref=e56] [cursor=pointer]
+      - generic [ref=e57]:
+        - generic [ref=e58]:
+          - generic [ref=e59]: "30.0"
+          - generic [ref=e60]: km this wk
+        - generic [ref=e61]:
+          - generic [ref=e62]: "0"
+          - generic [ref=e63]: elev (m)
+        - generic [ref=e64]:
+          - generic [ref=e65]: "3"
+          - generic [ref=e66]: strength
+        - generic [ref=e67]:
+          - generic [ref=e68]: —
+          - generic [ref=e69]: HRV
+      - generic [ref=e70]:
+        - generic [ref=e71]:
+          - generic [ref=e72]: Recent Activities
+          - generic [ref=e73]: from Strava
+        - generic [ref=e74] [cursor=pointer]:
+          - generic [ref=e75]: 💪
+          - generic [ref=e76]:
+            - generic [ref=e77]: Back & Biceps
+            - generic [ref=e78]: Fri 20 Mar
+          - generic [ref=e80]: —
+        - generic [ref=e81] [cursor=pointer]:
+          - generic [ref=e82]: 🏃
+          - generic [ref=e83]:
+            - generic [ref=e84]: Short Run
+            - generic [ref=e85]: Thu 19 Mar · 5.0km
+          - generic [ref=e86]:
+            - generic [ref=e87]: 7:15
+            - generic [ref=e88]: HR 164
+        - generic [ref=e89] [cursor=pointer]:
+          - generic [ref=e90]: 🏃
+          - generic [ref=e91]:
+            - generic [ref=e92]: Easy Shakeout
+            - generic [ref=e93]: Thu 19 Mar · 6.0km
+          - generic [ref=e94]:
+            - generic [ref=e95]: 4:40
+            - generic [ref=e96]: HR 126
+        - generic [ref=e97] [cursor=pointer]:
+          - generic [ref=e98]: 💪
+          - generic [ref=e99]:
+            - generic [ref=e100]: Chest & Triceps
+            - generic [ref=e101]: Wed 18 Mar
+          - generic [ref=e103]: —
+      - generic [ref=e104]:
+        - generic [ref=e105]:
+          - generic [ref=e106]: This morning's briefing
+          - button "↻ Refresh" [ref=e107] [cursor=pointer]
+        - generic [ref=e109]:
+          - text: No briefing yet.
+          - button "Generate one →" [ref=e110] [cursor=pointer]
+  - navigation [ref=e111]:
+    - button "⌂ Home" [ref=e112] [cursor=pointer]:
+      - generic [ref=e114]: ⌂
+      - generic [ref=e115]: Home
+    - button "◉ Plan" [ref=e116] [cursor=pointer]:
+      - generic [ref=e118]: ◉
+      - generic [ref=e119]: Plan
+    - button "◎ Chat" [ref=e120] [cursor=pointer]:
+      - generic [ref=e121]: ◎
+      - generic [ref=e122]: Chat
+    - button "◈ Fuel" [ref=e123] [cursor=pointer]:
+      - generic [ref=e124]: ◈
+      - generic [ref=e125]: Fuel
+    - button "◫ Progress" [ref=e126] [cursor=pointer]:
+      - generic [ref=e127]: ◫
+      - generic [ref=e128]: Progress
+  - button "🐛 Report a bug" [ref=e130] [cursor=pointer]
+```

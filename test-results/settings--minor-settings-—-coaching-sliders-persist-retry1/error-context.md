@@ -1,0 +1,189 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e4]: ⚠ TEST MODE — test database active
+  - button "Help" [ref=e5] [cursor=pointer]: "?"
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]: Settings
+      - button "×" [ref=e9] [cursor=pointer]
+    - generic [ref=e10]:
+      - button "Personal Dave Thornton ▸" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: Personal
+          - generic [ref=e15]: Dave Thornton
+        - generic [ref=e16]: ▸
+      - button "Goals & Races Frankfurt Marathon · 2026-10-25 ▸" [ref=e18] [cursor=pointer]:
+        - generic [ref=e19]:
+          - generic [ref=e20]: Goals & Races
+          - generic [ref=e21]: Frankfurt Marathon · 2026-10-25
+        - generic [ref=e22]: ▸
+      - 'button "Training Zones Z2: 125–140 bpm ▸" [ref=e24] [cursor=pointer]':
+        - generic [ref=e25]:
+          - generic [ref=e26]: Training Zones
+          - generic [ref=e27]: "Z2: 125–140 bpm"
+        - generic [ref=e28]: ▸
+      - button "Health & Injuries No active flags ▸" [ref=e30] [cursor=pointer]:
+        - generic [ref=e31]:
+          - generic [ref=e32]: Health & Injuries
+          - generic [ref=e33]: No active flags
+        - generic [ref=e34]: ▸
+      - generic [ref=e35]:
+        - button "Coaching Preferences ▾" [active] [ref=e36] [cursor=pointer]:
+          - generic [ref=e38]: Coaching Preferences
+          - generic [ref=e39]: ▾
+        - generic [ref=e40]:
+          - generic [ref=e41]:
+            - generic [ref=e42]:
+              - generic [ref=e43]:
+                - generic [ref=e44]: Tone
+                - generic [ref=e45]: Frightfully encouraging, old chap
+              - slider [ref=e47] [cursor=pointer]: "60"
+              - generic [ref=e48]:
+                - generic [ref=e49]: 💀 Brutal honesty
+                - generic [ref=e50]: Overly British 🎩
+            - generic [ref=e51]:
+              - generic [ref=e52]:
+                - generic [ref=e53]: Consequences
+                - generic [ref=e54]: Clear stakes, firm expectations
+              - slider [ref=e56] [cursor=pointer]: "40"
+              - generic [ref=e57]:
+                - generic [ref=e58]: 🌱 Gentle nudge
+                - generic [ref=e59]: Apocalyptic 🔥
+            - generic [ref=e60]:
+              - generic [ref=e61]:
+                - generic [ref=e62]: Detail
+                - generic [ref=e63]: Summary + key insight
+              - slider [ref=e65] [cursor=pointer]: "40"
+              - generic [ref=e66]:
+                - generic [ref=e67]: 📌 Headlines only
+                - generic [ref=e68]: Deep analysis 🔬
+            - generic [ref=e69]:
+              - generic [ref=e70]:
+                - generic [ref=e71]: Coaching reach
+                - generic [ref=e72]: Sleep, nutrition, alcohol, stress — the full picture
+              - slider [ref=e74] [cursor=pointer]: "60"
+              - generic [ref=e75]:
+                - generic [ref=e76]: 🏃 Training only
+                - generic [ref=e77]: Full lifestyle 🥗
+          - button "Save" [ref=e79] [cursor=pointer]
+      - button "Connected Services Strava not connected ▸" [ref=e81] [cursor=pointer]:
+        - generic [ref=e82]:
+          - generic [ref=e83]: Connected Services
+          - generic [ref=e84]: Strava not connected
+        - generic [ref=e85]: ▸
+      - button "Subscription Founder ▸" [ref=e87] [cursor=pointer]:
+        - generic [ref=e88]:
+          - generic [ref=e89]: Subscription
+          - generic [ref=e90]: Founder
+        - generic [ref=e91]: ▸
+  - banner [ref=e93]:
+    - generic [ref=e94]: COACH
+    - generic [ref=e95]:
+      - button "📷" [ref=e96] [cursor=pointer]
+      - button "👤" [ref=e98] [cursor=pointer]
+  - main [ref=e99]:
+    - generic [ref=e100]:
+      - generic [ref=e101]:
+        - generic [ref=e102]: Sunday, 22 March 2026
+        - generic [ref=e103]: Base build
+      - generic [ref=e104]:
+        - generic [ref=e105]: Day summary
+        - generic [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]: ✗
+            - generic [ref=e109]: Taper Long Run
+          - generic [ref=e110]:
+            - generic [ref=e111]: ✗
+            - generic [ref=e112]: Open Water Sim
+          - generic [ref=e113]:
+            - generic [ref=e114]: ✗
+            - generic [ref=e115]: Long Run
+          - generic [ref=e116]:
+            - generic [ref=e117]: ✗
+            - generic [ref=e118]: ITB Rehab + Strength
+        - generic [ref=e119]: Assessing readiness...
+      - generic [ref=e120]:
+        - generic [ref=e122]: Today's Feed
+        - generic [ref=e124] [cursor=pointer]:
+          - generic [ref=e125]: 💪
+          - generic [ref=e126]:
+            - generic [ref=e127]: Legs
+            - generic [ref=e128]: · 51min
+          - generic [ref=e129]: ✓
+      - generic [ref=e130]:
+        - button "All" [ref=e131] [cursor=pointer]
+        - button "Runs" [ref=e132] [cursor=pointer]
+        - button "Bike" [ref=e133] [cursor=pointer]
+        - button "Strength" [ref=e134] [cursor=pointer]
+      - generic [ref=e135]:
+        - generic [ref=e136]:
+          - generic [ref=e137]: "30.0"
+          - generic [ref=e138]: km this wk
+        - generic [ref=e139]:
+          - generic [ref=e140]: "0"
+          - generic [ref=e141]: elev (m)
+        - generic [ref=e142]:
+          - generic [ref=e143]: "3"
+          - generic [ref=e144]: strength
+        - generic [ref=e145]:
+          - generic [ref=e146]: —
+          - generic [ref=e147]: HRV
+      - generic [ref=e148]:
+        - generic [ref=e149]:
+          - generic [ref=e150]: Recent Activities
+          - generic [ref=e151]: from Strava
+        - generic [ref=e152] [cursor=pointer]:
+          - generic [ref=e153]: 💪
+          - generic [ref=e154]:
+            - generic [ref=e155]: Back & Biceps
+            - generic [ref=e156]: Fri 20 Mar
+          - generic [ref=e158]: —
+        - generic [ref=e159] [cursor=pointer]:
+          - generic [ref=e160]: 🏃
+          - generic [ref=e161]:
+            - generic [ref=e162]: Short Run
+            - generic [ref=e163]: Thu 19 Mar · 5.0km
+          - generic [ref=e164]:
+            - generic [ref=e165]: 7:15
+            - generic [ref=e166]: HR 164
+        - generic [ref=e167] [cursor=pointer]:
+          - generic [ref=e168]: 🏃
+          - generic [ref=e169]:
+            - generic [ref=e170]: Easy Shakeout
+            - generic [ref=e171]: Thu 19 Mar · 6.0km
+          - generic [ref=e172]:
+            - generic [ref=e173]: 4:40
+            - generic [ref=e174]: HR 126
+        - generic [ref=e175] [cursor=pointer]:
+          - generic [ref=e176]: 💪
+          - generic [ref=e177]:
+            - generic [ref=e178]: Chest & Triceps
+            - generic [ref=e179]: Wed 18 Mar
+          - generic [ref=e181]: —
+      - generic [ref=e182]:
+        - generic [ref=e183]:
+          - generic [ref=e184]: This morning's briefing
+          - button "↻ Refresh" [ref=e185] [cursor=pointer]
+        - generic [ref=e187]:
+          - text: No briefing yet.
+          - button "Generate one →" [ref=e188] [cursor=pointer]
+  - navigation [ref=e189]:
+    - button "⌂ Home" [ref=e190] [cursor=pointer]:
+      - generic [ref=e192]: ⌂
+      - generic [ref=e193]: Home
+    - button "◉ Plan" [ref=e194] [cursor=pointer]:
+      - generic [ref=e196]: ◉
+      - generic [ref=e197]: Plan
+    - button "◎ Chat" [ref=e198] [cursor=pointer]:
+      - generic [ref=e199]: ◎
+      - generic [ref=e200]: Chat
+    - button "◈ Fuel" [ref=e201] [cursor=pointer]:
+      - generic [ref=e202]: ◈
+      - generic [ref=e203]: Fuel
+    - button "◫ Progress" [ref=e204] [cursor=pointer]:
+      - generic [ref=e205]: ◫
+      - generic [ref=e206]: Progress
+  - button "🐛 Report a bug" [ref=e208] [cursor=pointer]
+```

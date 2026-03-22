@@ -1,0 +1,89 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e4]: ⚠ TEST MODE — test database active
+  - button "Help" [ref=e5] [cursor=pointer]: "?"
+  - banner [ref=e6]:
+    - generic [ref=e7]: COACH
+    - generic [ref=e8]:
+      - button "📷" [ref=e9] [cursor=pointer]
+      - button "👤" [ref=e11] [cursor=pointer]
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e16]: ⓘ
+          - generic [ref=e17]:
+            - generic [ref=e18]: Log meals in seconds
+            - generic [ref=e19]: Describe what you ate or take a photo and your coach rates it against your training load. Alcohol is tracked separately against your weekly target. The coach uses this data in all coaching conversations.
+        - generic [ref=e20]:
+          - button "Skip all" [ref=e21] [cursor=pointer]
+          - button "Got it" [ref=e22] [cursor=pointer]
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - generic [ref=e25]: Fuel
+          - textbox [ref=e26] [cursor=pointer]: 2026-03-22
+        - generic [ref=e27]: Today
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - generic [ref=e30] [cursor=pointer]:
+            - generic [ref=e32]: "0"
+            - generic [ref=e34]: Kcal
+          - generic [ref=e36] [cursor=pointer]:
+            - generic [ref=e38]: "0"
+            - generic [ref=e40]: Protein
+          - generic [ref=e42] [cursor=pointer]:
+            - generic [ref=e44]: "0"
+            - generic [ref=e46]: Units/wk
+        - generic [ref=e48]:
+          - generic [ref=e49]: 7 days · tap cards to toggle
+          - generic [ref=e50]:
+            - generic [ref=e59]:
+              - generic [ref=e60]: Mon
+              - generic [ref=e61]: Tue
+              - generic [ref=e62]: Wed
+              - generic [ref=e63]: Thu
+              - generic [ref=e64]: Fri
+              - generic [ref=e65]: Sat
+              - generic [ref=e66]: Sun
+            - generic [ref=e67]:
+              - generic [ref=e68]: "Kcal (target: 2800kcal)"
+              - generic [ref=e70]: "Protein (target: 150g)"
+              - generic [ref=e72]: "Units (target: 2.0/day)"
+      - generic [ref=e74]:
+        - generic [ref=e75]: This week
+        - generic [ref=e76]: Log a few more meals to see your weekly patterns.
+      - generic [ref=e77]:
+        - generic [ref=e78]: Log
+        - generic [ref=e79]:
+          - button "📸 Camera" [ref=e80] [cursor=pointer]
+          - button "🖼 Library" [ref=e81] [cursor=pointer]
+        - 'textbox "Describe meal: ''2 scrambled eggs on toast with butter'', ''chicken breast salad''..." [ref=e82]': Chicken and rice bowl with broccoli, about 400g
+        - generic [ref=e83]:
+          - generic [ref=e84]: When?
+          - textbox [ref=e85] [cursor=pointer]: 21:07
+        - generic [ref=e86]:
+          - button "→ Log meal" [ref=e87] [cursor=pointer]
+          - button "🍺 Log drink" [ref=e88] [cursor=pointer]
+      - generic [ref=e89]:
+        - generic [ref=e90]: Today · 0 items
+        - generic [ref=e91]: Nothing logged today.
+  - navigation [ref=e92]:
+    - button "⌂ Home" [ref=e93] [cursor=pointer]:
+      - generic [ref=e94]: ⌂
+      - generic [ref=e95]: Home
+    - button "◉ Plan" [ref=e96] [cursor=pointer]:
+      - generic [ref=e98]: ◉
+      - generic [ref=e99]: Plan
+    - button "◎ Chat" [ref=e100] [cursor=pointer]:
+      - generic [ref=e101]: ◎
+      - generic [ref=e102]: Chat
+    - button "◈ Fuel" [ref=e103] [cursor=pointer]:
+      - generic [ref=e105]: ◈
+      - generic [ref=e106]: Fuel
+    - button "◫ Progress" [ref=e107] [cursor=pointer]:
+      - generic [ref=e108]: ◫
+      - generic [ref=e109]: Progress
+  - button "🐛 Report a bug" [ref=e111] [cursor=pointer]
+```

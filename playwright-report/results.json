@@ -1,0 +1,1579 @@
+{
+  "config": {
+    "configFile": "/Users/richardstow/athlete-coach/playwright.config.js",
+    "rootDir": "/Users/richardstow/athlete-coach/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 2
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/richardstow/athlete-coach/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/Users/richardstow/athlete-coach/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "outputFolder": "playwright-report",
+          "open": "never"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "playwright-report/results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "runAgents": "none",
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.58.2",
+    "workers": 2,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "chat.spec.js",
+      "file": "chat.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "@minor chat — sends message and receives response",
+          "ok": true,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3629,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:26:55.861Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3e6486b881f4eb937326-231d1067323dde9edb30",
+          "file": "chat.spec.js",
+          "line": 4,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "fuel.spec.js",
+      "file": "fuel.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "@minor fuel — text meal logging parses and saves",
+          "ok": false,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 33914,
+                  "error": {
+                    "message": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nutrition-entry\"]') to be visible\u001b[22m\n",
+                    "stack": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nutrition-entry\"]') to be visible\u001b[22m\n\n    at /Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js:13:14",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                      "column": 14,
+                      "line": 13
+                    },
+                    "snippet": "  11 |\n  12 |   // Wait for AI parsing and entry to appear (up to 30s for Claude call)\n> 13 |   await page.waitForSelector('[data-testid=\"nutrition-entry\"]', { timeout: 30000 })\n     |              ^\n  14 |   const entries = await page.locator('[data-testid=\"nutrition-entry\"]').count()\n  15 |   expect(entries).toBeGreaterThan(0)\n  16 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                        "column": 14,
+                        "line": 13
+                      },
+                      "message": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nutrition-entry\"]') to be visible\u001b[22m\n\n\n  11 |\n  12 |   // Wait for AI parsing and entry to appear (up to 30s for Claude call)\n> 13 |   await page.waitForSelector('[data-testid=\"nutrition-entry\"]', { timeout: 30000 })\n     |              ^\n  14 |   const entries = await page.locator('[data-testid=\"nutrition-entry\"]').count()\n  15 |   expect(entries).toBeGreaterThan(0)\n  16 |\n    at /Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js:13:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:26:55.862Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-text-meal-logging-parses-and-saves/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-text-meal-logging-parses-and-saves/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-text-meal-logging-parses-and-saves/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                    "column": 14,
+                    "line": 13
+                  }
+                },
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 32064,
+                  "error": {
+                    "message": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nutrition-entry\"]') to be visible\u001b[22m\n",
+                    "stack": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nutrition-entry\"]') to be visible\u001b[22m\n\n    at /Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js:13:14",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                      "column": 14,
+                      "line": 13
+                    },
+                    "snippet": "  11 |\n  12 |   // Wait for AI parsing and entry to appear (up to 30s for Claude call)\n> 13 |   await page.waitForSelector('[data-testid=\"nutrition-entry\"]', { timeout: 30000 })\n     |              ^\n  14 |   const entries = await page.locator('[data-testid=\"nutrition-entry\"]').count()\n  15 |   expect(entries).toBeGreaterThan(0)\n  16 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                        "column": 14,
+                        "line": 13
+                      },
+                      "message": "TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nutrition-entry\"]') to be visible\u001b[22m\n\n\n  11 |\n  12 |   // Wait for AI parsing and entry to appear (up to 30s for Claude call)\n> 13 |   await page.waitForSelector('[data-testid=\"nutrition-entry\"]', { timeout: 30000 })\n     |              ^\n  14 |   const entries = await page.locator('[data-testid=\"nutrition-entry\"]').count()\n  15 |   expect(entries).toBeGreaterThan(0)\n  16 |\n    at /Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js:13:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-03-22T19:27:30.828Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-text-meal-logging-parses-and-saves-retry1/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-text-meal-logging-parses-and-saves-retry1/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-text-meal-logging-parses-and-saves-retry1/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-text-meal-logging-parses-and-saves-retry1/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                    "column": 14,
+                    "line": 13
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "e15a9c54d3b403addb66-2a8009c5fe169302cf6c",
+          "file": "fuel.spec.js",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "@minor fuel — photo meal logging",
+          "ok": false,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 1,
+                  "status": "timedOut",
+                  "duration": 60881,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                        "column": 14,
+                        "line": 24
+                      },
+                      "message": "Error: page.click: Test timeout of 60000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nav-fuel\"]')\u001b[22m\n\u001b[2m    - locator resolved to <button data-testid=\"nav-fuel\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <button>Full breakdown →</button> from <div>…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <button>Full breakdown →</button> from <div>…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    112 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m        - element is visible, enabled and stable\u001b[22m\n\u001b[2m        - scrolling into view if needed\u001b[22m\n\u001b[2m        - done scrolling\u001b[22m\n\u001b[2m        - <button>Full breakdown →</button> from <div>…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m      - retrying click action\u001b[22m\n\u001b[2m        - waiting 500ms\u001b[22m\n\n\n  22 | test('@minor fuel — photo meal logging', async ({ page }) => {\n  23 |   await loginAs(page, 'female_cycle')\n> 24 |   await page.click('[data-testid=\"nav-fuel\"]')\n     |              ^\n  25 |   await page.waitForSelector('[data-testid=\"fuel-screen\"]')\n  26 |\n  27 |   // Upload test food image (input is hidden — use dispatchEvent to reveal then set files)\n    at /Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js:24:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:28:03.914Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-photo-meal-logging/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-photo-meal-logging/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-photo-meal-logging/error-context.md"
+                    }
+                  ]
+                },
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 21876,
+                  "error": {
+                    "message": "TimeoutError: page.waitForSelector: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nutrition-entry\"]') to be visible\u001b[22m\n",
+                    "stack": "TimeoutError: page.waitForSelector: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nutrition-entry\"]') to be visible\u001b[22m\n\n    at /Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js:37:14",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                      "column": 14,
+                      "line": 37
+                    },
+                    "snippet": "  35 |   // Submit the logged entry\n  36 |   await page.click('[data-testid=\"nutrition-submit\"]')\n> 37 |   await page.waitForSelector('[data-testid=\"nutrition-entry\"]', { timeout: 20000 })\n     |              ^\n  38 |\n  39 |   const entryText = await page.locator('[data-testid=\"nutrition-entry\"]').first().textContent()\n  40 |   expect(entryText.length).toBeGreaterThan(10) // Some content was parsed"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                        "column": 14,
+                        "line": 37
+                      },
+                      "message": "TimeoutError: page.waitForSelector: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"nutrition-entry\"]') to be visible\u001b[22m\n\n\n  35 |   // Submit the logged entry\n  36 |   await page.click('[data-testid=\"nutrition-submit\"]')\n> 37 |   await page.waitForSelector('[data-testid=\"nutrition-entry\"]', { timeout: 20000 })\n     |              ^\n  38 |\n  39 |   const entryText = await page.locator('[data-testid=\"nutrition-entry\"]').first().textContent()\n  40 |   expect(entryText.length).toBeGreaterThan(10) // Some content was parsed\n    at /Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js:37:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-03-22T19:29:05.684Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-photo-meal-logging-retry1/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-photo-meal-logging-retry1/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-photo-meal-logging-retry1/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/richardstow/athlete-coach/test-results/fuel--minor-fuel-—-photo-meal-logging-retry1/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/fuel.spec.js",
+                    "column": 14,
+                    "line": 37
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "e15a9c54d3b403addb66-1b6630d4a22fd3d8353a",
+          "file": "fuel.spec.js",
+          "line": 22,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "home.spec.js",
+      "file": "home.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "@minor home briefing — generates and displays",
+          "ok": true,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1990,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:27:00.059Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "379953442ddfc3019abd-06debfa42d5273ccd226",
+          "file": "home.spec.js",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "@minor home check-in card — appears and responds to tap",
+          "ok": true,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1689,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:27:02.054Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "379953442ddfc3019abd-dd8a82d13d16225d0804",
+          "file": "home.spec.js",
+          "line": 15,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "onboarding.spec.js",
+      "file": "onboarding.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "@minor new user sees onboarding flow",
+          "ok": false,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 61076,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/onboarding.spec.js",
+                        "column": 14,
+                        "line": 37
+                      },
+                      "message": "Error: page.waitForSelector: Test timeout of 60000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"onboarding-complete\"]') to be visible\u001b[22m\n\n\n  35 |\n  36 |   // Step 5: Profile complete — level slider visible\n> 37 |   await page.waitForSelector('[data-testid=\"onboarding-complete\"]')\n     |              ^\n  38 |   await page.click('[data-testid=\"onboarding-finish\"]')\n  39 |\n  40 |   // Should land on home screen\n    at /Users/richardstow/athlete-coach/tests/e2e/onboarding.spec.js:37:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:27:03.752Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/onboarding--minor-new-user-sees-onboarding-flow/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/onboarding--minor-new-user-sees-onboarding-flow/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/onboarding--minor-new-user-sees-onboarding-flow/error-context.md"
+                    }
+                  ]
+                },
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 61064,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/onboarding.spec.js",
+                        "column": 14,
+                        "line": 37
+                      },
+                      "message": "Error: page.waitForSelector: Test timeout of 60000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"onboarding-complete\"]') to be visible\u001b[22m\n\n\n  35 |\n  36 |   // Step 5: Profile complete — level slider visible\n> 37 |   await page.waitForSelector('[data-testid=\"onboarding-complete\"]')\n     |              ^\n  38 |   await page.click('[data-testid=\"onboarding-finish\"]')\n  39 |\n  40 |   // Should land on home screen\n    at /Users/richardstow/athlete-coach/tests/e2e/onboarding.spec.js:37:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-03-22T19:28:05.266Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/onboarding--minor-new-user-sees-onboarding-flow-retry1/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/onboarding--minor-new-user-sees-onboarding-flow-retry1/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/onboarding--minor-new-user-sees-onboarding-flow-retry1/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/richardstow/athlete-coach/test-results/onboarding--minor-new-user-sees-onboarding-flow-retry1/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "289937b78f21fd60af7e-403c03b44eb6cc0f89d9",
+          "file": "onboarding.spec.js",
+          "line": 3,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "plan.spec.js",
+      "file": "plan.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "@minor plan screen — week view renders sessions",
+          "ok": false,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 1612,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/run|ride|swim/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/run|ride|swim/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m\n    at /Users/richardstow/athlete-coach/tests/e2e/plan.spec.js:10:20",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                      "column": 20,
+                      "line": 10
+                    },
+                    "snippet": "   8 |   // All three sports should appear in the week view\n   9 |   const planText = await page.locator('[data-testid=\"plan-screen\"]').textContent()\n> 10 |   expect(planText).toMatch(/run|ride|swim/i)\n     |                    ^\n  11 | })\n  12 |\n  13 | test('@minor plan screen — mismatch detection for struggling persona', async ({ page }) => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                        "column": 20,
+                        "line": 10
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/run|ride|swim/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m\n\n   8 |   // All three sports should appear in the week view\n   9 |   const planText = await page.locator('[data-testid=\"plan-screen\"]').textContent()\n> 10 |   expect(planText).toMatch(/run|ride|swim/i)\n     |                    ^\n  11 | })\n  12 |\n  13 | test('@minor plan screen — mismatch detection for struggling persona', async ({ page }) => {\n    at /Users/richardstow/athlete-coach/tests/e2e/plan.spec.js:10:20"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:07.103Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—-week-view-renders-sessions/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—-week-view-renders-sessions/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—-week-view-renders-sessions/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                    "column": 20,
+                    "line": 10
+                  }
+                },
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 1706,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/run|ride|swim/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/run|ride|swim/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m\n    at /Users/richardstow/athlete-coach/tests/e2e/plan.spec.js:10:20",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                      "column": 20,
+                      "line": 10
+                    },
+                    "snippet": "   8 |   // All three sports should appear in the week view\n   9 |   const planText = await page.locator('[data-testid=\"plan-screen\"]').textContent()\n> 10 |   expect(planText).toMatch(/run|ride|swim/i)\n     |                    ^\n  11 | })\n  12 |\n  13 | test('@minor plan screen — mismatch detection for struggling persona', async ({ page }) => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                        "column": 20,
+                        "line": 10
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/run|ride|swim/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m\n\n   8 |   // All three sports should appear in the week view\n   9 |   const planText = await page.locator('[data-testid=\"plan-screen\"]').textContent()\n> 10 |   expect(planText).toMatch(/run|ride|swim/i)\n     |                    ^\n  11 | })\n  12 |\n  13 | test('@minor plan screen — mismatch detection for struggling persona', async ({ page }) => {\n    at /Users/richardstow/athlete-coach/tests/e2e/plan.spec.js:10:20"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-03-22T19:29:09.403Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—-week-view-renders-sessions-retry1/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—-week-view-renders-sessions-retry1/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—-week-view-renders-sessions-retry1/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—-week-view-renders-sessions-retry1/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                    "column": 20,
+                    "line": 10
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "3be062588c41a0402820-2750f58c6a7e7b49b9cb",
+          "file": "plan.spec.js",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "@minor plan screen — mismatch detection for struggling persona",
+          "ok": false,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 1659,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/missed|proposed|adjust|pending/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/missed|proposed|adjust|pending/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m\n    at /Users/richardstow/athlete-coach/tests/e2e/plan.spec.js:19:20",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                      "column": 20,
+                      "line": 19
+                    },
+                    "snippet": "  17 |   // Should see pending proposals or mismatch indicators\n  18 |   const planText = await page.locator('[data-testid=\"plan-screen\"]').textContent()\n> 19 |   expect(planText).toMatch(/missed|proposed|adjust|pending/i)\n     |                    ^\n  20 | })\n  21 |\n  22 | test('@major plan — accept a pending proposal', async ({ page }) => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                        "column": 20,
+                        "line": 19
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/missed|proposed|adjust|pending/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m\n\n  17 |   // Should see pending proposals or mismatch indicators\n  18 |   const planText = await page.locator('[data-testid=\"plan-screen\"]').textContent()\n> 19 |   expect(planText).toMatch(/missed|proposed|adjust|pending/i)\n     |                    ^\n  20 | })\n  21 |\n  22 | test('@major plan — accept a pending proposal', async ({ page }) => {\n    at /Users/richardstow/athlete-coach/tests/e2e/plan.spec.js:19:20"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:11.827Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—--71a12-tion-for-struggling-persona/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—--71a12-tion-for-struggling-persona/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—--71a12-tion-for-struggling-persona/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                    "column": 20,
+                    "line": 19
+                  }
+                },
+                {
+                  "workerIndex": 9,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 1613,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/missed|proposed|adjust|pending/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/missed|proposed|adjust|pending/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m\n    at /Users/richardstow/athlete-coach/tests/e2e/plan.spec.js:19:20",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                      "column": 20,
+                      "line": 19
+                    },
+                    "snippet": "  17 |   // Should see pending proposals or mismatch indicators\n  18 |   const planText = await page.locator('[data-testid=\"plan-screen\"]').textContent()\n> 19 |   expect(planText).toMatch(/missed|proposed|adjust|pending/i)\n     |                    ^\n  20 | })\n  21 |\n  22 | test('@major plan — accept a pending proposal', async ({ page }) => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                        "column": 20,
+                        "line": 19
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/missed|proposed|adjust|pending/i\u001b[39m\nReceived string:  \u001b[31m\"Set a goal event or target in Settings to track your progress here.↺ Review & Rebuild Plan+ Tell coach about changes to your schedule...← prevThis week0 sessionsnext →Sessions0/3Strength0/2No sessions scheduled for this week.\"\u001b[39m\n\n  17 |   // Should see pending proposals or mismatch indicators\n  18 |   const planText = await page.locator('[data-testid=\"plan-screen\"]').textContent()\n> 19 |   expect(planText).toMatch(/missed|proposed|adjust|pending/i)\n     |                    ^\n  20 | })\n  21 |\n  22 | test('@major plan — accept a pending proposal', async ({ page }) => {\n    at /Users/richardstow/athlete-coach/tests/e2e/plan.spec.js:19:20"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-03-22T19:29:14.188Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—--71a12-tion-for-struggling-persona-retry1/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—--71a12-tion-for-struggling-persona-retry1/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—--71a12-tion-for-struggling-persona-retry1/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/richardstow/athlete-coach/test-results/plan--minor-plan-screen-—--71a12-tion-for-struggling-persona-retry1/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/plan.spec.js",
+                    "column": 20,
+                    "line": 19
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "3be062588c41a0402820-faa7614ae812032043bb",
+          "file": "plan.spec.js",
+          "line": 13,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "progress.spec.js",
+      "file": "progress.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "@minor progress — macro view renders for runner",
+          "ok": true,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1582,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:16.542Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4da23be4a140412adbd2-c1c772a596d1455288eb",
+          "file": "progress.spec.js",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "@minor progress — micro view renders health markers",
+          "ok": false,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 2144,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/HRV|sleep|recovery|readiness|resting/i\u001b[39m\nReceived string:  \u001b[31m\"Progressmacromicrobase_buildCurrent phase: base_build.This week's targetsSessions (target 25/wk)23 doneNutrition days logged (target 7)0 daysThis week's sessions✓Push Day — Chest & TricepsMon 16 Mar · 60–75min✓Easy RunMon 16 Mar · Z1-Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 50–60min✓ITB Rehab SessionMon 16 Mar · 30–40min✓Pool Technique SessionMon 16 Mar · 45–55min✓Short Easy RunTue 17 Mar · Z2 · 25–35min✓Indoor IntervalsTue 17 Mar · 60–75min✓Tempo RunTue 17 Mar · Z3-Z4 · 50–60min✓Race Pace SessionTue 17 Mar · Z3-Z4 · 60–70min✓Tempo RunWed 18 Mar · Z3 · 45–55min✓Pull Day — Back & BicepsWed 18 Mar · 60–75min✓Easy RunThu 19 Mar · Z2 · 45–55min✓Hip StrengtheningThu 19 Mar · 25–35min✓Easy RunThu 19 Mar · Z2 · 40–50min✓Easy RunThu 19 Mar · Z1-Z2 · 35–45min✓Strides SessionFri 20 Mar · 30–40min✓Easy RunFri 20 Mar · Z2 · 30–40min✓Leg DayFri 20 Mar · 60–80min!Long RunSat 21 Mar · Z2 · 80–100min!Long Ride + Brick RunSat 21 Mar · 150–180min✓ITB Rehab + StrengthSun 22 Mar · 40–50min✓Taper Long RunSun 22 Mar · Z2 · 85–100min✓Open Water SimSun 22 Mar · 40–50min✓Long RunSun 22 Mar · Z2 · 100–120minPersonal BestsLongest sessionLong Ride80.0km→Fastest pace (5km+)16.0km · Tempo Session3:38/km→\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/HRV|sleep|recovery|readiness|resting/i\u001b[39m\nReceived string:  \u001b[31m\"Progressmacromicrobase_buildCurrent phase: base_build.This week's targetsSessions (target 25/wk)23 doneNutrition days logged (target 7)0 daysThis week's sessions✓Push Day — Chest & TricepsMon 16 Mar · 60–75min✓Easy RunMon 16 Mar · Z1-Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 50–60min✓ITB Rehab SessionMon 16 Mar · 30–40min✓Pool Technique SessionMon 16 Mar · 45–55min✓Short Easy RunTue 17 Mar · Z2 · 25–35min✓Indoor IntervalsTue 17 Mar · 60–75min✓Tempo RunTue 17 Mar · Z3-Z4 · 50–60min✓Race Pace SessionTue 17 Mar · Z3-Z4 · 60–70min✓Tempo RunWed 18 Mar · Z3 · 45–55min✓Pull Day — Back & BicepsWed 18 Mar · 60–75min✓Easy RunThu 19 Mar · Z2 · 45–55min✓Hip StrengtheningThu 19 Mar · 25–35min✓Easy RunThu 19 Mar · Z2 · 40–50min✓Easy RunThu 19 Mar · Z1-Z2 · 35–45min✓Strides SessionFri 20 Mar · 30–40min✓Easy RunFri 20 Mar · Z2 · 30–40min✓Leg DayFri 20 Mar · 60–80min!Long RunSat 21 Mar · Z2 · 80–100min!Long Ride + Brick RunSat 21 Mar · 150–180min✓ITB Rehab + StrengthSun 22 Mar · 40–50min✓Taper Long RunSun 22 Mar · Z2 · 85–100min✓Open Water SimSun 22 Mar · 40–50min✓Long RunSun 22 Mar · Z2 · 100–120minPersonal BestsLongest sessionLong Ride80.0km→Fastest pace (5km+)16.0km · Tempo Session3:38/km→\"\u001b[39m\n    at /Users/richardstow/athlete-coach/tests/e2e/progress.spec.js:25:24",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/progress.spec.js",
+                      "column": 24,
+                      "line": 25
+                    },
+                    "snippet": "  23 |   const progressText = await page.locator('[data-testid=\"progress-screen\"]').textContent()\n  24 |   // Micro view should show HRV / sleep / recovery data\n> 25 |   expect(progressText).toMatch(/HRV|sleep|recovery|readiness|resting/i)\n     |                        ^\n  26 | })\n  27 |\n  28 | test('@minor progress — bodybuilder sees strength metrics not run pace', async ({ page }) => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/progress.spec.js",
+                        "column": 24,
+                        "line": 25
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/HRV|sleep|recovery|readiness|resting/i\u001b[39m\nReceived string:  \u001b[31m\"Progressmacromicrobase_buildCurrent phase: base_build.This week's targetsSessions (target 25/wk)23 doneNutrition days logged (target 7)0 daysThis week's sessions✓Push Day — Chest & TricepsMon 16 Mar · 60–75min✓Easy RunMon 16 Mar · Z1-Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 50–60min✓ITB Rehab SessionMon 16 Mar · 30–40min✓Pool Technique SessionMon 16 Mar · 45–55min✓Short Easy RunTue 17 Mar · Z2 · 25–35min✓Indoor IntervalsTue 17 Mar · 60–75min✓Tempo RunTue 17 Mar · Z3-Z4 · 50–60min✓Race Pace SessionTue 17 Mar · Z3-Z4 · 60–70min✓Tempo RunWed 18 Mar · Z3 · 45–55min✓Pull Day — Back & BicepsWed 18 Mar · 60–75min✓Easy RunThu 19 Mar · Z2 · 45–55min✓Hip StrengtheningThu 19 Mar · 25–35min✓Easy RunThu 19 Mar · Z2 · 40–50min✓Easy RunThu 19 Mar · Z1-Z2 · 35–45min✓Strides SessionFri 20 Mar · 30–40min✓Easy RunFri 20 Mar · Z2 · 30–40min✓Leg DayFri 20 Mar · 60–80min!Long RunSat 21 Mar · Z2 · 80–100min!Long Ride + Brick RunSat 21 Mar · 150–180min✓ITB Rehab + StrengthSun 22 Mar · 40–50min✓Taper Long RunSun 22 Mar · Z2 · 85–100min✓Open Water SimSun 22 Mar · 40–50min✓Long RunSun 22 Mar · Z2 · 100–120minPersonal BestsLongest sessionLong Ride80.0km→Fastest pace (5km+)16.0km · Tempo Session3:38/km→\"\u001b[39m\n\n  23 |   const progressText = await page.locator('[data-testid=\"progress-screen\"]').textContent()\n  24 |   // Micro view should show HRV / sleep / recovery data\n> 25 |   expect(progressText).toMatch(/HRV|sleep|recovery|readiness|resting/i)\n     |                        ^\n  26 | })\n  27 |\n  28 | test('@minor progress — bodybuilder sees strength metrics not run pace', async ({ page }) => {\n    at /Users/richardstow/athlete-coach/tests/e2e/progress.spec.js:25:24"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:18.481Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/progress--minor-progress-—-micro-view-renders-health-markers/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/progress--minor-progress-—-micro-view-renders-health-markers/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/progress--minor-progress-—-micro-view-renders-health-markers/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/progress.spec.js",
+                    "column": 24,
+                    "line": 25
+                  }
+                },
+                {
+                  "workerIndex": 11,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 2271,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/HRV|sleep|recovery|readiness|resting/i\u001b[39m\nReceived string:  \u001b[31m\"Progressmacromicrobase_buildCurrent phase: base_build.This week's targetsSessions (target 25/wk)23 doneNutrition days logged (target 7)0 daysThis week's sessions✓Push Day — Chest & TricepsMon 16 Mar · 60–75min✓Easy RunMon 16 Mar · Z1-Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 50–60min✓ITB Rehab SessionMon 16 Mar · 30–40min✓Pool Technique SessionMon 16 Mar · 45–55min✓Short Easy RunTue 17 Mar · Z2 · 25–35min✓Indoor IntervalsTue 17 Mar · 60–75min✓Tempo RunTue 17 Mar · Z3-Z4 · 50–60min✓Race Pace SessionTue 17 Mar · Z3-Z4 · 60–70min✓Tempo RunWed 18 Mar · Z3 · 45–55min✓Pull Day — Back & BicepsWed 18 Mar · 60–75min✓Easy RunThu 19 Mar · Z2 · 45–55min✓Hip StrengtheningThu 19 Mar · 25–35min✓Easy RunThu 19 Mar · Z2 · 40–50min✓Easy RunThu 19 Mar · Z1-Z2 · 35–45min✓Strides SessionFri 20 Mar · 30–40min✓Easy RunFri 20 Mar · Z2 · 30–40min✓Leg DayFri 20 Mar · 60–80min!Long RunSat 21 Mar · Z2 · 80–100min!Long Ride + Brick RunSat 21 Mar · 150–180min✓ITB Rehab + StrengthSun 22 Mar · 40–50min✓Taper Long RunSun 22 Mar · Z2 · 85–100min✓Open Water SimSun 22 Mar · 40–50min✓Long RunSun 22 Mar · Z2 · 100–120minPersonal BestsLongest sessionLong Ride80.0km→Fastest pace (5km+)16.0km · Tempo Session3:38/km→\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/HRV|sleep|recovery|readiness|resting/i\u001b[39m\nReceived string:  \u001b[31m\"Progressmacromicrobase_buildCurrent phase: base_build.This week's targetsSessions (target 25/wk)23 doneNutrition days logged (target 7)0 daysThis week's sessions✓Push Day — Chest & TricepsMon 16 Mar · 60–75min✓Easy RunMon 16 Mar · Z1-Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 50–60min✓ITB Rehab SessionMon 16 Mar · 30–40min✓Pool Technique SessionMon 16 Mar · 45–55min✓Short Easy RunTue 17 Mar · Z2 · 25–35min✓Indoor IntervalsTue 17 Mar · 60–75min✓Tempo RunTue 17 Mar · Z3-Z4 · 50–60min✓Race Pace SessionTue 17 Mar · Z3-Z4 · 60–70min✓Tempo RunWed 18 Mar · Z3 · 45–55min✓Pull Day — Back & BicepsWed 18 Mar · 60–75min✓Easy RunThu 19 Mar · Z2 · 45–55min✓Hip StrengtheningThu 19 Mar · 25–35min✓Easy RunThu 19 Mar · Z2 · 40–50min✓Easy RunThu 19 Mar · Z1-Z2 · 35–45min✓Strides SessionFri 20 Mar · 30–40min✓Easy RunFri 20 Mar · Z2 · 30–40min✓Leg DayFri 20 Mar · 60–80min!Long RunSat 21 Mar · Z2 · 80–100min!Long Ride + Brick RunSat 21 Mar · 150–180min✓ITB Rehab + StrengthSun 22 Mar · 40–50min✓Taper Long RunSun 22 Mar · Z2 · 85–100min✓Open Water SimSun 22 Mar · 40–50min✓Long RunSun 22 Mar · Z2 · 100–120minPersonal BestsLongest sessionLong Ride80.0km→Fastest pace (5km+)16.0km · Tempo Session3:38/km→\"\u001b[39m\n    at /Users/richardstow/athlete-coach/tests/e2e/progress.spec.js:25:24",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/progress.spec.js",
+                      "column": 24,
+                      "line": 25
+                    },
+                    "snippet": "  23 |   const progressText = await page.locator('[data-testid=\"progress-screen\"]').textContent()\n  24 |   // Micro view should show HRV / sleep / recovery data\n> 25 |   expect(progressText).toMatch(/HRV|sleep|recovery|readiness|resting/i)\n     |                        ^\n  26 | })\n  27 |\n  28 | test('@minor progress — bodybuilder sees strength metrics not run pace', async ({ page }) => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/progress.spec.js",
+                        "column": 24,
+                        "line": 25
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatch\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected pattern: \u001b[32m/HRV|sleep|recovery|readiness|resting/i\u001b[39m\nReceived string:  \u001b[31m\"Progressmacromicrobase_buildCurrent phase: base_build.This week's targetsSessions (target 25/wk)23 doneNutrition days logged (target 7)0 daysThis week's sessions✓Push Day — Chest & TricepsMon 16 Mar · 60–75min✓Easy RunMon 16 Mar · Z1-Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 40–50min✓Easy RunMon 16 Mar · Z2 · 50–60min✓ITB Rehab SessionMon 16 Mar · 30–40min✓Pool Technique SessionMon 16 Mar · 45–55min✓Short Easy RunTue 17 Mar · Z2 · 25–35min✓Indoor IntervalsTue 17 Mar · 60–75min✓Tempo RunTue 17 Mar · Z3-Z4 · 50–60min✓Race Pace SessionTue 17 Mar · Z3-Z4 · 60–70min✓Tempo RunWed 18 Mar · Z3 · 45–55min✓Pull Day — Back & BicepsWed 18 Mar · 60–75min✓Easy RunThu 19 Mar · Z2 · 45–55min✓Hip StrengtheningThu 19 Mar · 25–35min✓Easy RunThu 19 Mar · Z2 · 40–50min✓Easy RunThu 19 Mar · Z1-Z2 · 35–45min✓Strides SessionFri 20 Mar · 30–40min✓Easy RunFri 20 Mar · Z2 · 30–40min✓Leg DayFri 20 Mar · 60–80min!Long RunSat 21 Mar · Z2 · 80–100min!Long Ride + Brick RunSat 21 Mar · 150–180min✓ITB Rehab + StrengthSun 22 Mar · 40–50min✓Taper Long RunSun 22 Mar · Z2 · 85–100min✓Open Water SimSun 22 Mar · 40–50min✓Long RunSun 22 Mar · Z2 · 100–120minPersonal BestsLongest sessionLong Ride80.0km→Fastest pace (5km+)16.0km · Tempo Session3:38/km→\"\u001b[39m\n\n  23 |   const progressText = await page.locator('[data-testid=\"progress-screen\"]').textContent()\n  24 |   // Micro view should show HRV / sleep / recovery data\n> 25 |   expect(progressText).toMatch(/HRV|sleep|recovery|readiness|resting/i)\n     |                        ^\n  26 | })\n  27 |\n  28 | test('@minor progress — bodybuilder sees strength metrics not run pace', async ({ page }) => {\n    at /Users/richardstow/athlete-coach/tests/e2e/progress.spec.js:25:24"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-03-22T19:29:21.054Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/progress--minor-progress-—-micro-view-renders-health-markers-retry1/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/progress--minor-progress-—-micro-view-renders-health-markers-retry1/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/progress--minor-progress-—-micro-view-renders-health-markers-retry1/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/richardstow/athlete-coach/test-results/progress--minor-progress-—-micro-view-renders-health-markers-retry1/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/progress.spec.js",
+                    "column": 24,
+                    "line": 25
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "4da23be4a140412adbd2-fa39cb04fe245c50da7e",
+          "file": "progress.spec.js",
+          "line": 14,
+          "column": 1
+        },
+        {
+          "title": "@minor progress — bodybuilder sees strength metrics not run pace",
+          "ok": true,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 12,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1496,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:24.071Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4da23be4a140412adbd2-072fe59fd5362c20cf6b",
+          "file": "progress.spec.js",
+          "line": 28,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "settings.spec.js",
+      "file": "settings.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "@minor settings — profile weight saves and persists",
+          "ok": false,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 12,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 5494,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"58\"\u001b[39m\nReceived: \u001b[31m\"\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"58\"\u001b[39m\nReceived: \u001b[31m\"\"\u001b[39m\n    at /Users/richardstow/athlete-coach/tests/e2e/settings.spec.js:27:23",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                      "column": 23,
+                      "line": 27
+                    },
+                    "snippet": "  25 |\n  26 |   const weightValue = await page.locator('[data-testid=\"weight-input\"]').inputValue()\n> 27 |   expect(weightValue).toBe('58')\n     |                       ^\n  28 | })\n  29 |\n  30 | test('@minor settings — coaching sliders persist', async ({ page }) => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                        "column": 23,
+                        "line": 27
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"58\"\u001b[39m\nReceived: \u001b[31m\"\"\u001b[39m\n\n  25 |\n  26 |   const weightValue = await page.locator('[data-testid=\"weight-input\"]').inputValue()\n> 27 |   expect(weightValue).toBe('58')\n     |                       ^\n  28 | })\n  29 |\n  30 | test('@minor settings — coaching sliders persist', async ({ page }) => {\n    at /Users/richardstow/athlete-coach/tests/e2e/settings.spec.js:27:23"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:25.854Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-profile-weight-saves-and-persists/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-profile-weight-saves-and-persists/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-profile-weight-saves-and-persists/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                    "column": 23,
+                    "line": 27
+                  }
+                },
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7205,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"58\"\u001b[39m\nReceived: \u001b[31m\"\"\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"58\"\u001b[39m\nReceived: \u001b[31m\"\"\u001b[39m\n    at /Users/richardstow/athlete-coach/tests/e2e/settings.spec.js:27:23",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                      "column": 23,
+                      "line": 27
+                    },
+                    "snippet": "  25 |\n  26 |   const weightValue = await page.locator('[data-testid=\"weight-input\"]').inputValue()\n> 27 |   expect(weightValue).toBe('58')\n     |                       ^\n  28 | })\n  29 |\n  30 | test('@minor settings — coaching sliders persist', async ({ page }) => {"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                        "column": 23,
+                        "line": 27
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"58\"\u001b[39m\nReceived: \u001b[31m\"\"\u001b[39m\n\n  25 |\n  26 |   const weightValue = await page.locator('[data-testid=\"weight-input\"]').inputValue()\n> 27 |   expect(weightValue).toBe('58')\n     |                       ^\n  28 | })\n  29 |\n  30 | test('@minor settings — coaching sliders persist', async ({ page }) => {\n    at /Users/richardstow/athlete-coach/tests/e2e/settings.spec.js:27:23"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-03-22T19:29:31.790Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-profile-weight-saves-and-persists-retry1/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-profile-weight-saves-and-persists-retry1/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-profile-weight-saves-and-persists-retry1/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-profile-weight-saves-and-persists-retry1/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                    "column": 23,
+                    "line": 27
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "90e6e24ee78bd89d0a34-20c2a98424172ba9d18f",
+          "file": "settings.spec.js",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "@minor settings — coaching sliders persist",
+          "ok": false,
+          "tags": [
+            "minor"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 15,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 60097,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                        "column": 14,
+                        "line": 45
+                      },
+                      "message": "Error: page.click: Test timeout of 60000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-testid=\"save-settings\"]')\u001b[22m\n\u001b[2m    - locator resolved to <button data-testid=\"save-settings\">Save</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div>…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div data-testid=\"test-mode-banner\">⚠ TEST MODE — test database active</div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div>…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    28 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div>…</div> from <div>…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\u001b[2m       - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div data-testid=\"test-mode-banner\">⚠ TEST MODE — test database active</div> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\u001b[2m       - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div>…</div> from <div>…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\u001b[2m       - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div>…</div> from <div>…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div>…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\n\n  43 |     el.dispatchEvent(new Event('change', { bubbles: true }))\n  44 |   })\n> 45 |   await page.click('[data-testid=\"save-settings\"]')\n     |              ^\n  46 |   await page.waitForTimeout(1000)\n  47 |\n  48 |   await page.reload()\n    at /Users/richardstow/athlete-coach/tests/e2e/settings.spec.js:45:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:39.808Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-coaching-sliders-persist/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-coaching-sliders-persist/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-coaching-sliders-persist/error-context.md"
+                    }
+                  ]
+                },
+                {
+                  "workerIndex": 16,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 3333,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: >= \u001b[32m70\u001b[39m\nReceived:    \u001b[31m50\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: >= \u001b[32m70\u001b[39m\nReceived:    \u001b[31m50\u001b[39m\n    at /Users/richardstow/athlete-coach/tests/e2e/settings.spec.js:56:33",
+                    "location": {
+                      "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                      "column": 33,
+                      "line": 56
+                    },
+                    "snippet": "  54 |\n  55 |   const sliderValue = await page.locator('[data-testid=\"slider-tone\"]').inputValue()\n> 56 |   expect(parseInt(sliderValue)).toBeGreaterThanOrEqual(70) // Allow for rounding\n     |                                 ^\n  57 | })\n  58 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                        "column": 33,
+                        "line": 56
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThanOrEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: >= \u001b[32m70\u001b[39m\nReceived:    \u001b[31m50\u001b[39m\n\n  54 |\n  55 |   const sliderValue = await page.locator('[data-testid=\"slider-tone\"]').inputValue()\n> 56 |   expect(parseInt(sliderValue)).toBeGreaterThanOrEqual(70) // Allow for rounding\n     |                                 ^\n  57 | })\n  58 |\n    at /Users/richardstow/athlete-coach/tests/e2e/settings.spec.js:56:33"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 1,
+                  "startTime": "2026-03-22T19:30:40.711Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-coaching-sliders-persist-retry1/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-coaching-sliders-persist-retry1/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-coaching-sliders-persist-retry1/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/Users/richardstow/athlete-coach/test-results/settings--minor-settings-—-coaching-sliders-persist-retry1/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/Users/richardstow/athlete-coach/tests/e2e/settings.spec.js",
+                    "column": 33,
+                    "line": 56
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "90e6e24ee78bd89d0a34-1b17ba21c72cbb1bc7df",
+          "file": "settings.spec.js",
+          "line": 30,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "smoke.spec.js",
+      "file": "smoke.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "@smoke bodybuilder — home loads with strength context",
+          "ok": true,
+          "tags": [
+            "smoke"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 8768,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:28.497Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2c14808d47b386fba9eb-60a8143abcea186b8303",
+          "file": "smoke.spec.js",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "@smoke female_cycle — home loads showing cycle context",
+          "ok": true,
+          "tags": [
+            "smoke"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1515,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:37.569Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2c14808d47b386fba9eb-6ac06b634b025032c699",
+          "file": "smoke.spec.js",
+          "line": 13,
+          "column": 1
+        },
+        {
+          "title": "@smoke injured — home loads and injury is flagged",
+          "ok": true,
+          "tags": [
+            "smoke"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1571,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:39.089Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2c14808d47b386fba9eb-6666b9169728bd50f64a",
+          "file": "smoke.spec.js",
+          "line": 20,
+          "column": 1
+        },
+        {
+          "title": "@smoke elite_taper — home loads for taper phase",
+          "ok": true,
+          "tags": [
+            "smoke"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1482,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:40.664Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2c14808d47b386fba9eb-ee931719914134a5bd16",
+          "file": "smoke.spec.js",
+          "line": 27,
+          "column": 1
+        },
+        {
+          "title": "@smoke struggling — home loads for struggling persona",
+          "ok": true,
+          "tags": [
+            "smoke"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1549,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:42.150Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2c14808d47b386fba9eb-eba4e42251d15508ee95",
+          "file": "smoke.spec.js",
+          "line": 32,
+          "column": 1
+        },
+        {
+          "title": "@smoke multisport — home loads for multisport athlete",
+          "ok": true,
+          "tags": [
+            "smoke"
+          ],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1544,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-03-22T19:29:43.703Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2c14808d47b386fba9eb-39ae0e6f1f445795692c",
+          "file": "smoke.spec.js",
+          "line": 37,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-03-22T19:26:55.305Z",
+    "duration": 229224.075,
+    "expected": 11,
+    "skipped": 0,
+    "unexpected": 8,
+    "flaky": 0
+  }
+}

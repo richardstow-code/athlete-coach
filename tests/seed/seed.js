@@ -116,6 +116,11 @@ export async function seedAll() {
 
   // ── 2. athlete_settings ──
   console.log('  Seeding athlete_settings...')
+  const ALL_HINTS_DISMISSED = {
+    home_briefing: '2026-01-01', plan_sessions: '2026-01-01', chat_context: '2026-01-01',
+    fuel_logging: '2026-01-01', progress_views: '2026-01-01', settings_overview: '2026-01-01',
+  }
+
   await ins('athlete_settings', [
     {
       user_id: PERSONA_IDS.bodybuilder,
@@ -129,6 +134,7 @@ export async function seedAll() {
       coaching_reach: 30,
       onboarding_complete: true,
       races: [],
+      hints_dismissed: ALL_HINTS_DISMISSED,
       subscription_tier: 'founder',
     },
     {
@@ -146,6 +152,7 @@ export async function seedAll() {
       cycle_last_period_date: daysAgo(18),
       onboarding_complete: true,
       races: [{ name: 'Vienna Marathon', date: '2026-04-26', goal_time: '3:45:00' }],
+      hints_dismissed: ALL_HINTS_DISMISSED,
       subscription_tier: 'founder',
     },
     {
@@ -160,6 +167,7 @@ export async function seedAll() {
       coaching_reach: 50,
       onboarding_complete: true,
       races: [{ name: 'Berlin Marathon', date: '2026-09-27', goal_time: '3:30:00' }],
+      hints_dismissed: ALL_HINTS_DISMISSED,
       subscription_tier: 'founder',
     },
     {
@@ -174,6 +182,7 @@ export async function seedAll() {
       coaching_reach: 40,
       onboarding_complete: true,
       races: [{ name: 'London Marathon', date: '2026-04-26', goal_time: '2:45:00' }],
+      hints_dismissed: ALL_HINTS_DISMISSED,
       subscription_tier: 'founder',
     },
     {
@@ -189,6 +198,7 @@ export async function seedAll() {
       sleep_hours_typical: 6.5,
       onboarding_complete: true,
       races: [{ name: 'Frankfurt Marathon', date: '2026-10-25', goal_time: '4:15:00' }],
+      hints_dismissed: ALL_HINTS_DISMISSED,
       subscription_tier: 'founder',
     },
     {
@@ -203,6 +213,7 @@ export async function seedAll() {
       coaching_reach: 50,
       onboarding_complete: true,
       races: [{ name: 'Ironman 70.3 Salzburg', date: '2026-06-14', goal_time: '5:30:00' }],
+      hints_dismissed: ALL_HINTS_DISMISSED,
       subscription_tier: 'founder',
     },
   ])

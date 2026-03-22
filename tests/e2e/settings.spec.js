@@ -51,9 +51,9 @@ test('@minor settings — coaching sliders persist', async ({ page }) => {
     return el && parseInt(el.value) !== 50
   }, { timeout: 10000 })
 
-  // Change tone slider
+  // Change tone slider (use native value setter so React detects the change)
   await page.locator('[data-testid="slider-tone"]').evaluate(el => {
-    el.value = '75'
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, '75')
     el.dispatchEvent(new Event('input', { bubbles: true }))
     el.dispatchEvent(new Event('change', { bubbles: true }))
   })
