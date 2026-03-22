@@ -5,16 +5,22 @@ test('@minor plan screen — week view renders sessions', async ({ page }) => {
   await loginAs(page, 'multisport')
   await page.click('[data-testid="nav-plan"]')
   await page.waitForSelector('[data-testid="plan-screen"]')
+  // Wait for sessions to load (async fetch)
+  await page.waitForSelector('[data-testid="session-row"]', { timeout: 10000 })
   // All three sports should appear in the week view
   const planText = await page.locator('[data-testid="plan-screen"]').textContent()
   expect(planText).toMatch(/run|ride|swim/i)
 })
 
 test('@minor plan screen — mismatch detection for struggling persona', async ({ page }) => {
-  await loginAs(page, 'struggling') // Has many missed sessions
+  await loginAs(page, 'struggling') // Has many missed sessions + 1 pending schedule_change
   await page.click('[data-testid="nav-plan"]')
   await page.waitForSelector('[data-testid="plan-screen"]')
-  // Should see pending proposals or mismatch indicators
+  // Wait for schedule_changes to load (seeded: 1 pending adjustment)
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="plan-screen"]')
+    return el && el.textContent.match(/adjust|pending/i)
+  }, { timeout: 10000 })
   const planText = await page.locator('[data-testid="plan-screen"]').textContent()
   expect(planText).toMatch(/missed|proposed|adjust|pending/i)
 })
