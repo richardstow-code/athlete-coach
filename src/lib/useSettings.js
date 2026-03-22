@@ -9,8 +9,12 @@ export function useSettings() {
   })
 
   useEffect(() => {
-    supabase.from('athlete_settings').select('*,hr_zones').maybeSingle()
-      .then(({ data }) => { if (data) setSettings(data) })
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id
+      if (!uid) return
+      supabase.from('athlete_settings').select('*,hr_zones').eq('user_id', uid).maybeSingle()
+        .then(({ data }) => { if (data) setSettings(data) })
+    })
   }, [])
 
   return settings

@@ -29,9 +29,13 @@ export default function OnboardingHints({ hintId, title, body, position = 'botto
     let cancelled = false
 
     async function check() {
+      const { data: { session } } = await supabase.auth.getSession()
+      const uid = session?.user?.id
+      if (!uid) return
       const { data: settings } = await supabase
         .from('athlete_settings')
         .select('hints_dismissed')
+        .eq('user_id', uid)
         .maybeSingle()
 
       if (cancelled) return
@@ -59,12 +63,14 @@ export default function OnboardingHints({ hintId, title, body, position = 'botto
     setVisible(false)
     setDismissed(true)
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' })
-    const { data: settings } = await supabase.from('athlete_settings').select('hints_dismissed').maybeSingle()
-    const existing = settings?.hints_dismissed || {}
     const { data: { user } } = await supabase.auth.getUser()
+    const uid = user?.id
+    if (!uid) return
+    const { data: settings } = await supabase.from('athlete_settings').select('hints_dismissed').eq('user_id', uid).maybeSingle()
+    const existing = settings?.hints_dismissed || {}
     // Upsert so it works even if the row doesn't exist yet
     await supabase.from('athlete_settings').upsert(
-      { user_id: user?.id, hints_dismissed: { ...existing, [hintId]: today } },
+      { user_id: uid, hints_dismissed: { ...existing, [hintId]: today } },
       { onConflict: 'user_id' }
     )
   }, [hintId])
@@ -76,9 +82,11 @@ export default function OnboardingHints({ hintId, title, body, position = 'botto
     const allDismissed = {}
     ALL_HINT_IDS.forEach(id => { allDismissed[id] = today })
     const { data: { user } } = await supabase.auth.getUser()
+    const uid = user?.id
+    if (!uid) return
     // Upsert so it works even if the row doesn't exist yet
     await supabase.from('athlete_settings').upsert(
-      { user_id: user?.id, hints_dismissed: allDismissed },
+      { user_id: uid, hints_dismissed: allDismissed },
       { onConflict: 'user_id' }
     )
   }
