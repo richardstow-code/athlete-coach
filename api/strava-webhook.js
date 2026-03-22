@@ -1,15 +1,16 @@
 /**
- * Vercel Serverless Function — Strava Webhook Handler
+ * Vercel Serverless Function — Strava Webhook Handler (Stage 1)
  *
- * Replaces the n8n Strava sync workflow.
- * Handles:
- *   GET  — Strava verification handshake
- *   POST — New activity notification → enrich → Claude feedback → Supabase
+ * Stage 1 only: receive event → fetch activity → write to DB with
+ * enrichment_status='pending' → return 200 immediately.
+ *
+ * Stage 2 (enrichment, streams, coaching feedback) is handled by
+ * the Supabase edge function `enrich-activity`, triggered by a
+ * Supabase database webhook on activities INSERT.
  */
 
 const SUPABASE_URL = 'https://yjuhzmknabedjklsgbje.supabase.co'
 const TZ = 'Europe/Vienna'
-// Single-user app — user_id required for RLS-aware tables even with service_role
 const ATHLETE_USER_ID = '40cfe68e-faea-491c-b410-0093572f02d6'
 
 function viennaDate(ts) {
@@ -44,34 +45,9 @@ async function fetchActivity(activityId, token) {
   return res.json()
 }
 
-// ── Enrichment: pace variation, workout classification ───────────────────────
+// ── Minimal enrichment: pace and date ────────────────────────────────────────
 
-function enrichActivity(activity) {
-  const splits = activity.splits_metric || []
-
-  let paceVariation = 0
-  if (splits.length > 1) {
-    const paces = splits
-      .filter(s => s.distance > 100 && s.moving_time > 0)
-      .map(s => s.moving_time / (s.distance / 1000)) // sec/km
-    if (paces.length > 1) {
-      paceVariation = Math.max(...paces) - Math.min(...paces)
-    }
-  }
-
-  const workoutType = paceVariation > 45 ? 'intervals'
-    : paceVariation > 20 ? 'tempo'
-    : 'steady'
-
-  const rawData = {
-    splits_metric: splits,
-    laps: activity.laps || [],
-    zones: activity.zones || null,
-    pace_variation: Math.round(paceVariation),
-    workout_type: workoutType,
-  }
-
-  // Parse pace from splits for display (fastest split as benchmark)
+function buildActivityRow(activity) {
   let pacePerKm = null
   if (activity.average_speed && activity.average_speed > 0) {
     const secPerKm = 1000 / activity.average_speed
@@ -80,154 +56,43 @@ function enrichActivity(activity) {
     pacePerKm = `${mins}:${String(secs).padStart(2, '0')}`
   }
 
-  // date: use start_date_local YYYY-MM-DD portion (already local time from Strava)
   const date = activity.start_date_local
     ? activity.start_date_local.slice(0, 10)
     : viennaDate(activity.start_date ? new Date(activity.start_date).getTime() : Date.now())
 
+  const splits = activity.splits_metric || []
+  const paces = splits
+    .filter(s => s.distance > 100 && s.moving_time > 0)
+    .map(s => s.moving_time / (s.distance / 1000))
+  const paceVariation = paces.length > 1 ? Math.max(...paces) - Math.min(...paces) : 0
+  const workoutType = paceVariation > 45 ? 'intervals' : paceVariation > 20 ? 'tempo' : 'steady'
+
   return {
-    activityRow: {
-      strava_id: String(activity.id),
-      user_id: ATHLETE_USER_ID,
-      date,
-      name: activity.name,
-      type: activity.type,
-      distance_km: activity.distance ? (activity.distance / 1000).toFixed(2) : null,
-      duration_min: activity.moving_time ? Math.round(activity.moving_time / 60) : null,
-      avg_hr: activity.average_heartrate || null,
-      max_hr: activity.max_heartrate || null,
-      elevation_m: activity.total_elevation_gain || null,
-      pace_per_km: pacePerKm,
-      raw_data: rawData,
+    strava_id: String(activity.id),
+    user_id: ATHLETE_USER_ID,
+    date,
+    name: activity.name,
+    type: activity.type,
+    distance_km: activity.distance ? (activity.distance / 1000).toFixed(2) : null,
+    duration_min: activity.moving_time ? Math.round(activity.moving_time / 60) : null,
+    avg_hr: activity.average_heartrate || null,
+    max_hr: activity.max_heartrate || null,
+    elevation_m: activity.total_elevation_gain || null,
+    pace_per_km: pacePerKm,
+    avg_cadence: activity.average_cadence || null,
+    calories: activity.calories || null,
+    workout_type: workoutType,
+    raw_data: {
+      splits_metric: splits,
+      laps: activity.laps || [],
+      pace_variation: Math.round(paceVariation),
+      workout_type: workoutType,
     },
-    enriched: { splits, workoutType, paceVariation: Math.round(paceVariation) },
+    enrichment_status: 'pending',
   }
 }
 
-// ── Elevation classification (inlined — can't import from src/lib in Vercel API) ──
-
-function classifyElevation(elevationM, distanceKm) {
-  if (!elevationM || elevationM === 0 || !distanceKm) return 'flat'
-  const gainPerKm = elevationM / distanceKm
-  if (gainPerKm < 5)  return 'flat'
-  if (gainPerKm < 15) return 'rolling'
-  if (gainPerKm < 30) return 'hilly'
-  return 'mountainous'
-}
-
-const ELEVATION_WEEK_TARGETS = {
-  flat:        [100, 300],
-  rolling:     [200, 500],
-  hilly:       [400, 700],
-  mountainous: [600, 1000],
-}
-
-// ── Fetch athlete context for activity feedback ───────────────────────────────
-
-async function fetchAthleteContext(activityDate) {
-  const headers = {
-    'apikey': process.env.SUPABASE_SECRET_KEY,
-    'Authorization': `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
-  }
-  // Get athlete settings (races for elevation) and last 7 days of activities (weekly elevation)
-  const weekAgo = new Date(new Date(activityDate).getTime() - 6 * 24 * 60 * 60 * 1000)
-    .toISOString().slice(0, 10)
-
-  const [settingsRes, activitiesRes] = await Promise.all([
-    fetch(`${SUPABASE_URL}/rest/v1/athlete_settings?user_id=eq.${ATHLETE_USER_ID}&select=races,name,weight_kg,goal_type`, { headers }),
-    fetch(`${SUPABASE_URL}/rest/v1/activities?user_id=eq.${ATHLETE_USER_ID}&date=gte.${weekAgo}&select=elevation_m,date`, { headers }),
-  ])
-
-  const settings = settingsRes.ok ? (await settingsRes.json())[0] || null : null
-  const weekActivities = activitiesRes.ok ? await activitiesRes.json() : []
-
-  const today = activityDate || new Date().toISOString().slice(0, 10)
-  const upcoming = (settings?.races || [])
-    .filter(r => r.date >= today)
-    .sort((a, b) => a.date.localeCompare(b.date))
-  const nextRace = upcoming[0] || null
-
-  const raceElevM = nextRace ? parseFloat(nextRace.elevation_m || nextRace.elevation) || 0 : 0
-  const raceDistKm = nextRace ? parseFloat(nextRace.distance) || null : null
-  const raceClassification = classifyElevation(raceElevM, raceDistKm)
-  const weekElevTotal = Math.round(weekActivities.reduce((s, a) => s + parseFloat(a.elevation_m || 0), 0))
-
-  return { settings, nextRace, raceElevM, raceDistKm, raceClassification, weekElevTotal }
-}
-
-// ── Claude coaching feedback ──────────────────────────────────────────────────
-
-async function generateFeedback(activityRow, enriched) {
-  const splitsText = enriched.splits.slice(0, 10).map((s, i) => {
-    if (!s.distance || !s.moving_time) return null
-    const pace = s.moving_time / (s.distance / 1000)
-    const paceMin = Math.floor(pace / 60)
-    const paceSec = Math.round(pace % 60)
-    const hr = s.average_heartrate ? ` | HR ${Math.round(s.average_heartrate)}` : ''
-    return `  km${i + 1}: ${paceMin}:${String(paceSec).padStart(2, '0')}/km${hr}`
-  }).filter(Boolean).join('\n')
-
-  // Fetch athlete and elevation context (non-fatal — fall back to basics)
-  let athleteContext = ''
-  let elevationContext = ''
-  try {
-    const { settings, nextRace, raceElevM, raceClassification, weekElevTotal } =
-      await fetchAthleteContext(activityRow.date)
-
-    const name = settings?.name || 'athlete'
-    const weight = settings?.weight_kg ? `${settings.weight_kg}kg` : null
-    const goalType = settings?.goal_type || null
-    athleteContext = [name, weight, goalType].filter(Boolean).join(', ')
-
-    if (nextRace) {
-      const [tLow, tHigh] = ELEVATION_WEEK_TARGETS[raceClassification]
-      const sessionElev = activityRow.elevation_m || 0
-      const status = weekElevTotal >= tLow ? '✓ on track' : '⚠ below target'
-      const raceElevNote = raceElevM > 0
-        ? `Race course: ${raceClassification} (${raceElevM}m total gain)`
-        : `Race course: ${raceClassification}`
-      elevationContext = `${raceElevNote}
-Elevation this session: ${sessionElev}m | Weekly total so far: ${weekElevTotal}m (target ${tLow}–${tHigh}m/week — ${status})`
-    } else {
-      elevationContext = `Elevation this session: ${activityRow.elevation_m || 0}m`
-    }
-  } catch {
-    elevationContext = `Elevation: ${activityRow.elevation_m || 0}m`
-    athleteContext = '79kg male, marathon training, target Munich Marathon 12 Oct 2026, goal sub-3:00'
-  }
-
-  const prompt = `You are an endurance coach. Analyse this activity and give 2-3 sentences of direct feedback covering effort level, HR zone discipline (Z2 ceiling is 140bpm for easy runs), and one specific takeaway. Be direct, no softening. If elevation data is available, briefly note whether it contributes to the race build.
-
-Activity: ${activityRow.type}, ${activityRow.distance_km}km, ${activityRow.duration_min}min
-Avg HR: ${activityRow.avg_hr || 'N/A'} | Max HR: ${activityRow.max_hr || 'N/A'}
-Pace: ${activityRow.pace_per_km || 'N/A'}/km
-${elevationContext}
-Workout type: ${enriched.workoutType}${enriched.paceVariation > 0 ? ` (pace variation: ${enriched.paceVariation}s/km)` : ''}
-${splitsText ? `\nSplits:\n${splitsText}` : ''}
-
-Athlete context: ${athleteContext}`
-
-  // Route through Supabase claude-proxy (holds the Anthropic key in its secrets)
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/claude-proxy`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
-      'apikey': process.env.SUPABASE_SECRET_KEY,
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  })
-  if (!res.ok) throw new Error(`claude-proxy call failed: ${res.status}`)
-  const data = await res.json()
-  if (data?.type === 'error') throw new Error(data.error?.message || 'Claude error')
-  return data.content?.[0]?.text || ''
-}
-
-// ── Supabase writes ───────────────────────────────────────────────────────────
+// ── Supabase upsert ───────────────────────────────────────────────────────────
 
 function supabaseHeaders() {
   return {
@@ -252,56 +117,43 @@ async function upsertActivity(activityRow) {
   }
 }
 
-async function insertCoachingMemory(activityId, date, feedback) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/coaching_memory`, {
-    method: 'POST',
-    headers: supabaseHeaders(),
-    body: JSON.stringify({
-      type: 'activity_feedback',
-      source: 'activity-trigger',
-      category: 'activity_feedback',
-      content: feedback,
-      activity_id: parseInt(activityId, 10),
-      date: date.slice(0, 10), // ensure plain YYYY-MM-DD
-      user_id: ATHLETE_USER_ID,
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`Supabase coaching_memory insert failed ${res.status}: ${body}`)
-  }
+// ── Handle activity:update ────────────────────────────────────────────────────
+
+async function handleUpdate(activityId) {
+  const token = await getStravaToken()
+  const activity = await fetchActivity(activityId, token)
+  const row = buildActivityRow(activity)
+  // On update, preserve enrichment_status as-is (don't reset to pending)
+  delete row.enrichment_status
+  await upsertActivity(row)
+  console.log(`[strava-webhook] Updated activity ${activityId}`)
 }
 
-// ── Core processing ───────────────────────────────────────────────────────────
+// ── Core processing (Stage 1) ─────────────────────────────────────────────────
 
-async function processActivity(activityId) {
-  console.log(`[strava-webhook] Processing activity ${activityId}`)
+async function processNewActivity(activityId) {
+  console.log(`[strava-webhook] Stage 1: processing activity ${activityId}`)
 
-  // 1. Get Strava access token
-  const token = await getStravaToken()
-
-  // 2. Fetch full activity
-  const activity = await fetchActivity(activityId, token)
-  console.log(`[strava-webhook] Fetched: "${activity.name}" (${activity.type})`)
-
-  // 3. Enrich
-  const { activityRow, enriched } = enrichActivity(activity)
-
-  // 4. Upsert to Supabase (essential — do this before Claude call)
-  await upsertActivity(activityRow)
-  console.log(`[strava-webhook] Activity saved: ${activityRow.strava_id}`)
-
-  // 5. Claude feedback (optional — don't fail the whole flow if this fails)
-  let feedback = ''
+  let activityRow
   try {
-    feedback = await generateFeedback(activityRow, enriched)
-    if (feedback) {
-      await insertCoachingMemory(activityRow.strava_id, activityRow.date, feedback)
-      console.log(`[strava-webhook] Coaching feedback saved`)
+    const token = await getStravaToken()
+    const activity = await fetchActivity(activityId, token)
+    activityRow = buildActivityRow(activity)
+    console.log(`[strava-webhook] Fetched: "${activity.name}" (${activity.type})`)
+  } catch (err) {
+    console.error(`[strava-webhook] Strava fetch failed — writing minimal failed row:`, err.message)
+    // Write a minimal row so Stage 2 can detect failure
+    activityRow = {
+      strava_id: String(activityId),
+      user_id: ATHLETE_USER_ID,
+      date: viennaDate(Date.now()),
+      name: `Activity ${activityId}`,
+      enrichment_status: 'failed',
     }
-  } catch (e) {
-    console.error(`[strava-webhook] Coaching feedback failed (activity still saved):`, e.message)
   }
+
+  await upsertActivity(activityRow)
+  console.log(`[strava-webhook] Stage 1 complete: ${activityRow.strava_id} (${activityRow.enrichment_status})`)
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -324,19 +176,23 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { object_type, object_id, aspect_type } = req.body || {}
 
-    // Ignore non-activity events immediately
-    if (object_type !== 'activity' || aspect_type !== 'create') {
+    // Ignore non-activity events
+    if (object_type !== 'activity') {
       console.log(`[strava-webhook] Ignored: ${object_type}/${aspect_type}`)
       return res.status(200).json({ received: true })
     }
 
-    // Process synchronously so Vercel doesn't kill the function after response.
-    // Strava retries are safe — upsert on strava_id prevents duplicates.
     try {
-      await processActivity(object_id)
+      if (aspect_type === 'create') {
+        await processNewActivity(object_id)
+      } else if (aspect_type === 'update') {
+        await handleUpdate(object_id)
+      } else {
+        console.log(`[strava-webhook] Ignored aspect_type: ${aspect_type}`)
+      }
     } catch (err) {
-      console.error(`[strava-webhook] Processing failed for activity ${object_id}:`, err.message)
-      // Still return 200 — never let Strava see a 5xx
+      console.error(`[strava-webhook] Failed for activity ${object_id}:`, err.message)
+      // Always return 200 to Strava — never let them see a 5xx
     }
     return res.status(200).json({ received: true })
   }

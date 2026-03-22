@@ -9,7 +9,7 @@ export function useSettings() {
   })
 
   useEffect(() => {
-    supabase.from('athlete_settings').select('*').maybeSingle()
+    supabase.from('athlete_settings').select('*,hr_zones').maybeSingle()
       .then(({ data }) => { if (data) setSettings(data) })
   }, [])
 

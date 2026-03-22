@@ -9,6 +9,7 @@ import { runBackfill } from '../lib/stravaBackfill'
 import { callClaude } from '../lib/claudeProxy'
 import { buildSystemPrompt } from '../lib/coachingPrompt'
 import { buildContext, formatContext } from '../lib/buildContext'
+import { resolveZones } from '../lib/hrZones'
 
 const TZ = 'Europe/Vienna'
 
@@ -81,8 +82,10 @@ function ZoneBar({ label, pct, color, value }) {
   )
 }
 
-function ActivityRow({ activity, onActivityClick }) {
-  const hrColor = (activity.avg_hr > 158) ? '#ff5c5c' : (activity.avg_hr > 140) ? '#ffb347' : '#4dff91'
+function ActivityRow({ activity, onActivityClick, zones }) {
+  const z4min = zones?.zones?.z4?.min ?? 159
+  const z2max = zones?.zones?.z2?.max ?? 140
+  const hrColor = (activity.avg_hr > z4min) ? '#ff5c5c' : (activity.avg_hr > z2max) ? '#ffb347' : '#4dff91'
   const paceStr = activity.pace_per_km || (activity.distance_km && activity.duration_min
     ? `${Math.floor(activity.duration_min / activity.distance_km)}:${String(Math.round((activity.duration_min / activity.distance_km % 1) * 60)).padStart(2, '0')}`
     : '—')
@@ -860,24 +863,31 @@ export default function Home({ onActivityClick, onOpenSettings }) {
           <div style={{ color: '#888580', fontSize: '13px' }}>Loading activities...</div>
         ) : activities.filter(a => a.date?.slice(0, 10) !== todayStr).length > 0 ? (
           activities.filter(a => a.date?.slice(0, 10) !== todayStr).slice(0, 4).map((a, i) => (
-            <ActivityRow key={a.id || i} activity={a} onActivityClick={onActivityClick} />
+            <ActivityRow key={a.id || i} activity={a} onActivityClick={onActivityClick} zones={resolveZones(settings)} />
           ))
         ) : (
           <div style={{ color: '#888580', fontSize: '13px' }}>No recent activities — run workflow to sync from Strava.</div>
         )}
       </div>
 
-      {/* HR ZONES */}
-      {lastRun && (
-        <div style={S.section}>
-          <div style={S.sectionHeader}>
-            <div style={S.sectionTitle}>HR Zones · Last Run</div>
+      {/* HR ZONES — dynamic from zone_data on last run */}
+      {lastRun && lastRun.zone_data && (() => {
+        const zd = lastRun.zone_data
+        const total = Object.values(zd).reduce((s, v) => s + (Number(v) || 0), 0)
+        if (total === 0) return null
+        const pct = z => Math.round(((Number(zd[z]) || 0) / total) * 100)
+        return (
+          <div style={S.section}>
+            <div style={S.sectionHeader}>
+              <div style={S.sectionTitle}>HR Zones · Last Run</div>
+            </div>
+            {pct('z2') > 0 && <ZoneBar label="Z2 Aerobic"   pct={pct('z2')} color="#47d4ff" value={`${pct('z2')}%`} />}
+            {pct('z3') > 0 && <ZoneBar label="Z3 Tempo"     pct={pct('z3')} color="#ffb347" value={`${pct('z3')}%`} />}
+            {pct('z4') > 0 && <ZoneBar label="Z4 Threshold" pct={pct('z4')} color="#ff5c5c" value={`${pct('z4')}%`} />}
+            {pct('z5') > 0 && <ZoneBar label="Z5 Max"       pct={pct('z5')} color="#ff2222" value={`${pct('z5')}%`} />}
           </div>
-          <ZoneBar label="Z2 Aerobic" pct={52} color="#47d4ff" value="52%" />
-          <ZoneBar label="Z3 Tempo" pct={31} color="#ffb347" value="31%" />
-          <ZoneBar label="Z4 Threshold" pct={17} color="#ff5c5c" value="17%" />
-        </div>
-      )}
+        )
+      })()}
 
       {/* BRIEFING (de-emphasised, evening only) */}
       {isEvening && renderBriefingSection(true)}

@@ -6,6 +6,7 @@ import { generatePlanDraft } from '../lib/planGenerator'
 import SportsPriorities from './SportsPriorities'
 import PlanReviewPanel from '../components/PlanReviewPanel'
 import OnboardingHints from '../components/OnboardingHints'
+import { triggerZoneCalibration } from '../lib/hrZones'
 
 const Z = {
   bg:'#0a0a0a', surface:'#111111', border:'rgba(255,255,255,0.08)',
@@ -134,9 +135,109 @@ function CancelRaceModal({ race, onConfirm, onClose }) {
   )
 }
 
+// ── Zone Calibration Panel ────────────────────────────────────────────────────
+
+function ZoneCalibrationPanel() {
+  const [hrZones, setHrZones] = useState(null)
+  const [calibrating, setCalibrating] = useState(false)
+  const [calibrated, setCalibrated] = useState(false)
+  const [calError, setCalError] = useState(null)
+
+  useEffect(() => {
+    supabase.from('athlete_settings').select('hr_zones').maybeSingle()
+      .then(({ data }) => { if (data?.hr_zones) setHrZones(data.hr_zones) })
+  }, [])
+
+  async function handleCalibrate() {
+    setCalibrating(true)
+    setCalError(null)
+    setCalibrated(false)
+    try {
+      const result = await triggerZoneCalibration()
+      if (result?.zones) {
+        setHrZones(result.zones)
+        setCalibrated(result.calibrated)
+      }
+    } catch (err) {
+      setCalError(err.message || 'Calibration failed')
+    } finally {
+      setCalibrating(false)
+    }
+  }
+
+  const zones = hrZones?.zones
+  const source = hrZones?.source
+  const sourceLabel = source === 'tt_5km' ? 'Calculated from 5km TT'
+    : source === 'auto_detected' ? 'Auto-detected from training data'
+    : source === 'manual' ? 'Manually configured'
+    : 'Default zones'
+  const calcDate = hrZones?.calculated_at
+    ? new Date(hrZones.calculated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : null
+
+  const ZONE_COLOURS = ['#4a9eff','#44cc88','#ffcc00','#ff8800','#ff3333']
+  const ZONE_NAMES   = ['Recovery','Aerobic','Tempo','Threshold','Max']
+
+  return (
+    <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${Z.border}` }}>
+      <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
+        Auto-calibration
+      </div>
+
+      {zones && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 14, fontSize: 11 }}>
+          <tbody>
+            {['z1','z2','z3','z4','z5'].map((z, i) => (
+              <tr key={z}>
+                <td style={{ padding: '4px 8px 4px 0', color: ZONE_COLOURS[i], fontWeight: 600 }}>Z{i+1}</td>
+                <td style={{ padding: '4px 0', color: Z.muted, fontSize: 10 }}>{ZONE_NAMES[i]}</td>
+                <td style={{ padding: '4px 0', color: Z.text, textAlign: 'right', fontFamily: "'DM Mono', monospace" }}>
+                  {i === 0 ? `< ${zones[z].max}` : i === 4 ? `> ${zones[z].min}` : `${zones[z].min}–${zones[z].max}`} bpm
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{ fontSize: 11, color: Z.muted, marginBottom: 4 }}>{sourceLabel}</div>
+      {hrZones?.threshold_hr && (
+        <div style={{ fontSize: 11, color: Z.muted, marginBottom: 4 }}>LTHR: {hrZones.threshold_hr} bpm</div>
+      )}
+      {calcDate && (
+        <div style={{ fontSize: 10, color: Z.muted, opacity: 0.6, marginBottom: 12 }}>Last updated {calcDate}</div>
+      )}
+
+      {calError && <div style={{ fontSize: 11, color: Z.red, marginBottom: 10 }}>⚠ {calError}</div>}
+      {calibrated && !calError && (
+        <div style={{ fontSize: 11, color: Z.green, marginBottom: 10 }}>✓ Zones updated</div>
+      )}
+      {!calibrated && !calError && hrZones && source === 'default' && (
+        <div style={{ fontSize: 11, color: Z.muted, marginBottom: 10, lineHeight: 1.5 }}>
+          Not enough data yet. Run a 5km TT or complete more hard efforts to enable auto-calibration.
+        </div>
+      )}
+
+      <button
+        onClick={handleCalibrate}
+        disabled={calibrating}
+        style={{
+          background: calibrating ? 'rgba(255,255,255,0.06)' : 'rgba(232,255,71,0.1)',
+          border: `1px solid ${calibrating ? Z.border : 'rgba(232,255,71,0.3)'}`,
+          borderRadius: 8, padding: '9px 16px', cursor: calibrating ? 'wait' : 'pointer',
+          fontSize: 12, color: calibrating ? Z.muted : Z.accent,
+          fontFamily: "'DM Mono', monospace",
+        }}
+      >
+        {calibrating ? 'Calibrating…' : 'Recalibrate zones'}
+      </button>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function Settings({ onClose, stravaConnectError, onLogout, onOpenRoadmap, onOpenFeatureRequest }) {
+export default function Settings({ onClose, stravaConnectError, onLogout, onOpenRoadmap, onOpenFeatureRequest, onOpenBugReport }) {
   const [openSection, setOpenSection] = useState(null)
 
   // ── Core settings from DB ────────────────────────────────
@@ -810,9 +911,9 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
 
               {zoneError && <div style={{ fontSize: 11, color: Z.red, marginBottom: 10 }}>⚠ {zoneError}</div>}
               <SaveBtn onClick={saveZones} saving={zoneSaving} saved={zoneSaved} />
-              <div style={{ marginTop: 14, fontSize: 11, color: Z.muted, lineHeight: 1.5 }}>
-                Zones are estimates. Run a 5km time trial to recalibrate.
-              </div>
+
+              {/* ── Zone calibration ── */}
+              <ZoneCalibrationPanel />
             </div>
           )}
         </div>
@@ -1150,8 +1251,8 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
                 Billing and subscription management coming soon.
               </div>
 
-              {/* Roadmap & feature request */}
-              <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
+              {/* Roadmap, feature request & bug report */}
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 20 }}>
                 <button
                   onClick={() => { onClose?.(); onOpenRoadmap?.() }}
                   style={{ background: 'none', border: 'none', color: Z.accent, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: 0, textDecoration: 'underline' }}
@@ -1163,6 +1264,12 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
                   style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: 0, textDecoration: 'underline' }}
                 >
                   Request a feature
+                </button>
+                <button
+                  onClick={() => { onClose?.(); onOpenBugReport?.() }}
+                  style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Mono', monospace", padding: 0, textDecoration: 'underline' }}
+                >
+                  Report a bug
                 </button>
               </div>
 

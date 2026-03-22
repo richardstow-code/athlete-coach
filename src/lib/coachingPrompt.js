@@ -89,16 +89,27 @@ export function buildSystemPrompt(settings = {}, primarySport = null) {
     settings.current_level ? `Athlete level: ${settings.current_level}.` : null,
     isEndurance
       ? (() => {
-          const z = settings.training_zones || {}
-          const z1max  = z.z1_max  ?? 124
-          const z2min  = z.z2_min  ?? 125
-          const z2max  = z.z2_max  ?? 140
-          const z3min  = z.z3_min  ?? 141
-          const z3max  = z.z3_max  ?? 157
-          const z4min  = z.z4_min  ?? 158
-          const z4max  = z.z4_max  ?? 172
-          const z5min  = z.z5_min  ?? 173
-          return `Training zones: Z1 <${z1max}bpm, Z2 ${z2min}–${z2max}bpm, Z3 ${z3min}–${z3max}bpm, Z4 ${z4min}–${z4max}bpm, Z5 >${z5min}bpm.`
+          // Prefer calibrated hr_zones, then manual training_zones, then defaults
+          let z1max = 124, z2min = 125, z2max = 140, z3min = 141, z3max = 158, z4min = 159, z4max = 172, z5min = 173
+          if (settings.hr_zones?.zones) {
+            const hz = settings.hr_zones.zones
+            z1max = hz.z1?.max ?? z1max
+            z2min = hz.z2?.min ?? z2min; z2max = hz.z2?.max ?? z2max
+            z3min = hz.z3?.min ?? z3min; z3max = hz.z3?.max ?? z3max
+            z4min = hz.z4?.min ?? z4min; z4max = hz.z4?.max ?? z4max
+            z5min = hz.z5?.min ?? z5min
+          } else if (settings.training_zones) {
+            const tz = settings.training_zones
+            z1max = tz.z1_max ?? z1max
+            z2min = tz.z2_min ?? z2min; z2max = tz.z2_max ?? z2max
+            z3min = tz.z3_min ?? z3min; z3max = tz.z3_max ?? z3max
+            z4min = tz.z4_min ?? z4min; z4max = tz.z4_max ?? z4max
+            z5min = tz.z5_min ?? z5min
+          }
+          const sourceNote = settings.hr_zones?.source && settings.hr_zones.source !== 'default'
+            ? ` (calibrated from ${settings.hr_zones.source === 'tt_5km' ? '5km TT' : 'training data'})`
+            : ''
+          return `Training zones${sourceNote}: Z1 <${z1max}bpm, Z2 ${z2min}–${z2max}bpm, Z3 ${z3min}–${z3max}bpm, Z4 ${z4min}–${z4max}bpm, Z5 >${z5min}bpm.`
         })()
       : null,
     isRunning

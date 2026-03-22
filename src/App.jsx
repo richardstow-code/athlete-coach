@@ -410,6 +410,7 @@ export default function App() {
           onLogout={() => setShowSettings(false)}
           onOpenRoadmap={() => { setShowSettings(false); handleOpenRoadmap() }}
           onOpenFeatureRequest={() => { setShowSettings(false); setShowFeatureRequest(true); setShowRoadmap(true) }}
+          onOpenBugReport={() => { setShowSettings(false); setShowBugReport(true); setShowRoadmap(true) }}
         />
       )}
 
@@ -562,6 +563,18 @@ export default function App() {
             )
           })}
         </nav>
+      )}
+
+      {/* FOOTER BUG REPORT LINK — below tab bar */}
+      {!detailId && (
+        <div style={{ textAlign: 'center', padding: '5px 0', background: Z.surface, flexShrink: 0 }}>
+          <button
+            onClick={() => { setShowBugReport(true); setShowRoadmap(true) }}
+            style={{ background: 'none', border: 'none', fontSize: 10, color: Z.muted, cursor: 'pointer', fontFamily: "'DM Mono', monospace", opacity: 0.5 }}
+          >
+            🐛 Report a bug
+          </button>
+        </div>
       )}
     </div>
   )

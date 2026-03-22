@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { inferCyclePhase, daysSincePeriod } from './inferCyclePhase'
 import { classifyElevation, ELEVATION_TARGETS, elevationTargetRange } from './elevationUtils'
+import { resolveZones, zonesPromptString } from './hrZones'
 
 /**
  * Fetches all context needed for coaching prompts in a single parallel round-trip.
@@ -57,7 +58,7 @@ export async function buildContext() {
 
     supabase
       .from('athlete_settings')
-      .select('name,dob,height_cm,weight_kg,races,goal_type,current_level,health_notes,cycle_tracking_enabled,cycle_length_avg,cycle_is_irregular,cycle_last_period_date,cycle_notes,health_flags,training_zones')
+      .select('name,dob,height_cm,weight_kg,races,goal_type,current_level,health_notes,cycle_tracking_enabled,cycle_length_avg,cycle_is_irregular,cycle_last_period_date,cycle_notes,health_flags,training_zones,hr_zones')
       .maybeSingle(),
 
     supabase
@@ -163,6 +164,15 @@ export function formatContext({
     }
     if (settings.health_notes) lines.push(`Health: ${settings.health_notes}`)
     if (lines.length > 0) parts.push('ATHLETE:\n' + lines.map(l => `- ${l}`).join('\n'))
+
+    // HR zones — injected so coaching AI uses current calibrated values
+    const effectiveZones = resolveZones(settings)
+    const zoneStr = zonesPromptString(effectiveZones)
+    const zoneSource = effectiveZones.source === 'tt_5km' ? 'calibrated from 5km TT'
+      : effectiveZones.source === 'auto_detected' ? 'auto-detected from training data'
+      : effectiveZones.source === 'manual' ? 'manually configured'
+      : 'default'
+    parts.push(`HR ZONES (${zoneSource}): ${zoneStr}`)
 
     // Health flags from structured health_flags column (overrides health_notes when present)
     const activeFlags = (settings.health_flags || []).filter(f => f.status === 'active' || f.status === 'monitoring')

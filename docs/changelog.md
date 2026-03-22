@@ -2,6 +2,61 @@
 
 ---
 
+## 2026-03-22 — Webhook Rearchitecture + Activity Streams + Zone Calibration
+
+- **Part A — Webhook Stage 1 (slim)**: `/api/strava-webhook.js` now writes `enrichment_status='pending'` and returns 200 in under 5 seconds. All Claude calls and coaching_memory writes removed from Stage 1.
+- **Part B — `enrich-activity` edge function**: Triggered by Supabase DB webhook on activities INSERT. Fetches 5 Strava stream types (HR, cadence, altitude, velocity, latlng), downsamples to 10-second resolution, computes zone_seconds/cadence_stats/grade_correlation, writes to `activity_streams` table, updates `activities.zone_data` + `enrichment_status='complete'`, generates coaching feedback via Claude Haiku with zone breakdown and cadence analysis. Auto-triggers zone calibration every 10th activity.
+- **Part C — `calibrate-zones` edge function**: Two methods — `tt_5km` (uses avg HR of most recent 5km effort as LTHR proxy) and `auto_detect` (95th percentile avg HR from hard long efforts). `both` mode prefers TT if within 90 days. Stores calibrated zones in `athlete_settings.hr_zones` using % of LTHR model.
+- **Part C — `src/lib/hrZones.js`**: `getHRZones()`, `triggerZoneCalibration()`, `resolveZones()`, `zonesPromptString()`, `classifyHR()`. Resolves effective zones: hr_zones > training_zones > defaults.
+- **Part C — Settings Zone Calibration UI**: `ZoneCalibrationPanel` added to Training Zones section — shows current zone table, source label, LTHR, last updated date, "Recalibrate zones" button.
+- **Part C — Hardcoded zones replaced**: Home.jsx ZoneBar display now reads from `zone_data` on last run (was hardcoded 52%/31%/17%). `hrColor` in ActivityRow now uses dynamic thresholds from `resolveZones()`. `coachingPrompt.js` reads from `hr_zones` then `training_zones`. `buildContext.js` injects zone string with source note.
+- **Part D — PostWorkoutPopup async UX**: Loading state ("Analysing your run…" pulse animation + basic stats), polls `enrichment_status` every 3s, transitions to full feedback on complete, error state after 90s timeout. Zone bars now read from `zone_data`. Render helpers: `renderLoadingState`, `renderCompleteState`, `renderErrorState`.
+- **Schema**: `activities.enrichment_status TEXT` — `pending|processing|complete|failed`; historical rows backfilled to `complete`
+- **Schema**: `athlete_settings.hr_zones JSONB` — calibrated zone boundaries with source, calculated_at, threshold_hr
+- **Schema**: `activity_streams` — new table (id UUID, user_id, activity_id BIGINT FK, strava_id, samples JSONB, zone_seconds, cadence_stats, grade_correlation, created_at); RLS enabled
+- **Supabase secret**: `ENRICH_WEBHOOK_SECRET=athleteenrich2026`
+- **Action required [RICHARD]**: Set up DB webhook in Supabase Dashboard → Database → Webhooks → Create: table=activities, event=INSERT, function=enrich-activity, header x-webhook-secret=athleteenrich2026
+
+---
+
+## 2026-03-21 (batch 5)
+
+- **New**: Feature requests & bug reports system — full rewrite
+  - `FeatureRequestModal` now has a type toggle (✨ Feature / 🐛 Bug) replacing the `isBugReport` prop
+  - Feature form: title field + description field; Claude Haiku similarity dedup unchanged
+  - Bug form: title + description + screen dropdown (10 app screens) + frequency chips (Every time / Often / Sometimes / Once)
+  - Roadmap now only shows `type='feature'` rows — bugs tracked separately
+  - `FeatureCard` shows `decline_reason` for declined cards (highlighted red block with left border)
+  - Footer "🐛 Report a bug" link on Roadmap content area
+  - Footer "🐛 Report a bug" link below the bottom tab bar in App.jsx
+  - "Report a bug" link added to Settings → Subscription section alongside existing roadmap/feature links
+  - `onOpenBugReport` prop added to `Settings` component; wired in App.jsx
+- **New**: `supabase/functions/notify-feature-request/index.ts` edge function
+  - Writes to `admin_notifications` first (never loses a submission)
+  - Sends email via Resend API if `ADMIN_EMAIL` + `RESEND_API_KEY` secrets are set (non-fatal)
+  - Handles types: `feature`, `bug`, `vote`
+- **Schema**: `feature_requests.type TEXT` — `feature` | `bug`; default `feature`
+- **Schema**: `feature_requests.priority TEXT` — `low` | `normal` | `high` | `critical`; default `normal`
+- **Schema**: `feature_requests.decline_reason TEXT` — shown to users on roadmap
+- **Schema**: `admin_notifications` — new table (id, type, title, description, submitter_email, metadata, created_at, read_at); RLS enabled (service role only)
+- **Docs**: `/docs/admin-workflows.md` — triage SQL, status transitions, decline workflow, notification dispatch, table schema, edge function secrets
+
+---
+
+## 2026-03-21 (batch 4)
+
+- **New**: Race elevation as a first-class training input
+  - Race setup form (`Settings.jsx`) now shows "Total elevation gain (m)" field for Run, Trail Run, Bike, Skimo, Triathlon race types — optional, with help text
+  - Elevation displayed in race cards: `↑ Xm` (hidden if 0/null)
+  - `src/lib/elevationUtils.js` — `classifyElevation()` maps elevation+distance → flat/rolling/hilly/mountainous; `ELEVATION_TARGETS` defines weekly m/week ranges per classification
+  - Plan generation (`planGenerator.js`) injects elevation classification, gain/km, and weekly elevation targets (base + peak phase) into the Claude prompt
+  - Coaching context (`buildContext.js`) includes elevation in the race summary line and adds an ELEVATION TRACKING block with weekly actual vs target comparison
+  - Activity feedback (`strava-webhook.js`) fetches race elevation and last-7-days activities, includes session elevation, weekly total, race profile, and on-track status in the Claude prompt; graceful fallback if fetch fails
+  - Richard's Munich Marathon updated in DB to `elevation_m: 180` → classified as **flat**
+- **Docs**: `/docs/features/race-management.md` created documenting elevation field, classification thresholds, and all integration points
+
+---
+
 ## 2026-03-21 (batch 3)
 
 - **Fix**: Onboarding loop — users sent back to onboarding on every refresh because the `athlete_settings` upsert was silently failing and the app checked row existence (`!settingsData`) rather than an explicit flag. Added `onboarding_complete BOOLEAN` column; `handleComplete` and `handleSkip` now set it to `true` and surface any DB errors. App.jsx checks `onboarding_complete === true`.
