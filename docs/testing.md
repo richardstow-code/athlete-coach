@@ -28,6 +28,30 @@ Docs-only changes skip all tests.
 
 ---
 
+## Running Playwright Tests Locally
+
+```bash
+# Install browsers (one-time)
+npx playwright install chromium
+
+# Run against local dev server (start it first: npm run dev)
+npm run test:e2e:smoke   # @smoke only — ~3 min
+npm run test:e2e:minor   # @smoke + @minor — ~10 min
+npm run test:e2e:major   # all tests — ~35 min
+
+# Run against a Vercel preview URL
+PREVIEW_URL=https://your-branch.vercel.app npm run test:e2e:smoke
+
+# View HTML report after a run
+npx playwright show-report
+```
+
+Spec files live in `tests/e2e/`. Each spec imports `loginAs()` from `tests/e2e/helpers/auth.js` which logs in as a test persona using fixed credentials (`TestPass123!`).
+
+Tests require `VITE_TEST_MODE=true` to be set on the deployment — without it `[data-testid="test-mode-banner"]` won't appear and smoke tests will fail immediately.
+
+---
+
 ## Running the Seed Script Manually
 
 ```bash

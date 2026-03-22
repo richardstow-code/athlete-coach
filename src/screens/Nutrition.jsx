@@ -202,7 +202,7 @@ function MealCard({ entry, onDelete }) {
   const upfColors = ['#4dff91', '#4dff91', '#ffb347', '#ff5c5c']
   const upfLabels = ['Unprocessed', 'Minimally processed', 'Processed', 'Ultra-processed']
   return (
-    <div style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
+    <div data-testid="nutrition-entry" style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
       <div onClick={() => setExpanded(e => !e)} style={{ padding: '11px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, color: Z.text, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isAlcohol ? '🍺 ' : ''}{entry.meal_name || 'Meal'}</div>
@@ -620,7 +620,7 @@ export default function Nutrition() {
   }
 
   return (
-    <div ref={nutriContainerRef} style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
+    <div ref={nutriContainerRef} data-testid="fuel-screen" style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
       {(nutriPullDist > 0 || nutriRefreshing) && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: Math.max(nutriPullDist, nutriRefreshing ? 48 : 0), overflow: 'hidden', color: '#888580', fontSize: '12px', letterSpacing: '0.06em' }}>
           {nutriRefreshing ? 'Refreshing...' : nutriPullDist > 72 ? 'Release to refresh' : 'Pull to refresh'}
@@ -770,7 +770,7 @@ export default function Nutrition() {
           Log {!isToday && `(${logDate})`}
         </div>
 
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: 'none' }} />
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleFile} data-testid="nutrition-image-input" style={{ display: 'none' }} />
         <input ref={libraryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: 'none' }} />
 
         {preview ? (
@@ -787,21 +787,24 @@ export default function Nutrition() {
 
         <textarea value={context} onChange={e => setContext(e.target.value)} rows={2}
           placeholder="Describe meal: '2 scrambled eggs on toast with butter', 'chicken breast salad'..."
+          data-testid="nutrition-input"
           style={{ width: '100%', background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '9px 12px', color: Z.text, fontFamily: "'DM Mono', monospace", fontSize: 12, resize: 'none', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
 
         {/* When did you eat this? */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div data-testid="nutrition-time-picker" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <span style={{ fontSize: 11, color: Z.muted, flexShrink: 0 }}>When?</span>
           <input
             type="time"
             value={logTime}
             onChange={e => setLogTime(e.target.value)}
+            data-testid="nutrition-time-input"
             style={{ ...inp, flex: 1, padding: '7px 10px', cursor: 'pointer' }}
           />
         </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={analyzeAndLog} disabled={analyzing || (!imageData && !context.trim())}
+            data-testid="nutrition-submit"
             style={{ flex: 2, background: analyzing ? '#1a1a1a' : (!imageData && !context.trim()) ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 8, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: analyzing || (!imageData && !context.trim()) ? 'not-allowed' : 'pointer', color: analyzing || (!imageData && !context.trim()) ? Z.muted : Z.bg, fontWeight: 600 }}>
             {analyzing ? '⏳ Analysing...' : '→ Log meal'}
           </button>
@@ -810,7 +813,7 @@ export default function Nutrition() {
       </div>
 
       {/* Log list */}
-      <div style={{ padding: '12px 20px 32px' }}>
+      <div data-testid="nutrition-entries" style={{ padding: '12px 20px 32px' }}>
         <div style={{ fontSize: 11, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
           {isToday ? 'Today' : logDate} · {entries.length} item{entries.length !== 1 ? 's' : ''}
         </div>

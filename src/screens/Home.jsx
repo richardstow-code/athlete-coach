@@ -481,7 +481,7 @@ export default function Home({ onActivityClick, onOpenSettings }) {
 
   function renderBriefingSection(secondary = false) {
     return (
-      <div style={{ ...S.section, ...(secondary ? { paddingTop: 12, paddingBottom: 12 } : {}) }}>
+      <div data-testid="coaching-briefing" style={{ ...S.section, ...(secondary ? { paddingTop: 12, paddingBottom: 12 } : {}) }}>
         <div style={S.sectionHeader}>
           <div style={S.sectionTitle}>{secondary ? "This morning's briefing" : "Today's Briefing"}</div>
           <button
@@ -731,7 +731,7 @@ export default function Home({ onActivityClick, onOpenSettings }) {
   // ── Render ────────────────────────────────────────────────
 
   return (
-    <div ref={containerRef} style={S.page}>
+    <div ref={containerRef} data-testid="home-screen" style={S.page}>
 
       {/* PULL-TO-REFRESH */}
       {(pullDistance > 0 || refreshing) && (
@@ -787,7 +787,7 @@ export default function Home({ onActivityClick, onOpenSettings }) {
 
       {/* CHECK-IN CARD (morning + afternoon only) */}
       {!isEvening && showCheckin && (
-        <div style={{ margin: '12px 20px 0', padding: '14px 16px', background: '#111111', border: '1px solid rgba(232,255,71,0.2)', borderRadius: 12, position: 'relative' }}>
+        <div data-testid="checkin-card" style={{ margin: '12px 20px 0', padding: '14px 16px', background: '#111111', border: '1px solid rgba(232,255,71,0.2)', borderRadius: 12, position: 'relative' }}>
           <button onClick={dismissCheckin} style={{ position: 'absolute', top: 10, right: 12, background: 'none', border: 'none', color: '#888580', fontSize: 16, cursor: 'pointer', lineHeight: 1 }}>×</button>
           <div style={{ fontSize: 10, color: '#e8ff47', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
             {SESSION_ICON[todaySession.session_type] || '📋'} Today's session
@@ -799,7 +799,7 @@ export default function Home({ onActivityClick, onOpenSettings }) {
             </div>
           )}
           <div style={{ fontSize: 12, color: '#888580', lineHeight: 1.5, marginBottom: 12 }}>{checkinMsg}</div>
-          <button onClick={handleCheckinAction} style={{ background: '#e8ff47', border: 'none', borderRadius: 7, padding: '8px 16px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: '#0a0a0a', fontWeight: 600 }}>I'm on it →</button>
+          <button onClick={handleCheckinAction} data-testid="checkin-im-on-it" style={{ background: '#e8ff47', border: 'none', borderRadius: 7, padding: '8px 16px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: '#0a0a0a', fontWeight: 600 }}>I'm on it →</button>
         </div>
       )}
 

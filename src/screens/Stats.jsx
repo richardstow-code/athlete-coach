@@ -579,7 +579,7 @@ export default function Progress({ onActivityClick }) {
   const pbElev = pbSource.reduce((b, a) => parseFloat(a.elevation_m) > parseFloat(b?.elevation_m||0) ? a : b, null)
 
   return (
-    <div ref={statsContainerRef} style={{ overflowY:'auto', height:'100%', fontFamily:"'DM Mono', monospace" }}>
+    <div ref={statsContainerRef} data-testid="progress-screen" style={{ overflowY:'auto', height:'100%', fontFamily:"'DM Mono', monospace" }}>
       {(statsPullDist > 0 || statsRefreshing) && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: Math.max(statsPullDist, statsRefreshing ? 48 : 0), overflow: 'hidden', color: '#888580', fontSize: '12px', letterSpacing: '0.06em' }}>
           {statsRefreshing ? 'Refreshing...' : statsPullDist > 72 ? 'Release to refresh' : 'Pull to refresh'}
@@ -598,7 +598,7 @@ export default function Progress({ onActivityClick }) {
         <div style={{ fontFamily:'Syne, sans-serif', fontSize:18, fontWeight:700 }}>Progress</div>
         <div style={{ display:'flex', background:'#161616', borderRadius:8, padding:2 }}>
           {['macro','micro'].map(v => (
-            <button key={v} onClick={() => setView(v)} style={{
+            <button key={v} onClick={() => setView(v)} {...(v === 'micro' ? { 'data-testid': 'progress-micro-toggle' } : {})} style={{
               padding:'5px 16px', borderRadius:6, border:'none',
               background: view === v ? Z.accent : 'none',
               color: view === v ? Z.bg : Z.muted,

@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-03-22 — Playwright UI Flow Tests
+
+- **Playwright installed**: `@playwright/test` added to devDependencies; `playwright.config.js` at repo root with 60s timeout, 2 workers, screenshot/video on failure, HTML + JSON reporters.
+- **10 spec files** in `tests/e2e/`: `smoke.spec.js`, `onboarding.spec.js`, `home.spec.js`, `plan.spec.js`, `chat.spec.js`, `fuel.spec.js`, `settings.spec.js`, `progress.spec.js`, `injury-workflow.spec.js`, `strava-webhook.spec.js`. Tagged `@smoke`/`@minor`/`@major` for tiered CI execution.
+- **Auth helper** at `tests/e2e/helpers/auth.js`: `loginAs(page, persona)` logs in with fixed test credentials for all 6 personas.
+- **Supabase test client** at `tests/helpers/supabase-test-client.js`: service-role client for direct DB verification in webhook tests.
+- **`data-testid` attributes** added to all key UI elements across App.jsx, Home.jsx, Chat.jsx, Plan.jsx, Stats.jsx, Settings.jsx, Nutrition.jsx, Onboarding.jsx, TestModeBanner.jsx.
+- **package.json scripts**: `test:e2e`, `test:e2e:smoke`, `test:e2e:minor`, `test:e2e:major`.
+- **Action required [RICHARD]**: Create 7 test accounts in test Supabase Auth (6 personas + `newuser@test.athletecoach.app`); update `PERSONA_IDS` in `tests/seed/seed.js` to match actual auth UIDs; run `npx playwright install chromium`.
+
+---
+
+## 2026-03-22 — Test Infrastructure
+
+- **Test Supabase project**: `athlete-coach-test` (project ID: nvoqqhaybhswdqcjyaws, Frankfurt region). Isolated from production.
+- **Seed script** at `tests/seed/seed.js`: 6 athlete personas (bodybuilder, female_cycle, injured, elite_taper, struggling, multisport). Resets all test data on each run. Run via `npm run seed:test`.
+- **GitHub Actions workflow** at `.github/workflows/test.yml`: tier detection (patch/minor/major) from changed files, Vercel preview wait, DB seed, tiered Playwright + API + AI eval test runs, PR comment on failure, artifact upload.
+- **Test mode routing** in `src/lib/supabase.js`: `VITE_TEST_MODE=true` routes all DB calls to test project instead of production.
+- **TestModeBanner component**: red banner fixed to bottom of screen when `VITE_TEST_MODE=true`. Never rendered in production.
+- **Fixture files**: `tests/fixtures/` — Strava webhook/activity payloads, CrossFit WOD text, food image placeholders.
+- **Docs**: `/docs/testing.md` — full documentation of personas, fixture files, tier logic, GitHub Secrets, and branch protection setup.
+- **Action required [RICHARD]**: Add GitHub Secrets (TEST_SUPABASE_URL, TEST_SUPABASE_ANON_KEY, TEST_SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY, VERCEL_TOKEN) and enable branch protection on `main`.
+
+---
+
 ## 2026-03-22 — Webhook Rearchitecture + Activity Streams + Zone Calibration
 
 - **Part A — Webhook Stage 1 (slim)**: `/api/strava-webhook.js` now writes `enrichment_status='pending'` and returns 200 in under 5 seconds. All Claude calls and coaching_memory writes removed from Stage 1.

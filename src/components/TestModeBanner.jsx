@@ -1,7 +1,7 @@
 export default function TestModeBanner() {
   if (import.meta.env.VITE_TEST_MODE !== 'true') return null
   return (
-    <div style={{
+    <div data-testid="test-mode-banner" style={{
       position: 'fixed',
       bottom: 0,
       left: 0,

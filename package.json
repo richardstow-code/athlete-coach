@@ -8,7 +8,11 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "seed:test": "node tests/seed/seed.js"
+    "seed:test": "node tests/seed/seed.js",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --grep @smoke",
+    "test:e2e:minor": "playwright test --grep \"@smoke|@minor\"",
+    "test:e2e:major": "playwright test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",
@@ -17,6 +21,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.58.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.0",

@@ -181,7 +181,7 @@ export default function Chat() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div data-testid="chat-screen" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <OnboardingHints
         hintId="chat_context"
         title="Your coach knows your data"
@@ -209,11 +209,11 @@ export default function Chat() {
       )}
 
       {/* MESSAGES */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div data-testid="chat-messages" style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {messages.map((m, i) => (
           <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
             <div style={{ maxWidth: '85%' }}>
-              <div style={{
+              <div {...(m.role === 'assistant' ? { 'data-testid': 'chat-response' } : {})} style={{
                 padding: '12px 14px', borderRadius: '12px', fontSize: '13px', lineHeight: 1.6,
                 background: m.role === 'user' ? '#e8ff47' : '#111111',
                 color: m.role === 'user' ? '#0a0a0a' : '#f0ede8',
@@ -278,9 +278,10 @@ export default function Chat() {
           onKeyDown={handleKeyDown}
           placeholder="Ask your coach..."
           rows={1}
+          data-testid="chat-input"
           style={{ flex: 1, background: '#111111', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '8px', padding: '10px 14px', color: '#f0ede8', fontFamily: "'DM Mono', monospace", fontSize: '13px', resize: 'none', outline: 'none', minHeight: '40px', maxHeight: '120px' }}
         />
-        <button onClick={() => sendMessage()} disabled={loading || !input.trim()} style={{ width: '40px', height: '40px', background: '#e8ff47', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: loading || !input.trim() ? 0.4 : 1 }}>
+        <button onClick={() => sendMessage()} disabled={loading || !input.trim()} data-testid="chat-send" style={{ width: '40px', height: '40px', background: '#e8ff47', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: loading || !input.trim() ? 0.4 : 1 }}>
           ↑
         </button>
       </div>

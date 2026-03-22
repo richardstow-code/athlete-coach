@@ -69,17 +69,19 @@ function Login() {
         <input
           type="email" value={email} onChange={e => setEmail(e.target.value)}
           placeholder="Email" required autoComplete="email"
+          data-testid="email-input"
           style={inputStyle}
         />
         {mode !== 'reset' && (
           <input
             type="password" value={password} onChange={e => setPassword(e.target.value)}
             placeholder="Password" required autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            data-testid="password-input"
             style={inputStyle}
           />
         )}
         {error && <div style={{ fontSize: 11, color: '#ff5c5c' }}>{error}</div>}
-        <button type="submit" disabled={loading} style={{ marginTop: 4, background: loading ? '#1a1a1a' : '#e8ff47', border: 'none', borderRadius: 8, padding: '13px', fontFamily: "'DM Mono', monospace", fontSize: 13, fontWeight: 600, color: loading ? '#888580' : '#0a0a0a', cursor: loading ? 'wait' : 'pointer' }}>
+        <button type="submit" disabled={loading} data-testid="login-button" style={{ marginTop: 4, background: loading ? '#1a1a1a' : '#e8ff47', border: 'none', borderRadius: 8, padding: '13px', fontFamily: "'DM Mono', monospace", fontSize: 13, fontWeight: 600, color: loading ? '#888580' : '#0a0a0a', cursor: loading ? 'wait' : 'pointer' }}>
           {loading
             ? (mode === 'signin' ? 'Signing in...' : mode === 'signup' ? 'Creating account...' : 'Sending...')
             : (mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link')}
@@ -475,7 +477,7 @@ export default function App() {
             📷
           </button>
           <div style={{ position: 'relative' }}>
-            <button onClick={() => setShowSettings(true)} style={{
+            <button onClick={() => setShowSettings(true)} data-testid="settings-button" style={{
               width: 32, height: 32, borderRadius: '50%',
               background: 'rgba(232,255,71,0.12)',
               border: '1px solid rgba(232,255,71,0.25)',
@@ -517,7 +519,7 @@ export default function App() {
 
       {/* BOTTOM TAB BAR */}
       {!detailId && (
-        <nav style={{
+        <nav data-testid="nav-bar" style={{
           display: 'flex',
           height: '64px',
           flexShrink: 0,
@@ -529,7 +531,7 @@ export default function App() {
             const isActive = activeTab === t.id
             const hasBadge = t.id === 'plan' && pendingChanges > 0
             return (
-              <button key={t.id} onClick={() => navigate(t.id)} style={{
+              <button key={t.id} onClick={() => navigate(t.id)} data-testid={`nav-${t.label.toLowerCase()}`} style={{
                 flex: 1, display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',
                 background: 'none', border: 'none', cursor: 'pointer',

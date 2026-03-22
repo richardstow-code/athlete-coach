@@ -82,7 +82,7 @@ function ChangeApprovalModal({ changes, onApprove, onReject, onClose }) {
             const col = typeColors[c.change_type] || Z.accent
             const isLoading = loadingId === c.id
             return (
-              <div key={c.id} style={{ background: Z.surface, border: `1px solid ${col}35`, borderRadius: 12, padding: 16, marginBottom: 12 }}>
+              <div key={c.id} data-testid="pending-proposal" style={{ background: Z.surface, border: `1px solid ${col}35`, borderRadius: 12, padding: 16, marginBottom: 12 }}>
                 {/* Type badge */}
                 <div style={{ display: 'inline-block', fontSize: 9, color: col, border: `1px solid ${col}50`, borderRadius: 4, padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
                   {typeLabels[c.change_type] || c.change_type}
@@ -122,10 +122,12 @@ function ChangeApprovalModal({ changes, onApprove, onReject, onClose }) {
                 {/* Approve / Reject */}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button disabled={isLoading} onClick={async () => { setLoadingId(c.id); await onApprove(c.id); setLoadingId(null) }}
+                    data-testid="accept-proposal"
                     style={{ flex: 1, background: isLoading ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 8, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: isLoading ? 'wait' : 'pointer', color: isLoading ? Z.muted : Z.bg, fontWeight: 600 }}>
                     {isLoading ? '...' : '✓ Approve'}
                   </button>
                   <button disabled={isLoading} onClick={async () => { setLoadingId(c.id); await onReject(c.id); setLoadingId(null) }}
+                    data-testid="reject-proposal"
                     style={{ flex: 1, background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '10px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: isLoading ? 'wait' : 'pointer', color: Z.muted }}>
                     ✕ Reject
                   </button>
@@ -236,7 +238,7 @@ function SessionRow({ session, activity, isToday, onActivityClick, onSessionClic
   const isPast = new Date(session.planned_date) < new Date() && !isToday
 
   return (
-    <div onClick={() => onSessionClick?.(session)} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${Z.border}`, opacity: skipped ? 0.5 : 1, cursor: 'pointer' }}>
+    <div onClick={() => onSessionClick?.(session)} data-testid="session-row" style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${Z.border}`, opacity: skipped ? 0.5 : 1, cursor: 'pointer' }}>
       <div style={{ width: 38, flexShrink: 0, textAlign: 'center', paddingTop: 2 }}>
         <div style={{ fontSize: 10, color: isToday ? Z.accent : Z.muted, fontWeight: isToday ? 600 : 400, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           {new Date(session.planned_date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' })}
@@ -668,7 +670,7 @@ export default function Plan({ onActivityClick }) {
   const isEnduranceUser = isRunningUser || isCyclingUser || sportCat === 'triathlon' || sportRaw.includes('triathlon')
 
   return (
-    <div ref={planContainerRef} style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
+    <div ref={planContainerRef} data-testid="plan-screen" style={{ height: '100%', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
       {(planPullDist > 0 || planRefreshing) && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: Math.max(planPullDist, planRefreshing ? 48 : 0), overflow: 'hidden', color: '#888580', fontSize: '12px', letterSpacing: '0.06em' }}>
           {planRefreshing ? 'Refreshing...' : planPullDist > 72 ? 'Release to refresh' : 'Pull to refresh'}
@@ -742,7 +744,7 @@ export default function Plan({ onActivityClick }) {
       {/* PENDING CHANGES — tap to open approval modal */}
       {changes.length > 0 && (
         <div style={{ padding: '0 20px 4px' }}>
-          <button onClick={() => setShowApprovalModal(true)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,92,92,0.07)', border: '1px solid rgba(255,92,92,0.25)', borderRadius: 10, padding: '11px 14px', cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>
+          <button onClick={() => setShowApprovalModal(true)} data-testid="pending-proposals-banner" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,92,92,0.07)', border: '1px solid rgba(255,92,92,0.25)', borderRadius: 10, padding: '11px 14px', cursor: 'pointer', fontFamily: "'DM Mono', monospace" }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: Z.red, display: 'inline-block', flexShrink: 0 }} />
               <span style={{ fontSize: 12, color: Z.text, fontWeight: 500 }}>

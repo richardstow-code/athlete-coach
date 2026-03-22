@@ -66,12 +66,13 @@ function SectionHeader({ title, summary, isOpen, onToggle }) {
   )
 }
 
-function SaveBtn({ onClick, saving, saved, label = 'Save' }) {
+function SaveBtn({ onClick, saving, saved, label = 'Save', testId }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 16 }}>
       <button
         onClick={onClick}
         disabled={saving}
+        {...(testId ? { 'data-testid': testId } : {})}
         style={{ background: Z.accent, border: 'none', borderRadius: 7, padding: '9px 20px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: saving ? 'wait' : 'pointer', color: Z.bg, fontWeight: 600 }}
       >
         {saving ? 'Saving...' : label}
@@ -91,6 +92,7 @@ function Slider({ config, value, onChange }) {
       <div style={{ position: 'relative' }}>
         <input type="range" min={0} max={100} value={value}
           onChange={e => onChange(parseInt(e.target.value))}
+          data-testid={`slider-${config.key}`}
           style={{ width: '100%', accentColor: Z.accent, height: 4, cursor: 'pointer' }} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
@@ -627,7 +629,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
+    <div data-testid="settings-screen" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
       <OnboardingHints
         hintId="settings_overview"
         title="Your profile and preferences"
@@ -702,6 +704,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
                 <div>
                   <div style={{ fontSize: 11, color: Z.muted, marginBottom: 5 }}>Weight (kg)</div>
                   <input style={inp} type="number" placeholder="79" value={settings.weight_kg || ''}
+                    data-testid="weight-input"
                     onChange={e => setSettings(s => ({...s, weight_kg: e.target.value}))} />
                 </div>
               </div>
@@ -712,7 +715,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
                 </div>
                 <div style={{ fontSize: 10, color: '#555', marginTop: 4 }}>To change your email contact support.</div>
               </div>
-              <SaveBtn onClick={savePersonal} saving={personalSaving} saved={personalSaved} />
+              <SaveBtn onClick={savePersonal} saving={personalSaving} saved={personalSaved} testId="save-profile" />
               <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${Z.border}` }}>
                 <button
                   onClick={resetHints}
@@ -1115,7 +1118,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
                     onChange={v => setSettings(prev => ({...prev, [s.key]: v}))} />
                 ))}
               </div>
-              <SaveBtn onClick={saveCoaching} saving={coachingSaving} saved={coachingSaved} />
+              <SaveBtn onClick={saveCoaching} saving={coachingSaving} saved={coachingSaved} testId="save-settings" />
             </div>
           )}
         </div>
@@ -1275,6 +1278,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
 
               {/* Sign out */}
               <button onClick={async () => { await supabase.auth.signOut(); onLogout?.(); onClose?.() }}
+                data-testid="logout-button"
                 style={{ width: '100%', background: 'none', border: '1px solid rgba(255,92,92,0.3)', borderRadius: 8, padding: '11px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: Z.red, marginBottom: 16 }}>
                 Sign out
               </button>

@@ -230,7 +230,7 @@ export default function Onboarding({ onComplete }) {
 
   // ── Submitting ────────────────────────────────────────────────────────────
   if (step === 'submitting') return (
-    <div style={{ ...shell, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+    <div data-testid="onboarding-screen" style={{ ...shell, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
       <div style={logoStyle}>COACH</div>
       <div style={{ fontSize: 12, color: Z.muted }}>Setting up your profile…</div>
     </div>
@@ -238,7 +238,7 @@ export default function Onboarding({ onComplete }) {
 
   // ── Step 1: Goal type ─────────────────────────────────────────────────────
   if (step === 1) return (
-    <div style={shell}>
+    <div data-testid="onboarding-screen" style={shell}>
       <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
       <div style={body}>
         <Dots step={1} />
@@ -265,7 +265,7 @@ export default function Onboarding({ onComplete }) {
           })}
         </div>
         <div style={{ flex: 1 }} />
-        <button style={primaryBtn(!!goalType)} onClick={() => goalType && setStep(2)}>Next →</button>
+        <button style={primaryBtn(!!goalType)} data-testid="onboarding-next" onClick={() => goalType && setStep(2)}>Next →</button>
         <button style={backBtn} onClick={handleSkip}>Skip for now</button>
       </div>
     </div>
@@ -273,7 +273,7 @@ export default function Onboarding({ onComplete }) {
 
   // ── Step 2: Connect Strava ────────────────────────────────────────────────
   if (step === 2) return (
-    <div style={shell}>
+    <div data-testid="onboarding-step-2" style={shell}>
       <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
       <div style={body}>
         <Dots step={2} />
@@ -307,7 +307,7 @@ export default function Onboarding({ onComplete }) {
             Connect Strava
           </button>
         )}
-        <button style={backBtn} onClick={() => setStep(3)}>I'll connect later →</button>
+        <button style={backBtn} data-testid="onboarding-skip-strava" onClick={() => setStep(3)}>I'll connect later →</button>
         <button style={{ ...backBtn, marginTop: 4 }} onClick={() => setStep(1)}>← Back</button>
       </div>
     </div>
@@ -315,7 +315,7 @@ export default function Onboarding({ onComplete }) {
 
   // ── Step 3: Sports (multi-sport) ──────────────────────────────────────────
   if (step === 3) return (
-    <div style={shell}>
+    <div data-testid="onboarding-screen" style={shell}>
       <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
       <div style={body}>
         <Dots step={3} />
@@ -352,12 +352,12 @@ export default function Onboarding({ onComplete }) {
         </div>
 
         {/* Chip suggestions */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 20 }}>
+        <div data-testid="sport-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 20 }}>
           {SPORT_CHIPS.map(chip => {
             const chipKey = normaliseSport(chip)
             const already = sports.some(s => s.sport_key === chipKey)
             return (
-              <button key={chip} onClick={() => already ? removeSportByKey(chipKey) : addSport(chip)} style={{
+              <button key={chip} onClick={() => already ? removeSportByKey(chipKey) : addSport(chip)} data-testid={`sport-chip-${chip}`} style={{
                 padding: '5px 11px', borderRadius: 20, cursor: 'pointer',
                 background: already ? 'rgba(232,255,71,0.12)' : 'transparent',
                 border: `1px solid ${already ? Z.accent : Z.border2}`,
@@ -427,7 +427,7 @@ export default function Onboarding({ onComplete }) {
         )}
 
         <div style={{ flex: 1 }} />
-        <button style={primaryBtn(sports.length > 0)} onClick={() => sports.length > 0 && setStep(4)}>Next →</button>
+        <button style={primaryBtn(sports.length > 0)} data-testid="onboarding-next" onClick={() => sports.length > 0 && setStep(4)}>Next →</button>
         <button style={backBtn} onClick={() => setStep(2)}>← Back</button>
       </div>
     </div>
@@ -438,7 +438,7 @@ export default function Onboarding({ onComplete }) {
     const cfg = TARGET_CONFIG[goalType] || { label: "What are you working towards?", placeholder: 'Describe your goal…' }
 
     return (
-      <div style={shell}>
+      <div data-testid="onboarding-race-setup" style={shell}>
         <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
         <div style={body}>
           <Dots step={4} />
@@ -452,7 +452,7 @@ export default function Onboarding({ onComplete }) {
             autoFocus
           />
           <div style={{ flex: 1 }} />
-          <button style={primaryBtn(!!targetRaw.trim())} onClick={() => targetRaw.trim() && setStep(5)}>Next →</button>
+          <button style={primaryBtn(!!targetRaw.trim())} data-testid="onboarding-next" onClick={() => targetRaw.trim() && setStep(5)}>Next →</button>
           <button style={backBtn} onClick={() => setStep(3)}>← Back</button>
         </div>
       </div>
@@ -462,7 +462,7 @@ export default function Onboarding({ onComplete }) {
   // ── Step 5: Level slider ──────────────────────────────────────────────────
   const level = LEVELS[levelIndex]
   return (
-    <div style={shell}>
+    <div data-testid="onboarding-complete" style={shell}>
       <div style={{ padding: '20px 24px 0', flexShrink: 0, ...logoStyle }}>COACH</div>
       <div style={body}>
         <Dots step={5} />
@@ -523,7 +523,7 @@ export default function Onboarding({ onComplete }) {
         )}
 
         <div style={{ flex: 1 }} />
-        <button style={primaryBtn()} onClick={handleComplete}>Let's go →</button>
+        <button style={primaryBtn()} data-testid="onboarding-finish" onClick={handleComplete}>Let's go →</button>
         <button style={backBtn} onClick={() => setStep(4)}>← Back</button>
       </div>
     </div>
