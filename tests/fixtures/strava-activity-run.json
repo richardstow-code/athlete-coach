@@ -1,0 +1,30 @@
+{
+  "id": 9999888877,
+  "name": "Morning Run",
+  "sport_type": "Run",
+  "type": "Run",
+  "start_date": "2026-03-20T07:15:00Z",
+  "start_date_local": "2026-03-20T08:15:00Z",
+  "elapsed_time": 3240,
+  "moving_time": 3210,
+  "distance": 10052,
+  "total_elevation_gain": 45,
+  "average_heartrate": 141,
+  "max_heartrate": 158,
+  "average_speed": 3.10,
+  "average_cadence": 84,
+  "calories": 620,
+  "workout_type": 0,
+  "splits_metric": [
+    {"distance": 1000, "elapsed_time": 325, "moving_time": 323, "average_heartrate": 138, "elevation_difference": 2, "average_speed": 3.10},
+    {"distance": 1000, "elapsed_time": 318, "moving_time": 316, "average_heartrate": 140, "elevation_difference": -1, "average_speed": 3.16},
+    {"distance": 1000, "elapsed_time": 322, "moving_time": 320, "average_heartrate": 142, "elevation_difference": 3, "average_speed": 3.13},
+    {"distance": 1000, "elapsed_time": 320, "moving_time": 318, "average_heartrate": 143, "elevation_difference": 0, "average_speed": 3.14},
+    {"distance": 1000, "elapsed_time": 319, "moving_time": 317, "average_heartrate": 141, "elevation_difference": -2, "average_speed": 3.15},
+    {"distance": 1000, "elapsed_time": 317, "moving_time": 315, "average_heartrate": 140, "elevation_difference": 1, "average_speed": 3.17},
+    {"distance": 1000, "elapsed_time": 321, "moving_time": 319, "average_heartrate": 142, "elevation_difference": 4, "average_speed": 3.13},
+    {"distance": 1000, "elapsed_time": 324, "moving_time": 322, "average_heartrate": 144, "elevation_difference": 2, "average_speed": 3.11},
+    {"distance": 1000, "elapsed_time": 316, "moving_time": 314, "average_heartrate": 139, "elevation_difference": -3, "average_speed": 3.18},
+    {"distance": 52, "elapsed_time": 17, "moving_time": 17, "average_heartrate": 140, "elevation_difference": 0, "average_speed": 3.06}
+  ]
+}

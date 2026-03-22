@@ -1,0 +1,9 @@
+{
+  "object_type": "activity",
+  "object_id": 9999888877,
+  "aspect_type": "create",
+  "owner_id": 12345678,
+  "subscription_id": 99999,
+  "event_time": 1742000000,
+  "updates": {}
+}

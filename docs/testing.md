@@ -1,0 +1,179 @@
+# Testing
+
+## Philosophy
+
+Tests run against a dedicated Supabase test project using a Vercel preview deployment — completely isolated from production. Richard's real data is never touched.
+
+Test depth scales with risk:
+
+| Tier | When | Tests | Expected duration |
+|------|------|-------|-------------------|
+| **PATCH** | 1-2 file changes, CSS/styles | Smoke tests only (`@smoke`) | ~3 min |
+| **MINOR** | 2+ components, API changes | Smoke + minor tests + API tests | ~10 min |
+| **MAJOR** | Schema migrations, buildContext.js, claudeProxy.js, 3+ src directories | All tests + AI eval | ~25-35 min |
+
+Docs-only changes skip all tests.
+
+---
+
+## Test Infrastructure
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| Test Supabase project | `nvoqqhaybhswdqcjyaws` (Frankfurt) | Isolated DB for all test runs |
+| Seed script | `tests/seed/seed.js` | Resets DB to known state before each run |
+| Fixture files | `tests/fixtures/` | Static data for UI and API tests |
+| GitHub Actions workflow | `.github/workflows/test.yml` | Runs on push/PR to main |
+| Test mode banner | `src/components/TestModeBanner.jsx` | Visible indicator when using test DB |
+
+---
+
+## Running the Seed Script Manually
+
+```bash
+# 1. Create tests/.env.test with real credentials (never commit this file)
+cp tests/.env.test tests/.env.test
+# Edit the file and fill in the values
+
+# 2. Run the seed script
+npm run seed:test
+# or directly:
+node tests/seed/seed.js
+```
+
+Expected output:
+```
+Starting seed...
+  Clearing existing test data...
+  Seeding athlete_settings...
+  Seeding athlete_sports...
+  Seeding activities...
+  Seeding scheduled_sessions...
+  Seeding coaching_memory...
+  Seeding nutrition_logs...
+  Seeding cycle_logs...
+Seeding complete. 6 personas created.
+  bodybuilder:  Marcus Weber   (strength, no races)
+  female_cycle: Sofia Müller   (marathon, cycle tracking, luteal phase)
+  injured:      Tom Brennan    (marathon, active ITB injury)
+  elite_taper:  Anna Kowalski  (elite, 5 weeks to London Marathon)
+  struggling:   Dave Thornton  (marathon, low adherence, nutrition issues)
+  multisport:   Lena Fischer   (Ironman 70.3, run/ride/swim)
+```
+
+---
+
+## Test Personas
+
+All persona UUIDs are fixed and referenced throughout tests. The seed script will always reset them to a known state.
+
+### 1. Bodybuilder — Marcus Weber
+- **UUID**: `00000000-0000-0001-0000-000000000001`
+- **Profile**: 32yo male, 92kg, strength-only, no races
+- **Data**: 18 strength activities (Mon/Wed/Fri pattern, 6 weeks), 4 upcoming sessions
+- **Tests**: Strength sport routing, no-race state, non-running coaching prompts
+
+### 2. Female Athlete with Cycle Tracking — Sofia Müller
+- **UUID**: `00000000-0000-0001-0000-000000000002`
+- **Profile**: 29yo female, marathon runner, cycle tracking enabled, 18 days into 28-day cycle (luteal phase)
+- **Data**: 14 running activities (6:30–5:00/km), 18 cycle log entries, Vienna Marathon in 5 weeks
+- **Tests**: Cycle phase injection in coaching context, luteal phase HR elevation detection, marathon phase
+
+### 3. Injured Athlete — Tom Brennan
+- **UUID**: `00000000-0000-0001-0000-000000000003`
+- **Profile**: 41yo male, marathon runner, active ITB injury (left knee, 10 days ago)
+- **Data**: 8 activities (reduced volume), active injury in coaching_memory, 3 rehab sessions scheduled
+- **Tests**: Injury report injection in context, rehab session type rendering, SessionDetail rehab view
+
+### 4. Elite Athlete Nearing Race — Anna Kowalski
+- **UUID**: `00000000-0000-0001-0000-000000000004`
+- **Profile**: 27yo female, elite marathon runner, 5 weeks to London Marathon, in taper
+- **Data**: 24 activities (3:50–4:30/km easy, 85km peak week, now 55km taper), taper week sessions
+- **Tests**: Taper lifecycle state, elite pacing context, sub-2:45 goal handling
+
+### 5. Struggling to Hit Plan — Dave Thornton
+- **UUID**: `00000000-0000-0001-0000-000000000005`
+- **Profile**: 45yo male, marathon runner, 35% plan adherence, 6+ missed sessions, poor nutrition
+- **Data**: 8 activities in 6 weeks (plan called for 20+), 10 nutrition entries (high UPF, alcohol, low protein), many missed scheduled_sessions
+- **Tests**: Mismatch detection, plan vs actual divergence display, nutrition flagging, alcohol tracking
+
+### 6. Multi-sport Athlete — Lena Fischer
+- **UUID**: `00000000-0000-0001-0000-000000000006`
+- **Profile**: 35yo female, Ironman 70.3 Salzburg (June 14), three sports: Run (priority 1), Ride (2), Swim (3, limiter)
+- **Data**: 18 activities across run/ride/swim, brick session included, triathlon training week scheduled
+- **Tests**: Multi-sport week view, sport-aware metrics, brick session display, three-sport coaching context
+
+---
+
+## Fixture Files
+
+| File | Purpose |
+|------|---------|
+| `tests/fixtures/strava-webhook-run.json` | Strava webhook POST payload (activity create) |
+| `tests/fixtures/strava-activity-run.json` | Full Strava activity response for a 10km run |
+| `tests/fixtures/strava-activity-weighttraining.json` | Full Strava activity response for a strength session |
+| `tests/fixtures/crossfit-workout.txt` | CrossFit WOD in plain text for workout ingest tests |
+| `tests/fixtures/food-images/*.jpg` | Placeholder images for nutrition photo logging tests |
+
+---
+
+## GitHub Secrets Required
+
+| Secret | How to get it |
+|--------|--------------|
+| `TEST_SUPABASE_URL` | Test project URL: `https://nvoqqhaybhswdqcjyaws.supabase.co` |
+| `TEST_SUPABASE_ANON_KEY` | Test project → Settings → API → anon/public key |
+| `TEST_SUPABASE_SERVICE_KEY` | Test project → Settings → API → service_role key |
+| `ANTHROPIC_API_KEY` | Same key used in production Supabase secrets |
+| `VERCEL_TOKEN` | Vercel account → Settings → Tokens → Create |
+
+Add at: GitHub repo → Settings → Secrets and variables → Actions
+
+---
+
+## Branch Protection
+
+For tests to gate production merges, enable branch protection:
+
+1. GitHub repo → Settings → Branches → Add rule
+2. Branch name pattern: `main`
+3. Enable: "Require status checks to pass before merging"
+4. Add status check: `Run Tests`
+5. Enable: "Require branches to be up to date before merging"
+
+---
+
+## Adding a New Test Persona
+
+1. Add a new UUID to `PERSONA_IDS` in `tests/seed/seed.js`
+2. Add `athlete_settings`, `athlete_sports`, `activities`, and `scheduled_sessions` inserts
+3. Add `coaching_memory` entries covering baseline + at least 1 feedback entry
+4. Update the deletion block at the top of `seedAll()` (already covers `ALL_IDS` automatically)
+5. Document the persona in this file
+
+---
+
+## Adding New Fixture Files
+
+Drop files into `tests/fixtures/` and reference them in test files via relative path from the test file location. For JSON fixtures, import directly. For binary files (images), read with `fs.readFileSync` and convert to base64 for API calls.
+
+---
+
+## Tier Classification Logic
+
+The GitHub Actions workflow classifies each push/PR into a tier:
+
+**MAJOR** (all tests + AI eval) triggers when:
+- `supabase/migrations/**` — schema change
+- `src/lib/buildContext.js` — coaching context layer
+- `src/lib/claudeProxy.js` — AI proxy
+- `Agent_System_Prompt.txt` — system prompt
+- 3 or more top-level `src/` subdirectories changed
+
+**MINOR** (smoke + UI + API) triggers when:
+- 2+ files in `src/components/` or `src/pages/`
+- Any file in `api/`
+
+**PATCH** (smoke only) — everything else
+
+**Skip** — docs-only changes (`docs/**` only)

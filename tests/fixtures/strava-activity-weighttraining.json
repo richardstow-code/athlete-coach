@@ -1,0 +1,19 @@
+{
+  "id": 9999888878,
+  "name": "Morning Strength Session",
+  "sport_type": "WeightTraining",
+  "type": "WeightTraining",
+  "start_date": "2026-03-21T07:00:00Z",
+  "start_date_local": "2026-03-21T08:00:00Z",
+  "elapsed_time": 3600,
+  "moving_time": 3600,
+  "distance": 0,
+  "total_elevation_gain": 0,
+  "average_heartrate": null,
+  "max_heartrate": null,
+  "average_speed": 0,
+  "average_cadence": null,
+  "calories": 280,
+  "workout_type": 0,
+  "splits_metric": []
+}

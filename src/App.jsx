@@ -117,6 +117,7 @@ import WorkoutIngest from './screens/WorkoutIngest'
 import HelpBot from './components/HelpBot'
 import ReleaseNotes from './components/ReleaseNotes'
 import Roadmap from './screens/Roadmap'
+import TestModeBanner from './components/TestModeBanner'
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
@@ -348,6 +349,9 @@ export default function App() {
       margin: '0 auto',
       position: 'relative',
     }}>
+
+      {/* TEST MODE BANNER — only visible on preview deployments */}
+      <TestModeBanner />
 
       {/* RELEASE NOTES POPUP */}
       <ReleaseNotes userId={userId} />

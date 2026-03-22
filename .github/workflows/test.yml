@@ -1,0 +1,302 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Detect release tier from changed files ──────────────────────────
+  detect-tier:
+    name: Detect Release Tier
+    runs-on: ubuntu-latest
+    outputs:
+      tier: ${{ steps.classify.outputs.tier }}
+      skip: ${{ steps.classify.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            # On first push to branch, compare with HEAD~1
+            if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+              BASE="HEAD~1"
+            fi
+          fi
+          git diff --name-only "$BASE" HEAD > /tmp/changed_files.txt
+          cat /tmp/changed_files.txt
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/changed_files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Classify release tier
+        id: classify
+        run: |
+          FILES=$(cat /tmp/changed_files.txt)
+
+          # Docs-only: skip tests
+          if echo "$FILES" | grep -qvE '^docs/'; then
+            DOCS_ONLY=false
+          else
+            DOCS_ONLY=true
+          fi
+          if [ "$DOCS_ONLY" = "true" ]; then
+            echo "tier=patch" >> $GITHUB_OUTPUT
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Docs-only change — skipping tests"
+            exit 0
+          fi
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+          # MAJOR triggers
+          MAJOR=false
+          if echo "$FILES" | grep -qE '^supabase/migrations/'; then MAJOR=true; fi
+          if echo "$FILES" | grep -qE '^src/lib/buildContext\.js$'; then MAJOR=true; fi
+          if echo "$FILES" | grep -qE '^src/lib/claudeProxy\.js$'; then MAJOR=true; fi
+          if echo "$FILES" | grep -qE '^Agent_System_Prompt\.txt$'; then MAJOR=true; fi
+          # 3+ different top-level src/ subdirs
+          SRC_DIRS=$(echo "$FILES" | grep '^src/' | cut -d'/' -f2 | sort -u | wc -l)
+          if [ "$SRC_DIRS" -ge 3 ]; then MAJOR=true; fi
+
+          if [ "$MAJOR" = "true" ]; then
+            echo "tier=major" >> $GITHUB_OUTPUT
+            echo "Tier: MAJOR"
+            exit 0
+          fi
+
+          # MINOR triggers
+          MINOR=false
+          COMPONENT_COUNT=$(echo "$FILES" | grep -c '^src/components/' || true)
+          PAGE_COUNT=$(echo "$FILES" | grep -c '^src/pages/' || true)
+          if [ "$COMPONENT_COUNT" -ge 2 ] || [ "$PAGE_COUNT" -ge 2 ]; then MINOR=true; fi
+          if echo "$FILES" | grep -qE '^api/'; then MINOR=true; fi
+
+          if [ "$MINOR" = "true" ]; then
+            echo "tier=minor" >> $GITHUB_OUTPUT
+            echo "Tier: MINOR"
+            exit 0
+          fi
+
+          echo "tier=patch" >> $GITHUB_OUTPUT
+          echo "Tier: PATCH"
+
+  # ── Job 2: Wait for Vercel preview deployment ──────────────────────────────
+  wait-preview:
+    name: Wait for Vercel Preview
+    runs-on: ubuntu-latest
+    needs: detect-tier
+    if: needs.detect-tier.outputs.skip != 'true'
+    outputs:
+      preview_url: ${{ steps.get_url.outputs.preview_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Wait for preview deployment and get URL
+        id: get_url
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          COMMIT_SHA="${{ github.sha }}"
+          echo "Looking for Vercel deployment for commit $COMMIT_SHA"
+
+          MAX_ATTEMPTS=20
+          ATTEMPT=0
+          PREVIEW_URL=""
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+
+            # List recent deployments and find one matching this commit
+            DEPLOYMENTS=$(vercel ls athlete-coach \
+              --token "$VERCEL_TOKEN" \
+              --scope richardstow-5051s-projects \
+              --json 2>/dev/null || echo "[]")
+
+            PREVIEW_URL=$(echo "$DEPLOYMENTS" | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              deployments = data if isinstance(data, list) else data.get('deployments', [])
+              for d in deployments:
+                  meta = d.get('meta', {})
+                  sha = meta.get('githubCommitSha', '')
+                  state = d.get('state', '')
+                  url = d.get('url', '')
+                  if sha.startswith('$COMMIT_SHA'[:8]) and state == 'READY' and url:
+                      print('https://' + url)
+                      break
+          except:
+              pass
+          " 2>/dev/null)
+
+            if [ -n "$PREVIEW_URL" ]; then
+              echo "Found preview URL: $PREVIEW_URL"
+              break
+            fi
+
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "Not ready yet, waiting 15s..."
+              sleep 15
+            fi
+          done
+
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "WARNING: Could not find Vercel preview URL. Using production URL as fallback."
+            PREVIEW_URL="https://athlete-coach-alpha.vercel.app"
+          fi
+
+          echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+          echo "Preview URL: $PREVIEW_URL"
+
+  # ── Job 3: Seed test database ──────────────────────────────────────────────
+  seed-data:
+    name: Seed Test Database
+    runs-on: ubuntu-latest
+    needs: wait-preview
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run seed script
+        env:
+          TEST_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
+          TEST_SUPABASE_SERVICE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_KEY }}
+          TEST_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
+        run: node tests/seed/seed.js
+
+  # ── Job 4: Run tests ───────────────────────────────────────────────────────
+  run-tests:
+    name: Run Tests (${{ needs.detect-tier.outputs.tier }})
+    runs-on: ubuntu-latest
+    needs: [detect-tier, wait-preview, seed-data]
+    env:
+      PREVIEW_URL: ${{ needs.wait-preview.outputs.preview_url }}
+      TEST_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
+      TEST_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
+      TEST_SUPABASE_SERVICE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      RELEASE_TIER: ${{ needs.detect-tier.outputs.tier }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        if: hashFiles('playwright.config.*') != ''
+
+      - name: Run PATCH tests (smoke only)
+        if: needs.detect-tier.outputs.tier == 'patch'
+        run: |
+          if [ -f "playwright.config.js" ] || [ -f "playwright.config.ts" ]; then
+            npx playwright test --grep @smoke
+          else
+            echo "No Playwright config found — skipping smoke tests"
+          fi
+
+      - name: Run MINOR tests (smoke + minor + API)
+        if: needs.detect-tier.outputs.tier == 'minor'
+        run: |
+          if [ -f "playwright.config.js" ] || [ -f "playwright.config.ts" ]; then
+            npx playwright test --grep "@smoke|@minor"
+          else
+            echo "No Playwright config found — skipping UI tests"
+          fi
+          if [ -f "vitest.config.*" ] || grep -q '"test:api"' package.json 2>/dev/null; then
+            npm run test:api
+          else
+            echo "No API test config found — skipping"
+          fi
+
+      - name: Run MAJOR tests (all tests + AI eval)
+        if: needs.detect-tier.outputs.tier == 'major'
+        run: |
+          if [ -f "playwright.config.js" ] || [ -f "playwright.config.ts" ]; then
+            npx playwright test
+          else
+            echo "No Playwright config found — skipping UI tests"
+          fi
+          if grep -q '"test:api"' package.json 2>/dev/null; then
+            npm run test:api
+          else
+            echo "No API test config found — skipping"
+          fi
+          if grep -q '"test:ai-eval"' package.json 2>/dev/null; then
+            npm run test:ai-eval
+          else
+            echo "No AI eval config found — skipping"
+          fi
+
+      - name: Upload Playwright screenshots on failure
+        if: failure() && (hashFiles('playwright.config.*') != '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-screenshots-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+
+  # ── Job 5: Report results ──────────────────────────────────────────────────
+  report:
+    name: Report Results
+    runs-on: ubuntu-latest
+    needs: [detect-tier, wait-preview, run-tests]
+    if: always() && needs.detect-tier.outputs.skip != 'true'
+    steps:
+      - name: Post success status
+        if: needs.run-tests.result == 'success'
+        run: echo "All tests passed for tier ${{ needs.detect-tier.outputs.tier }}"
+
+      - name: Post failure comment on PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tier = '${{ needs.detect-tier.outputs.tier }}'
+            const previewUrl = '${{ needs.wait-preview.outputs.preview_url }}'
+            const body = [
+              '## Test Failure',
+              '',
+              `**Release tier:** ${tier}`,
+              `**Preview URL:** ${previewUrl}`,
+              '',
+              'One or more test steps failed. Check the [Actions tab](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.',
+              '',
+              'Playwright screenshots (if any) are attached as artifacts and retained for 7 days.',
+            ].join('\n')
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            })
+
+      - name: Fail workflow if tests failed
+        if: needs.run-tests.result == 'failure'
+        run: exit 1
