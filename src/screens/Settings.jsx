@@ -146,8 +146,12 @@ function ZoneCalibrationPanel() {
   const [calError, setCalError] = useState(null)
 
   useEffect(() => {
-    supabase.from('athlete_settings').select('hr_zones').maybeSingle()
-      .then(({ data }) => { if (data?.hr_zones) setHrZones(data.hr_zones) })
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user?.id
+      if (!uid) return
+      supabase.from('athlete_settings').select('hr_zones').eq('user_id', uid).maybeSingle()
+        .then(({ data }) => { if (data?.hr_zones) setHrZones(data.hr_zones) })
+    })
   }, [])
 
   async function handleCalibrate() {
@@ -302,19 +306,24 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
 
   // ── Load ─────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserId(data?.user?.id ?? null)
-      setEmail(data?.user?.email ?? '')
-    })
-    supabase.from('athlete_settings').select('*').maybeSingle().then(({ data }) => {
-      if (data) {
-        setSettings(s => ({ ...s, ...data, races: data.races || [] }))
-        setZones({ ...DEFAULT_ZONES, ...(data.training_zones || {}) })
-        setHealthFlags(data.health_flags || [])
+    async function load() {
+      const { data: userData } = await supabase.auth.getUser()
+      const uid = userData?.user?.id ?? null
+      setUserId(uid)
+      setEmail(userData?.user?.email ?? '')
+      if (!uid) return
+      const [{ data: settingsData }, { data: stravaData }] = await Promise.all([
+        supabase.from('athlete_settings').select('*').eq('user_id', uid).maybeSingle(),
+        supabase.from('strava_tokens').select('athlete_id, athlete_name').eq('user_id', uid).maybeSingle(),
+      ])
+      if (settingsData) {
+        setSettings(s => ({ ...s, ...settingsData, races: settingsData.races || [] }))
+        setZones({ ...DEFAULT_ZONES, ...(settingsData.training_zones || {}) })
+        setHealthFlags(settingsData.health_flags || [])
       }
-    })
-    supabase.from('strava_tokens').select('athlete_id, athlete_name').maybeSingle()
-      .then(({ data }) => setStravaToken(data || false))
+      setStravaToken(stravaData || false)
+    }
+    load()
   }, [])
 
   // ── Helpers ───────────────────────────────────────────────

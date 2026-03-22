@@ -523,12 +523,13 @@ export default function Progress({ onActivityClick }) {
         })()
       : (() => { const d = new Date(); d.setMonth(d.getMonth()-4); return localDateStr(d) })()
 
+    const uid = (await supabase.auth.getSession()).data.session?.user?.id
     const [{ data: acts }, { data: wSess }, { data: pSess }, { data: nLogs }, { data: stravaToken }] = await Promise.all([
-      supabase.from('activities').select('*').order('date', { ascending: false }).limit(200),
-      supabase.from('scheduled_sessions').select('*').gte('planned_date', weekStartStr).lte('planned_date', weekEndStr).order('planned_date'),
-      supabase.from('scheduled_sessions').select('*').gte('planned_date', phaseStartStr).order('planned_date'),
-      supabase.from('nutrition_logs').select('date').gte('date', weekStartStr).lte('date', weekEndStr),
-      supabase.from('strava_tokens').select('athlete_id').maybeSingle(),
+      supabase.from('activities').select('*').eq('user_id', uid).order('date', { ascending: false }).limit(200),
+      supabase.from('scheduled_sessions').select('*').eq('user_id', uid).gte('planned_date', weekStartStr).lte('planned_date', weekEndStr).order('planned_date'),
+      supabase.from('scheduled_sessions').select('*').eq('user_id', uid).gte('planned_date', phaseStartStr).order('planned_date'),
+      supabase.from('nutrition_logs').select('date').eq('user_id', uid).gte('date', weekStartStr).lte('date', weekEndStr),
+      supabase.from('strava_tokens').select('athlete_id').eq('user_id', uid).maybeSingle(),
     ])
     setActivities(acts || [])
     setWeekSessions(wSess || [])

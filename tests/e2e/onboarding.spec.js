@@ -31,7 +31,8 @@ test('@minor new user sees onboarding flow', async ({ page }) => {
 
   // Step 4: Race/target setup
   await page.waitForSelector('[data-testid="onboarding-race-setup"]')
-  await page.click('[data-testid="onboarding-next"]') // Skip — textarea may be empty
+  await page.fill('[data-testid="onboarding-race-setup"] textarea', 'Frankfurt Marathon 2026 — aiming to finish')
+  await page.click('[data-testid="onboarding-next"]')
 
   // Step 5: Profile complete — level slider visible
   await page.waitForSelector('[data-testid="onboarding-complete"]')

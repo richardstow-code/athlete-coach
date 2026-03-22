@@ -42,6 +42,7 @@ export const PERSONA_IDS = {
   elite_taper:  '00000000-0000-0001-0000-000000000004',
   struggling:   '00000000-0000-0001-0000-000000000005',
   multisport:   '00000000-0000-0001-0000-000000000006',
+  newuser:      '00000000-0000-0001-0000-000000000007',
 }
 
 const ALL_IDS = Object.values(PERSONA_IDS)
@@ -84,6 +85,18 @@ async function ins(table, rows) {
 
 export async function seedAll() {
   console.log('Starting seed...')
+
+  // ── 0. Ensure newuser auth account exists ──
+  console.log('  Ensuring newuser auth account...')
+  const { error: newuserErr } = await supabase.auth.admin.createUser({
+    id: PERSONA_IDS.newuser,
+    email: 'newuser@test.athletecoach.app',
+    password: 'TestPass123!',
+    email_confirm: true,
+  })
+  if (newuserErr && !newuserErr.message.includes('already been registered') && !newuserErr.message.includes('already exists')) {
+    console.warn('  warn: newuser creation:', newuserErr.message)
+  }
 
   // ── 1. Delete in FK-safe order ──
   console.log('  Clearing existing test data...')
@@ -173,6 +186,7 @@ export async function seedAll() {
       consequences: 40,
       detail_level: 40,
       coaching_reach: 60,
+      sleep_hours_typical: 6.5,
       onboarding_complete: true,
       races: [{ name: 'Frankfurt Marathon', date: '2026-10-25', goal_time: '4:15:00' }],
       subscription_tier: 'founder',

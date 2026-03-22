@@ -49,10 +49,14 @@ export default function PostWorkoutPopup({ onDismiss, onViewDetail }) {
 
   useEffect(() => {
     async function checkLatest() {
+      const { data: { session } } = await supabase.auth.getSession()
+      const uid = session?.user?.id
+      if (!uid) return
       const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
       const { data: acts } = await supabase
         .from('activities')
         .select('*')
+        .eq('user_id', uid)
         .gte('date', fourHoursAgo)
         .order('date', { ascending: false })
         .limit(1)
