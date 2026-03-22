@@ -262,6 +262,15 @@ jobs:
             playwright-report/
           retention-days: 7
 
+      - name: Upload AI eval results
+        if: needs.detect-tier.outputs.tier == 'major'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-eval-results-${{ github.run_id }}
+          path: tests/ai-eval/results/latest.json
+          retention-days: 90
+          if-no-files-found: warn
+
   # ── Job 5: Report results ──────────────────────────────────────────────────
   report:
     name: Report Results

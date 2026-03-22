@@ -28,3 +28,4 @@ tests/.env.test
 backfill.*
 .mcp.json
 .vercel
+tests/ai-eval/results/*.json

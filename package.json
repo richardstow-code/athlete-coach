@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --grep @smoke",
     "test:e2e:minor": "playwright test --grep \"@smoke|@minor\"",
-    "test:e2e:major": "playwright test"
+    "test:e2e:major": "playwright test",
+    "test:ai-eval": "node tests/ai-eval/run-eval.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",
@@ -20,6 +21,7 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.58.2",
     "@types/react": "^19.2.14",
