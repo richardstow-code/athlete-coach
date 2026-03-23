@@ -105,6 +105,7 @@ function Login() {
   )
 }
 
+import ResetPasswordScreen from './components/ResetPasswordScreen'
 import Home from './screens/Home'
 import Chat from './screens/Chat'
 import Plan from './screens/Plan'
@@ -155,6 +156,7 @@ const Z = {
 }
 
 export default function App() {
+  const [showPasswordReset, setShowPasswordReset] = useState(false)
   const [session, setSession] = useState(undefined)
   const [needsOnboarding, setNeedsOnboarding] = useState(null) // null=checking, true/false
   const [postEventSettings, setPostEventSettings] = useState(null)
@@ -180,7 +182,10 @@ export default function App() {
       setSession(session)
       if (session?.user?.id) setUserId(session.user.id)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowPasswordReset(true)
+      }
       setSession(session)
       if (session?.user?.id) setUserId(session.user.id)
     })
@@ -334,6 +339,7 @@ export default function App() {
 
   const loading = <div style={{ height: '100dvh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 28, color: '#e8ff47', letterSpacing: '-1px' }}>COACH</div>
 
+  if (showPasswordReset) return <ResetPasswordScreen onComplete={() => setShowPasswordReset(false)} />
   if (session === undefined) return loading
   if (session === null) return <Login />
   if (needsOnboarding === null) return loading
