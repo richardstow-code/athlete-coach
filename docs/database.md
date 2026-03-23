@@ -9,29 +9,31 @@ Supabase project: `yjuhzmknabedjklsgbje`
 ## Tables
 
 ### `activities`
-Strava activities — upserted on `strava_id`. Source of truth for all workout data.
+Strava activities (upserted on `strava_id`) and manually logged activities. Source of truth for all workout data.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| id | uuid | PK, auto |
+| id | bigint | PK, auto |
 | user_id | uuid | FK → auth.users |
-| strava_id | text | unique, used for upsert conflict |
-| date | date | local date (Europe/Vienna) |
-| name | text | activity name from Strava |
-| type | text | e.g. "run", "ride", "weighttraining" |
+| strava_id | bigint | unique, used for upsert conflict; null for manual activities |
+| date | timestamptz | activity datetime (Europe/Vienna) |
+| name | text | activity name |
+| type | text | e.g. "run", "trail", "weighttraining" |
 | distance_km | numeric | null for non-distance activities |
 | duration_min | numeric | moving time in minutes |
 | pace_per_km | text | formatted "M:SS" |
 | avg_hr | numeric | average heart rate |
 | max_hr | numeric | max heart rate |
 | elevation_m | numeric | total elevation gain |
-| calories | numeric | from Strava (often null) |
+| calories | integer | from Strava (often null) |
 | avg_cadence | numeric | from Strava |
-| workout_type | integer | Strava workout type code |
+| workout_type | text | Strava workout type code |
 | splits_metric | jsonb | per-km splits array |
 | laps | jsonb | lap data from Strava |
 | raw_data | jsonb | full Strava API response |
 | zone_data | jsonb | HR zone breakdown (reserved — not yet populated by webhook) |
+| enrichment_status | text | enrichment pipeline state |
+| source | text | `'strava'` \| `'manual'` — added 2026-03-23; default `'strava'` |
 
 **Actively used**: Yes — main data source for Home, ActivityDetail, Plan, Stats screens.
 
@@ -155,16 +157,16 @@ Persistent coaching context: chat exchanges, activity feedback, and baseline ana
 | Column | Type | Notes |
 |--------|------|-------|
 | id | uuid | PK |
-| user_id | uuid | NOT NULL |
-| type | text | NOT NULL — activity_feedback \| chat \| baseline |
+| user_id | uuid | NOT NULL, FK → auth.users ON DELETE CASCADE |
+| type | text | NOT NULL — activity_feedback \| chat \| baseline \| manual_activity |
 | source | text | app-chat \| activity-trigger \| strava-sync |
 | category | text | chat \| activity_feedback \| baseline_analysis |
 | content | text | the memory text |
-| activity_id | bigint | FK → activities.strava_id (numeric) |
+| activity_id | bigint | FK → activities.id ON DELETE SET NULL — added FK 2026-03-23 |
 | date | date | NOT NULL |
 | created_at | timestamptz | |
 
-**Actively used**: Yes — read by buildContext, written by Chat and webhook.
+**Actively used**: Yes — read by buildContext, written by Chat, webhook, and manual activity log.
 
 ---
 
@@ -372,6 +374,8 @@ The popup fires automatically for all users on their next load.
 
 | Column | Table | Added | Purpose |
 |--------|-------|-------|---------|
+| `source` | activities | 2026-03-23 | `'strava'` or `'manual'` — distinguishes Strava-synced vs manually logged activities |
+| FK on `activity_id` | coaching_memory | 2026-03-23 | FK → activities.id ON DELETE SET NULL; previous orphaned rows (stored Strava IDs) were nulled |
 | `planned_start_time` | scheduled_sessions | 2026-03-20 | Records when athlete taps "I'm on it" on check-in card |
 | `last_goal_prompt_date` | athlete_settings | 2026-03-20 | Prevents quarterly goal prompt from re-appearing too soon |
 | `hints_dismissed` | athlete_settings | 2026-03-21 | JSONB object `{hint_id: "YYYY-MM-DD"}` — dismissed onboarding hints by ID |

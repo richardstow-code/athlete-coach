@@ -51,29 +51,40 @@ Per-screen components (mounted inside each screen): OnboardingHints — one inst
 
 ### Plan (`src/screens/Plan.jsx`)
 
-**Purpose**: Training plan view with week navigation, mismatch detection, and coach proposal queue.
+**Purpose**: Training plan view with week navigation, mismatch detection, coach proposal queue, and manual activity logging.
 
 **Data sources (reads)**:
 - `scheduled_sessions` — week range (Mon–Sun)
-- `activities` — matched against planned sessions for mismatch detection
+- `activities` — matched against planned sessions; unmatched shown inline at correct day slot
 - `schedule_changes` — pending queue shown below calendar
 - `athlete_settings` — via useSettings()
 - `athlete_sports` — race card and lifecycle context
 - `plan_drafts` — fetched when plan review panel is opened
 
 **Data sources (writes)**:
-- `scheduled_sessions` — status updates (planned → completed/missed), session edits
-- `schedule_changes` — inserts when athlete submits proactive change request
-- `scheduled_sessions` — bulk insert when plan draft is committed
+- `scheduled_sessions` — status updates (planned → completed/missed), session edits; bulk insert when plan draft committed
+- `schedule_changes` — inserts when athlete submits proactive change request or mismatch proposals
+- `activities` — insert when athlete manually logs an activity (`source: 'manual'`); delete when athlete deletes an activity
+- `coaching_memory` — writes one-sentence coaching note after each manual activity save (`memory_type: 'manual_activity'`)
 
 **Claude calls**:
-- Proactive change input: Haiku, interprets athlete's free-text change request
+- Proactive change input: Haiku, interprets athlete's free-text change request → JSON proposals
+- Mismatch detection: Haiku, 600 tokens, compares planned vs actual → JSON `{summary, what_changed, week_impact, proposals}`
+- Manual activity feedback: Haiku, 150 tokens, single-sentence coaching note (plain text)
 - Plan generation: Haiku, 4000 tokens, returns JSON sessions array (via `generatePlanDraft()`)
 - Plan review conversation: Haiku, ongoing review dialogue in PlanReviewPanel
+
+**Key UI elements**:
+- Session + orphan activity list merged and sorted by date — unplanned activities rendered at their day slot with an "Unplanned" badge (no separate section)
+- `getDisplayDate(dateStr)` helper normalises ISO timestamps and date strings before constructing `Date` objects (fixes INVALID DATE bug)
+- `+ FAB` button (bottom-right, above tab bar) → bottom sheet → "Log manual activity"
+- Manual activity form: type picker, date, duration (min), optional distance/notes; shows coach feedback after save
+- Delete activity modal: shown when tapping a manual activity (source ≠ strava); Strava activities still navigate to detail
 
 **Known issues / gaps**:
 - Commit from plan_draft to scheduled_sessions may not be fully wired in all code paths
 - Mismatch detection heuristics may produce false positives for non-run activities
+- `duration_sec` field referenced in mismatch check but DB column is `duration_min` — mismatch duration check silently no-ops for now
 
 ---
 

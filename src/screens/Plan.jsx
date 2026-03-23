@@ -23,6 +23,12 @@ function localDateStr(d) {
   return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
 }
 
+function getDisplayDate(dateStr) {
+  const d = dateStr?.slice(0, 10)
+  if (!d) return new Date('invalid')
+  return new Date(d + 'T12:00:00')
+}
+
 function daysUntil(d) {
   if (!d) return null
   const diff = new Date(d) - new Date()
@@ -285,6 +291,55 @@ function SessionRow({ session, activity, isToday, onActivityClick, onSessionClic
   )
 }
 
+// ── Orphan Activity Row ───────────────────────────────────────
+function OrphanRow({ activity, isToday, onActivityClick, onDeleteClick }) {
+  const col = typeColor[activity.type?.toLowerCase()] || Z.muted
+  const dispDate = getDisplayDate(activity.date)
+  const isManual = !activity.strava_id
+
+  function handleClick() {
+    if (isManual) {
+      onDeleteClick?.(activity)
+    } else {
+      onActivityClick?.(activity.strava_id)
+    }
+  }
+
+  return (
+    <div onClick={handleClick} data-testid="orphan-row"
+      style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${Z.border}`, cursor: 'pointer' }}>
+      <div style={{ width: 38, flexShrink: 0, textAlign: 'center', paddingTop: 2 }}>
+        <div style={{ fontSize: 10, color: isToday ? Z.accent : Z.muted, fontWeight: isToday ? 600 : 400, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {dispDate.toLocaleDateString('en-GB', { weekday: 'short' })}
+        </div>
+        <div style={{ fontSize: 12, color: Z.muted, marginTop: 1 }}>{dispDate.getDate()}</div>
+        <div style={{ fontSize: 18, marginTop: 2 }}>{typeIcon[activity.type?.toLowerCase()] || '🏃'}</div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, color: Z.text, fontWeight: 500 }}>{activity.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <div style={{ fontSize: 10, color: col, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{activity.type}</div>
+              <span style={{ fontSize: 9, color: Z.muted, border: `1px solid ${Z.border2}`, borderRadius: 3, padding: '1px 5px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Unplanned</span>
+            </div>
+          </div>
+          <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, marginLeft: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12,
+            background: 'rgba(77,255,145,0.15)', border: `2px solid ${Z.green}`, color: Z.green }}>✓</div>
+        </div>
+        <div style={{ marginTop: 8, display: 'inline-flex', gap: 8, background: 'rgba(77,255,145,0.08)', border: '1px solid rgba(77,255,145,0.2)', borderRadius: 6, padding: '5px 10px', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: Z.green }}>✓ {parseFloat(activity.distance_km||0).toFixed(1)}km</span>
+          <span style={{ fontSize: 11, color: Z.muted }}>
+            {(activity.duration_min || activity.duration_sec) ? `${Math.round(activity.duration_min || activity.duration_sec/60)}min` : ''}
+            {activity.avg_hr ? ` · HR ${Math.round(activity.avg_hr)}` : ''}
+            {!isManual ? ' →' : ''}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Proactive Change Input ────────────────────────────────────
 function ProactiveChange({ onSubmit }) {
   const [open, setOpen] = useState(false)
@@ -396,6 +451,17 @@ export default function Plan({ onActivityClick }) {
   const [planDraftId, setPlanDraftId] = useState(null)
   const [userId, setUserId] = useState(null)
   const today = localDateStr(new Date())
+  const [showFABSheet, setShowFABSheet] = useState(false)
+  const [showManualForm, setShowManualForm] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [manualType, setManualType] = useState('run')
+  const [manualDate, setManualDate] = useState(() => localDateStr(new Date()))
+  const [manualDuration, setManualDuration] = useState('')
+  const [manualDistKm, setManualDistKm] = useState('')
+  const [manualNotes, setManualNotes] = useState('')
+  const [manualLoading, setManualLoading] = useState(false)
+  const [manualFeedback, setManualFeedback] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -665,6 +731,181 @@ export default function Plan({ onActivityClick }) {
     setGeneratingPlan(false)
   }
 
+  // Merge sessions + orphan activities into a single date-sorted list
+  const allItems = [
+    ...sessions.map(s => ({ type: 'session', date: s.planned_date, data: s })),
+    ...orphanActivities.map(a => ({ type: 'orphan', date: a.date?.slice(0, 10) || '', data: a })),
+  ].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
+
+  async function handleDeleteActivity() {
+    if (!deleteTarget) return
+    setDeleteLoading(true)
+    await supabase.from('activities').delete().eq('id', deleteTarget.id)
+    setDeleteTarget(null)
+    setDeleteLoading(false)
+    loadWeek()
+  }
+
+  function resetManualForm() {
+    setManualType('run')
+    setManualDate(localDateStr(new Date()))
+    setManualDuration('')
+    setManualDistKm('')
+    setManualNotes('')
+    setManualFeedback(null)
+  }
+
+  async function handleManualSave() {
+    if (!manualDuration) return
+    setManualLoading(true)
+    setManualFeedback(null)
+    try {
+      const uid = userId || (await supabase.auth.getSession()).data.session?.user?.id
+      const durationMin = parseFloat(manualDuration)
+      const distKm = manualDistKm ? parseFloat(manualDistKm) : null
+      const typeLabel = manualType.charAt(0).toUpperCase() + manualType.slice(1)
+      const activityName = manualNotes
+        ? `${typeLabel} — ${manualNotes.slice(0, 40)}`
+        : `${typeLabel} (manual)`
+
+      const { data: inserted, error: insertError } = await supabase.from('activities').insert({
+        user_id: uid,
+        name: activityName,
+        type: manualType,
+        date: manualDate,
+        duration_min: durationMin,
+        distance_km: distKm,
+        source: 'manual',
+      }).select().single()
+
+      if (insertError) throw insertError
+
+      // Get coaching feedback
+      try {
+        const systemPrompt = await fetchAndBuildPrompt(supabase)
+        const resp = await callClaude({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 150,
+          system: systemPrompt + '\n\nTask: give a single short sentence of coaching feedback on this manually logged activity. Be specific and encouraging. No JSON, no markdown.',
+          messages: [{ role: 'user', content: `Logged: ${typeLabel}${distKm ? `, ${distKm}km` : ''}, ${manualDuration}min${manualNotes ? `. Notes: ${manualNotes}` : ''}` }],
+        })
+        const feedback = resp.content[0].text.trim()
+        setManualFeedback(feedback)
+        await supabase.from('coaching_memory').insert({
+          user_id: uid,
+          memory_type: 'manual_activity',
+          content: `Athlete manually logged a ${manualType} on ${manualDate}: ${durationMin}min${distKm ? `, ${distKm}km` : ''}${manualNotes ? `. Notes: ${manualNotes}` : ''}. Coach: ${feedback}`,
+          activity_id: inserted?.id || null,
+          context: { type: manualType, duration_min: durationMin, distance_km: distKm, notes: manualNotes || null, date: manualDate },
+        })
+      } catch(e) { console.error('Coaching feedback failed', e) }
+
+      loadWeek()
+    } catch(e) {
+      console.error('Manual activity save failed', e)
+    }
+    setManualLoading(false)
+  }
+
+  function renderDeleteActivityModal() {
+    if (!deleteTarget) return null
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+        <div onClick={() => setDeleteTarget(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.75)' }} />
+        <div style={{ position: 'relative', background: Z.bg, borderRadius: '16px 16px 0 0', border: `1px solid ${Z.border2}`, padding: '20px 20px 40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+            <div style={{ width: 36, height: 4, background: Z.border2, borderRadius: 2 }} />
+          </div>
+          <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 18, fontWeight: 800, marginBottom: 6 }}>Delete activity?</div>
+          <div style={{ fontSize: 13, color: Z.muted, marginBottom: 20, lineHeight: 1.5 }}>
+            {deleteTarget.name}<br />
+            <span style={{ fontSize: 11 }}>This cannot be undone.</span>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              disabled={deleteLoading}
+              onClick={handleDeleteActivity}
+              style={{ flex: 1, background: deleteLoading ? '#1a1a1a' : Z.red, border: 'none', borderRadius: 10, padding: '13px', fontFamily: "'DM Mono', monospace", fontSize: 13, fontWeight: 600, cursor: deleteLoading ? 'wait' : 'pointer', color: deleteLoading ? Z.muted : '#fff' }}>
+              {deleteLoading ? 'Deleting...' : 'Delete'}
+            </button>
+            <button
+              onClick={() => setDeleteTarget(null)}
+              style={{ flex: 1, background: 'none', border: `1px solid ${Z.border2}`, borderRadius: 10, padding: '13px', fontFamily: "'DM Mono', monospace", fontSize: 13, cursor: 'pointer', color: Z.muted }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const inputSt = { background: '#111111', border: `1px solid ${Z.border2}`, borderRadius: 8, padding: '10px 12px', color: Z.text, fontFamily: "'DM Mono', monospace", fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' }
+
+  function renderManualActivityForm() {
+    if (!showManualForm) return null
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+        <div onClick={() => { setShowManualForm(false); resetManualForm() }} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.75)' }} />
+        <div style={{ position: 'relative', background: Z.bg, borderRadius: '16px 16px 0 0', border: `1px solid ${Z.border2}`, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0', flexShrink: 0 }}>
+            <div style={{ width: 36, height: 4, background: Z.border2, borderRadius: 2 }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px 12px', flexShrink: 0, borderBottom: `1px solid ${Z.border}` }}>
+            <div style={{ fontFamily: 'Syne, sans-serif', fontSize: 20, fontWeight: 800 }}>Log Activity</div>
+            <button onClick={() => { setShowManualForm(false); resetManualForm() }} style={{ background: 'none', border: 'none', color: Z.muted, fontSize: 22, cursor: 'pointer', padding: 4, lineHeight: 1 }}>×</button>
+          </div>
+          <div style={{ overflowY: 'auto', padding: '16px 20px 40px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Type */}
+            <div>
+              <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Type</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {['run', 'trail', 'strength', 'rehab', 'other'].map(t => (
+                  <button key={t} onClick={() => setManualType(t)}
+                    style={{ background: manualType === t ? Z.accent : 'none', border: `1px solid ${manualType === t ? Z.accent : Z.border2}`, borderRadius: 6, padding: '6px 14px', fontFamily: "'DM Mono', monospace", fontSize: 12, cursor: 'pointer', color: manualType === t ? Z.bg : Z.muted, fontWeight: manualType === t ? 600 : 400 }}>
+                    {typeIcon[t] || '📋'} {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Date */}
+            <div>
+              <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Date</div>
+              <input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} style={inputSt} />
+            </div>
+            {/* Duration */}
+            <div>
+              <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Duration (minutes)</div>
+              <input type="number" value={manualDuration} onChange={e => setManualDuration(e.target.value)} placeholder="e.g. 45" min="1" max="600" style={inputSt} />
+            </div>
+            {/* Distance */}
+            <div>
+              <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Distance km <span style={{ color: '#555' }}>(optional)</span></div>
+              <input type="number" value={manualDistKm} onChange={e => setManualDistKm(e.target.value)} placeholder="e.g. 8.5" min="0" step="0.1" style={inputSt} />
+            </div>
+            {/* Notes */}
+            <div>
+              <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Notes <span style={{ color: '#555' }}>(optional)</span></div>
+              <textarea value={manualNotes} onChange={e => setManualNotes(e.target.value)} rows={3} placeholder="How did it feel? Any context for the coach..." style={{ ...inputSt, resize: 'vertical' }} />
+            </div>
+            {/* Feedback */}
+            {manualFeedback && (
+              <div style={{ background: 'rgba(232,255,71,0.07)', border: '1px solid rgba(232,255,71,0.25)', borderRadius: 8, padding: '10px 14px' }}>
+                <div style={{ fontSize: 10, color: Z.accent, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Coach</div>
+                <div style={{ fontSize: 13, color: Z.text, lineHeight: 1.5 }}>{manualFeedback}</div>
+              </div>
+            )}
+            <button
+              disabled={manualLoading || !manualDuration}
+              onClick={handleManualSave}
+              style={{ background: manualLoading || !manualDuration ? '#1a1a1a' : Z.accent, border: 'none', borderRadius: 10, padding: '13px', fontFamily: "'DM Mono', monospace", fontSize: 13, fontWeight: 600, cursor: manualLoading || !manualDuration ? 'wait' : 'pointer', color: manualLoading || !manualDuration ? Z.muted : Z.bg }}>
+              {manualLoading ? '⏳ Saving...' : manualFeedback ? 'Done' : 'Save activity'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const races = settings.races || []
   const weekLabel = weekOffset === 0 ? 'This week' : weekOffset === -1 ? 'Last week' : weekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   const plannedRuns = sessions.filter(s => s.session_type === 'run' || s.session_type === 'trail').length
@@ -799,49 +1040,18 @@ export default function Plan({ onActivityClick }) {
         ))}
       </div>
 
-      {/* SESSION LIST */}
-      <div style={{ padding: '0 20px', paddingBottom: orphanActivities.length > 0 ? 0 : 32 }}>
-        {sessions.length === 0 ? (
+      {/* SESSION + ACTIVITY LIST — merged, sorted by date */}
+      <div style={{ padding: '0 20px', paddingBottom: 80 }}>
+        {allItems.length === 0 ? (
           <div style={{ padding: '20px 0', color: Z.muted, fontSize: 13 }}>No sessions scheduled for this week.</div>
-        ) : sessions.map(s => (
-          <SessionRow key={s.id} session={s} activity={matchActivity(s)} isToday={s.planned_date === today} onActivityClick={onActivityClick} onSessionClick={matchActivity(s) ? undefined : setSelectedSession} />
-        ))}
+        ) : allItems.map(item =>
+          item.type === 'session' ? (
+            <SessionRow key={`s-${item.data.id}`} session={item.data} activity={matchActivity(item.data)} isToday={item.date === today} onActivityClick={onActivityClick} onSessionClick={matchActivity(item.data) ? undefined : setSelectedSession} />
+          ) : (
+            <OrphanRow key={`a-${item.data.strava_id || item.data.id}`} activity={item.data} isToday={item.date === today} onActivityClick={onActivityClick} onDeleteClick={setDeleteTarget} />
+          )
+        )}
       </div>
-
-      {/* ORPHAN ACTIVITIES — logged on days with no planned session */}
-      {orphanActivities.length > 0 && (
-        <div style={{ padding: '0 20px 32px' }}>
-          <div style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 0 6px' }}>Unplanned</div>
-          {orphanActivities.map(a => (
-            <div key={a.strava_id} onClick={() => onActivityClick?.(a.strava_id)}
-              style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${Z.border}`, cursor: 'pointer' }}>
-              <div style={{ width: 38, flexShrink: 0, textAlign: 'center', paddingTop: 2 }}>
-                <div style={{ fontSize: 10, color: a.date?.slice(0,10) === today ? Z.accent : Z.muted, fontWeight: a.date?.slice(0,10) === today ? 600 : 400, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {new Date(a.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' })}
-                </div>
-                <div style={{ fontSize: 12, color: Z.muted, marginTop: 1 }}>
-                  {new Date(a.date + 'T12:00:00').getDate()}
-                </div>
-                <div style={{ fontSize: 18, marginTop: 2 }}>{typeIcon[a.type?.toLowerCase()] || '🏃'}</div>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ fontSize: 13, color: Z.text, fontWeight: 500 }}>{a.name}</div>
-                  <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, marginLeft: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12,
-                    background: 'rgba(77,255,145,0.15)', border: `2px solid ${Z.green}`, color: Z.green }}>✓</div>
-                </div>
-                <div style={{ fontSize: 10, color: typeColor[a.type?.toLowerCase()] || Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>
-                  {a.type} · unplanned
-                </div>
-                <div style={{ marginTop: 6, display: 'inline-flex', gap: 8, background: 'rgba(77,255,145,0.08)', border: '1px solid rgba(77,255,145,0.2)', borderRadius: 6, padding: '5px 10px', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: Z.green }}>✓ {parseFloat(a.distance_km||0).toFixed(1)}km</span>
-                  <span style={{ fontSize: 11, color: Z.muted }}>HR {Math.round(a.avg_hr||0)} →</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* SESSION DETAIL */}
       {selectedSession && <SessionDetail session={selectedSession} onClose={() => setSelectedSession(null)} />}
@@ -855,6 +1065,40 @@ export default function Plan({ onActivityClick }) {
           onClose={() => setShowApprovalModal(false)}
         />
       )}
+
+      {/* DELETE ACTIVITY MODAL */}
+      {renderDeleteActivityModal()}
+
+      {/* MANUAL ACTIVITY FORM */}
+      {renderManualActivityForm()}
+
+      {/* FAB SHEET OVERLAY */}
+      {showFABSheet && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+          <div onClick={() => setShowFABSheet(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)' }} />
+          <div style={{ position: 'relative', background: Z.bg, borderRadius: '16px 16px 0 0', border: `1px solid ${Z.border2}`, padding: '16px 20px 40px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
+              <div style={{ width: 36, height: 4, background: Z.border2, borderRadius: 2 }} />
+            </div>
+            <button
+              onClick={() => { setShowFABSheet(false); resetManualForm(); setShowManualForm(true) }}
+              style={{ background: Z.surface, border: `1px solid ${Z.border2}`, borderRadius: 10, padding: '14px 16px', fontFamily: "'DM Mono', monospace", fontSize: 13, cursor: 'pointer', color: Z.text, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 20 }}>🏃</span>
+              <div>
+                <div style={{ fontWeight: 600 }}>Log manual activity</div>
+                <div style={{ fontSize: 11, color: Z.muted, marginTop: 2 }}>Gym, missed Strava sync, strength session...</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* FAB BUTTON */}
+      <button
+        onClick={() => setShowFABSheet(true)}
+        style={{ position: 'fixed', bottom: 88, right: 20, width: 52, height: 52, borderRadius: '50%', background: Z.accent, border: 'none', fontSize: 26, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(0,0,0,0.5)', zIndex: 200, color: Z.bg, lineHeight: 1 }}>
+        +
+      </button>
     </div>
   )
 }
