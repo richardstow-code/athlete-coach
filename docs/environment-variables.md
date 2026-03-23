@@ -8,19 +8,18 @@
 |----------|---------|---------|
 | `VITE_SUPABASE_URL` | `src/lib/supabase.js` | Supabase project URL |
 | `VITE_SUPABASE_KEY` | `src/lib/supabase.js` | Supabase anon key (public, RLS-enforced) |
-| `VITE_ANTHROPIC_KEY` | Not directly used | Set but not used — Claude calls go through Supabase claude-proxy, not direct Anthropic API |
-
-> **Note**: `VITE_ANTHROPIC_KEY` is present in Vercel env vars but the frontend does not call the Anthropic API directly. All Claude calls from the client go through `supabase.functions.invoke('claude-proxy')`.
-
-### Server-side only (Vercel serverless function)
+### Server-side only (Vercel serverless functions)
 
 | Variable | Used by | Purpose |
 |----------|---------|---------|
+| `ANTHROPIC_API_KEY` | `api/claude-proxy.js` | Anthropic API key — all Claude calls from the React frontend route through this Vercel function |
 | `STRAVA_CLIENT_ID` | `api/strava-webhook.js` | Strava app client ID for token refresh |
 | `STRAVA_CLIENT_SECRET` | `api/strava-webhook.js` | Strava app client secret |
 | `STRAVA_REFRESH_TOKEN` | `api/strava-webhook.js` | Long-lived refresh token (single-user app) |
 | `STRAVA_VERIFY_TOKEN` | `api/strava-webhook.js` | Webhook verification token (`athletecoach2026`) |
 | `SUPABASE_SECRET_KEY` | `api/strava-webhook.js` | Supabase service role key — bypasses RLS for webhook writes |
+
+> **Architecture note**: All Claude calls from the React frontend (`callClaude()` in `src/lib/claudeProxy.js`) go through `/api/claude-proxy` (Vercel serverless). The `VITE_ANTHROPIC_KEY` frontend var is no longer used and can be removed.
 
 ---
 
@@ -30,7 +29,7 @@ Stored in Supabase project secrets (not Vercel). Set via Supabase dashboard or C
 
 | Variable | Used by | Purpose |
 |----------|---------|---------|
-| `ANTHROPIC_API_KEY` | `claude-proxy`, `infer-athlete-context`, `daily-briefing` | Direct Anthropic API access |
+| `ANTHROPIC_API_KEY` | `infer-athlete-context`, `daily-briefing`, `enrich-activity`, `calibrate-zones` | Direct Anthropic API access for server-side edge functions (note: frontend Claude calls now use the Vercel `api/claude-proxy` instead of the `claude-proxy` edge function) |
 | `SUPABASE_URL` | All edge functions | Supabase project URL (auto-injected) |
 | `SUPABASE_ANON_KEY` | `infer-athlete-context` | For user-scoped auth checks |
 | `SUPABASE_SERVICE_ROLE_KEY` | `strava-sync`, `infer-athlete-context` | Service-level DB access |
