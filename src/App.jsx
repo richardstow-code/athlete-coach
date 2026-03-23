@@ -156,7 +156,11 @@ const Z = {
 }
 
 export default function App() {
-  const [showPasswordReset, setShowPasswordReset] = useState(false)
+  // Check hash immediately (synchronous) — Supabase fires PASSWORD_RECOVERY during
+  // createClient() before React mounts, so onAuthStateChange alone misses it.
+  const [showPasswordReset, setShowPasswordReset] = useState(
+    () => window.location.hash.includes('type=recovery')
+  )
   const [session, setSession] = useState(undefined)
   const [needsOnboarding, setNeedsOnboarding] = useState(null) // null=checking, true/false
   const [postEventSettings, setPostEventSettings] = useState(null)
