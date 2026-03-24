@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-03-24
+
+### enrich-activity pipeline fix (critical)
+
+- **Root cause**: `trigger_enrich_activity()` was sending the raw activities row as the pg_net body. The `enrich-activity` edge function checks `if (payload.type !== 'INSERT') return 200` — since the row's `type` field is the Strava activity type (e.g. `"Run"`), the function exited immediately on every trigger-fired call. Streams were never written; `enrichment_status` stayed `pending` forever.
+- **Fix**: Updated trigger body to wrap the row in the expected Supabase webhook envelope: `jsonb_build_object('type', 'INSERT', 'table', 'activities', 'record', to_jsonb(row_to_json(NEW)))`.
+- **Deactivated stale pg_cron jobs**: Removed two daily cron jobs that were firing pg_net calls to `strava-sync` (05:15) and `daily-briefing` (05:30) — both superseded by Vercel webhook and on-demand briefing generation. Both were timing out at the 5s pg_net limit every day.
+- Activity 127 ("Evening Run", 2026-03-23) was manually re-enriched: 348 samples written to `activity_streams`, zone_seconds and cadence_stats computed correctly.
+
 ## 2026-03-23
 
 ### Plan screen — activity logging & display improvements

@@ -1,5 +1,5 @@
 # Athlete Coach — Strategic Handover
-*Last updated: 2026-03-22.*
+*Last updated: 2026-03-24.*
 
 ---
 
@@ -20,6 +20,7 @@ An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg mal
 ### What is working reliably
 
 - Strava webhook → activity ingestion (Vercel serverless function)
+- **Two-stage enrichment pipeline** (fixed 2026-03-24 — see below)
 - Activity coaching feedback → coaching_memory (written on each new activity)
 - Auth (email/password via Supabase)
 - Chat coaching with context (buildContext layer is solid, includes active injury reports)
@@ -39,6 +40,13 @@ An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg mal
   - Daily Briefing: `Dsws6deZc9bAlXkl`
   - Strava Sync: `RNTJRELH2Mj7rQtX`
 - **cadence_stats.avg**: enrich-activity stores raw Strava cadence (84 spm, one foot) rather than total spm (168). The `activities.avg_cadence` column correctly doubles the raw value via strava-sync; cadence_stats is consistent internally but note the unit difference
+
+### Recently completed (2026-03-24)
+
+- **Fixed enrich-activity pipeline (critical bug)**: The Postgres trigger `trigger_enrich_activity()` was sending the raw activities row as the pg_net body (`to_jsonb(row_to_json(NEW))`). The `enrich-activity` edge function expects a Supabase webhook envelope `{type, table, record}` and has an early-exit guard `if (payload.type !== 'INSERT') return 200`. Since `payload.type` resolved to the Strava activity type (e.g. `"Run"`), the function exited immediately on every trigger-fired call — streams were never written and `enrichment_status` stayed `pending`. Fixed by updating the trigger to wrap the body: `jsonb_build_object('type', 'INSERT', 'table', 'activities', 'record', to_jsonb(row_to_json(NEW)))`.
+- **Deactivated stale pg_cron jobs**: Two leftover cron jobs (jobid 1 and 2) were firing daily via pg_net — `strava-sync` at 05:15 and `daily-briefing` at 05:30 — both timing out at 5s. These were superseded by the Vercel webhook (Stage 1) and on-demand briefing generation. Removed with `cron.unschedule()`.
+- **Plan screen improvements** (2026-03-23): Manual activity logging (FAB → form → saves to `activities` with `source='manual'`, writes coaching note to `coaching_memory`); delete activity modal for manual activities; unplanned activities merged into main session list at correct day slot with Unplanned badge; fixed INVALID DATE bug (`getDisplayDate()` helper normalises ISO timestamps).
+- **Schema additions** (2026-03-23): `activities.source TEXT NOT NULL DEFAULT 'strava'`; `coaching_memory.activity_id` FK → `activities(id) ON DELETE SET NULL` (orphaned rows nulled).
 
 ### Recently completed (2026-03-22)
 
@@ -227,10 +235,11 @@ Toggle: Macro (monthly overview, by goal type) vs Micro (event-specific phase pr
 
 ### Pending actions (not yet confirmed done)
 
-- Deactivate n8n workflows manually at https://lifeassistant.app.n8n.cloud
+- Deactivate n8n workflows manually at https://lifeassistant.app.n8n.cloud (the pg_cron replacements are now also removed — n8n is the only remaining active duplicate)
 - Verify plan commit flow (draft → scheduled_sessions) end-to-end
 - Persist evening readiness note to DB instead of localStorage only
 - Run zone calibration for the first time (Settings → Training Zones → Recalibrate zones) to populate `athlete_settings.hr_zones`
+- Consider bulk re-enrichment of pre-pipeline activities (those with `enrichment_status='complete'` but `zone_data IS NULL`) if stream history is wanted — requires calling enrich-activity for each strava_id manually
 
 ### Open questions
 
@@ -276,7 +285,7 @@ When writing instructions for Claude Code to build features in this app:
 - **Supabase service role key**: stored as `SUPABASE_SECRET_KEY` in Vercel (non-VITE). Not available in client-side code.
 - **Vercel async**: Vercel serverless functions are killed after the response is sent. All async processing must be `await`ed before calling `res.json()`. The strava-webhook.js is Stage 1 only — don't add async work back into it.
 - **HR zones**: use `resolveZones(settings)` from `src/lib/hrZones.js` anywhere zone thresholds are needed. Never hardcode zone boundaries.
-- **enrich-activity trigger**: `trigger_enrich_activity()` in Postgres fires `AFTER INSERT ON activities` and calls `net.http_post()` (pg_net). The correct pg_net signature is `net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer)` — note `body` is jsonb, not text.
+- **enrich-activity trigger**: `trigger_enrich_activity()` in Postgres fires `AFTER INSERT ON activities` and calls `net.http_post()` (pg_net). The body MUST be wrapped as a Supabase webhook envelope: `jsonb_build_object('type', 'INSERT', 'table', 'activities', 'record', to_jsonb(row_to_json(NEW)))`. The edge function has an early-exit guard `if (payload.type !== 'INSERT') return 200` — sending the raw row causes it to read `payload.type = "Run"` and exit without processing. The trigger times out at 5000ms (the function takes ~30s) but the edge function continues running after pg_net times out — this is expected and fine.
 - **activity_streams.activity_id**: is a BIGINT FK to `activities.id` (not UUID). The activities.id is a serial integer, not strava_id.
 - **Supabase Management API**: `POST https://api.supabase.com/v1/projects/yjuhzmknabedjklsgbje/database/query` with PAT from memory. Use for schema changes and data queries during development — no manual Supabase dashboard steps needed.
 
