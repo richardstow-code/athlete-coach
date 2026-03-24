@@ -60,7 +60,7 @@ export default function ActivityDetail({ stravaId, onBack }) {
 
   const rd = activity.raw_data || {}
   const splits = rd.splits || []
-  const zones = rd.zones || {}
+  const zones = activity.zone_data || rd.zones || {}
   const totalZoneSecs = Object.values(zones).reduce((s, v) => s + v, 0)
   const hasSplits = splits.length > 0 && !rd.summary_only
   const wt = rd.type || '—'
