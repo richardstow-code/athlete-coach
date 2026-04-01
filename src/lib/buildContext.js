@@ -13,10 +13,12 @@ const TZ = 'Europe/Vienna'
 export async function buildContext() {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
   const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: TZ })
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: TZ })
 
   const [
     { data: activities },
     { data: upcomingSessions },
+    { data: recentSessions },
     { data: nutrition },
     { data: memory },
     { data: briefings },
@@ -24,10 +26,11 @@ export async function buildContext() {
     { data: cycleLogs },
     { data: sportsData },
     { data: injuryReports },
+    { data: healthSnapshot },
   ] = await Promise.all([
     supabase
       .from('activities')
-      .select('name,date,type,distance_km,duration_min,avg_hr,max_hr,elevation_m,pace_per_km,zone_data')
+      .select('name,date,type,distance_km,duration_min,avg_hr,max_hr,elevation_m,pace_per_km,zone_data,raw_data,enrichment_status')
       .order('date', { ascending: false })
       .limit(10),
 
@@ -40,6 +43,14 @@ export async function buildContext() {
       .limit(7),
 
     supabase
+      .from('scheduled_sessions')
+      .select('name,planned_date,session_type,zone,duration_min_low,duration_min_high,status,notes')
+      .gte('planned_date', sevenDaysAgo)
+      .lt('planned_date', today)
+      .order('planned_date', { ascending: false })
+      .limit(14),
+
+    supabase
       .from('nutrition_logs')
       .select('calories,protein_g,carbs_g,fat_g,meal_type,alcohol_units,meal_name')
       .eq('date', today),
@@ -48,7 +59,7 @@ export async function buildContext() {
       .from('coaching_memory')
       .select('content,created_at,category')
       .order('created_at', { ascending: false })
-      .limit(3),
+      .limit(5),
 
     supabase
       .from('daily_briefings')
@@ -79,6 +90,12 @@ export async function buildContext() {
       .in('status', ['active', 'monitoring'])
       .order('reported_at', { ascending: false })
       .limit(5),
+
+    supabase
+      .from('health_snapshots')
+      .select('resting_hr,hrv_ms,sleep_hours,sleep_quality,date')
+      .order('date', { ascending: false })
+      .limit(3),
   ])
 
   // Cycle context — only populated if user has opted in
@@ -108,6 +125,7 @@ export async function buildContext() {
   return {
     activities:       activities       || [],
     upcomingSessions: upcomingSessions || [],
+    recentSessions:   recentSessions   || [],
     nutrition:        nutrition        || [],
     memory:           memory           || [],
     briefing:         briefings?.[0]   || null,
@@ -117,6 +135,7 @@ export async function buildContext() {
     supporting_sports: supportingSports,
     all_sports:       sportsData        || [],
     injury_reports:   injuryReports    || [],
+    health_snapshots: healthSnapshot   || [],
   }
 }
 
@@ -127,6 +146,7 @@ export async function buildContext() {
 export function formatContext({
   activities = [],
   upcomingSessions = [],
+  recentSessions = [],
   nutrition = [],
   memory = [],
   briefing = null,
@@ -136,6 +156,7 @@ export function formatContext({
   supporting_sports = [],
   all_sports = [],
   injury_reports = [],
+  health_snapshots = [],
 } = {}) {
   const parts = []
 
@@ -275,9 +296,54 @@ export function formatContext({
           a.elevation_m ? `↑${Math.round(a.elevation_m)}m` : null,
           a.pace_per_km ? `${a.pace_per_km}/km` : null,
         ].filter(Boolean).join(', ')
-        return `- ${a.name}: ${bits}`
+
+        // Add per-km splits if available in raw_data
+        let splitsLine = ''
+        if (a.raw_data?.splits_metric && a.raw_data.splits_metric.length > 0) {
+          const splits = a.raw_data.splits_metric
+            .filter(s => s.distance > 100 && s.moving_time > 0)
+            .map((s, i) => {
+              const secPerKm = s.moving_time / (s.distance / 1000)
+              const mins = Math.floor(secPerKm / 60)
+              const secs = Math.round(secPerKm % 60)
+              const hrNote = s.average_heartrate ? ` @${Math.round(s.average_heartrate)}bpm` : ''
+              return `km${i + 1}: ${mins}:${String(secs).padStart(2, '0')}${hrNote}`
+            })
+            .join(' | ')
+          if (splits) splitsLine = `\n  Splits: ${splits}`
+        }
+
+        return `- ${a.name}: ${bits}${splitsLine}`
       }).join('\n')
     )
+  }
+
+  // ── Last 7 days: planned vs actual ───────────────────────
+  if (recentSessions.length > 0) {
+    const completed = recentSessions.filter(s => s.status === 'completed')
+    const missed    = recentSessions.filter(s => s.status === 'missed')
+    const pending   = recentSessions.filter(s => s.status === 'planned' || !s.status)
+
+    const lines = []
+    lines.push(`Total planned: ${recentSessions.length} | Completed: ${completed.length} | Missed: ${missed.length} | Unresolved: ${pending.length}`)
+
+    if (missed.length > 0) {
+      missed.forEach(s => {
+        lines.push(`⚠ MISSED: ${s.planned_date} — ${s.name} (${s.session_type || 'session'})`)
+      })
+    }
+    if (completed.length > 0) {
+      completed.forEach(s => {
+        lines.push(`✓ DONE: ${s.planned_date} — ${s.name}`)
+      })
+    }
+    if (pending.length > 0) {
+      pending.forEach(s => {
+        lines.push(`? UNRESOLVED: ${s.planned_date} — ${s.name}`)
+      })
+    }
+
+    parts.push('LAST 7 DAYS — PLANNED vs ACTUAL:\n' + lines.map(l => `- ${l}`).join('\n'))
   }
 
   // ── Upcoming sessions ────────────────────────────────────
@@ -319,8 +385,27 @@ export function formatContext({
   if (memory.length > 0) {
     parts.push(
       'RECENT COACHING EXCHANGES:\n' +
-      memory.map(m => m.content).join('\n---\n')
+      memory.map(m => {
+        const label = m.category === 'activity_feedback' ? '[Run feedback]'
+          : m.category === 'baseline' ? '[Baseline analysis]'
+          : '[Chat]'
+        const date = m.created_at?.slice(0, 10) || ''
+        return `${label} ${date}:\n${m.content}`
+      }).join('\n---\n')
     )
+  }
+
+  // ── Native health data (HealthKit) ───────────────────────────
+  if (health_snapshots.length > 0) {
+    const latest = health_snapshots[0]
+    const lines = [`Date: ${latest.date}`]
+    if (latest.resting_hr) lines.push(`Resting HR: ${latest.resting_hr} bpm`)
+    if (latest.hrv_ms)     lines.push(`HRV: ${latest.hrv_ms} ms`)
+    if (latest.sleep_hours) {
+      const qualityNote = latest.sleep_quality ? ` (${latest.sleep_quality})` : ''
+      lines.push(`Sleep: ${latest.sleep_hours}h${qualityNote}`)
+    }
+    if (lines.length > 1) parts.push('RECOVERY METRICS (from Apple Health):\n' + lines.map(l => `- ${l}`).join('\n'))
   }
 
   // ── Cycle context ─────────────────────────────────────────────
