@@ -32,10 +32,12 @@ Strava activities (upserted on `strava_id`) and manually logged activities. Sour
 | laps | jsonb | lap data from Strava |
 | raw_data | jsonb | full Strava API response |
 | zone_data | jsonb | HR zone breakdown (reserved — not yet populated by webhook) |
-| enrichment_status | text | enrichment pipeline state |
+| enrichment_status | text | `'pending'` → `'processing'` → `'complete'` \| `'failed'` |
 | source | text | `'strava'` \| `'manual'` — added 2026-03-23; default `'strava'` |
 
 **Actively used**: Yes — main data source for Home, ActivityDetail, Plan, Stats screens.
+
+**DB Trigger**: `trigger_enrich_activity` — `AFTER INSERT OR UPDATE ON activities FOR EACH ROW`. Fires when `NEW.enrichment_status = 'pending'` AND (it's an INSERT OR the status changed TO `'pending'`). Calls `enrich-activity` edge function via `pg_net.http_post`. The UPDATE condition is required because Strava webhook uses upsert (`ON CONFLICT strava_id DO UPDATE`), which takes the UPDATE path when the activity already exists — an INSERT-only trigger would silently skip these. Updated 2026-03-30.
 
 ---
 
@@ -370,10 +372,59 @@ The popup fires automatically for all users on their next load.
 
 ---
 
+## Native App Tables
+
+Added 2026-04-01 to support the iOS native app.
+
+### `health_snapshots`
+Daily Apple HealthKit snapshot synced by the native app.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| user_id | uuid | FK → auth.users ON DELETE CASCADE |
+| date | date | unique per user — upserted on conflict |
+| resting_hr | integer | resting heart rate (bpm) |
+| hrv_ms | numeric(6,2) | heart rate variability SDNN (ms) |
+| sleep_hours | numeric(4,2) | total asleep hours from last night |
+| sleep_quality | text | `'good'` (≥7.5h) \| `'fair'` (≥6h) \| `'poor'` (<6h) |
+| created_at | timestamptz | |
+
+**RLS**: user can read/write own rows only. Queried by `buildContext.js` (last 3 days) for coaching prompts.
+
+---
+
+### `native_activities`
+Workouts recorded natively via Polar H10 BLE + GPS.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| user_id | uuid | FK → auth.users ON DELETE CASCADE |
+| strava_activity_id | bigint | FK to matching Strava activity if synced within ±10 min |
+| started_at | timestamptz | workout start time |
+| ended_at | timestamptz | workout end time |
+| sport_type | text | default `'Run'` |
+| distance_km | numeric(8,3) | computed from GPS haversine |
+| duration_min | numeric(8,2) | elapsed time |
+| avg_hr | integer | mean of HR samples |
+| max_hr | integer | max of HR samples |
+| elevation_m | numeric(8,1) | sum of positive altitude deltas |
+| hr_stream | jsonb | array of `{t, hr}` per BLE sample |
+| rr_stream | jsonb | flat array of RR intervals (ms) |
+| gps_stream | jsonb | array of `{lat, lng, timestamp, altitude?}` |
+| notes | text | session notes from the plan |
+| created_at | timestamptz | |
+
+**RLS**: user can read/write own rows only.
+
+---
+
 ## Recently Added Columns
 
 | Column | Table | Added | Purpose |
 |--------|-------|-------|---------|
+| `expo_push_token` | athlete_settings | 2026-04-01 | Expo push notification token — written by native app on login, used for server-side push delivery |
 | `source` | activities | 2026-03-23 | `'strava'` or `'manual'` — distinguishes Strava-synced vs manually logged activities |
 | FK on `activity_id` | coaching_memory | 2026-03-23 | FK → activities.id ON DELETE SET NULL; previous orphaned rows (stored Strava IDs) were nulled |
 | `planned_start_time` | scheduled_sessions | 2026-03-20 | Records when athlete taps "I'm on it" on check-in card |

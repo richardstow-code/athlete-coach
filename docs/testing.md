@@ -111,6 +111,47 @@ Each run saves to `tests/ai-eval/results/[timestamp].json`. The last 20 runs are
 
 ---
 
+## Pipeline Tests
+
+API-level tests for the enrichment pipeline live in `tests/api/` and run via `npm run test:api`. They use Node's built-in `node:test` runner (no additional framework required). They run at **MINOR tier and above** in CI.
+
+### enrich-activity.test.js
+
+| Test | Tag | Requires | What it checks |
+|------|-----|----------|----------------|
+| Enrichment integrity | `@minor` | Seeded test DB | Every `enrichment_status='complete'` run/ride activity has a corresponding `activity_streams` row |
+| Direct invocation | `@minor` | `TEST_SUPABASE_FUNCTIONS_URL` | Calling the edge function with a correct INSERT envelope changes status away from `'pending'` |
+| Graceful failure | `@minor` | `TEST_SUPABASE_FUNCTIONS_URL` | Bad Strava token → `enrichment_status='failed'`, no stream row written |
+| UPDATE does not re-enrich | `@minor` | Seeded test DB | Plain UPDATE to an activity name does not reset `enrichment_status` to `'pending'` |
+
+Tests 2 and 3 are skipped automatically when `TEST_SUPABASE_FUNCTIONS_URL` is not set. To enable them, deploy the edge functions to the test project and add the secret:
+
+```
+TEST_SUPABASE_FUNCTIONS_URL=https://nvoqqhaybhswdqcjyaws.supabase.co/functions/v1
+```
+
+### Key failure patterns
+
+**Test 1 fails**: seed hasn't been run, or `activity_streams` rows are missing. Re-run `npm run seed:test`.
+
+**Test 2 fails (status still 'pending')**: the edge function exited early — almost certainly a wrong payload envelope. The trigger body must send `{type:'INSERT', table:'activities', record:{...row}}` not the raw row.
+
+**Test 3 fails (status not 'failed')**: the function is not setting `enrichment_status='failed'` when Strava returns 401. Check the edge function error handling path.
+
+**Test 4 fails (status changed to 'pending')**: the DB trigger fires on `UPDATE` as well as `INSERT`. Fix: `CREATE TRIGGER ... AFTER INSERT ON activities` (not `INSERT OR UPDATE`).
+
+### Running locally
+
+```bash
+# Requires tests/.env.test to be set up
+npm run test:api
+
+# To enable tests 2 & 3, add to tests/.env.test:
+# TEST_SUPABASE_FUNCTIONS_URL=https://nvoqqhaybhswdqcjyaws.supabase.co/functions/v1
+```
+
+---
+
 ## Running Playwright Tests Locally
 
 ```bash
@@ -155,6 +196,7 @@ Starting seed...
   Seeding athlete_settings...
   Seeding athlete_sports...
   Seeding activities...
+  Seeding activity_streams...
   Seeding scheduled_sessions...
   Seeding coaching_memory...
   Seeding nutrition_logs...
@@ -166,6 +208,7 @@ Seeding complete. 6 personas created.
   elite_taper:  Anna Kowalski  (elite, 5 weeks to London Marathon)
   struggling:   Dave Thornton  (marathon, low adherence, nutrition issues)
   multisport:   Lena Fischer   (Ironman 70.3, run/ride/swim)
+  activity_streams: N rows (run/ride activities)
 ```
 
 ---
@@ -231,6 +274,7 @@ All persona UUIDs are fixed and referenced throughout tests. The seed script wil
 | `TEST_SUPABASE_URL` | Test project URL: `https://nvoqqhaybhswdqcjyaws.supabase.co` |
 | `TEST_SUPABASE_ANON_KEY` | Test project → Settings → API → anon/public key |
 | `TEST_SUPABASE_SERVICE_KEY` | Test project → Settings → API → service_role key |
+| `TEST_SUPABASE_FUNCTIONS_URL` | `https://nvoqqhaybhswdqcjyaws.supabase.co/functions/v1` — optional; enables pipeline tests 2 & 3 |
 | `ANTHROPIC_API_KEY` | Same key used in production Supabase secrets |
 | `VERCEL_TOKEN` | Vercel account → Settings → Tokens → Create |
 

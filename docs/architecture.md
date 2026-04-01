@@ -112,9 +112,30 @@ When a user submits a feature request, the app calls Claude Haiku to compare the
 
 If the Claude call fails, a new row is created and `admin_notes` is set to `'similarity_check_failed'` for manual review.
 
+## Two-stage Webhook Pipeline Detail
+
+```
+Stage 1 — Vercel (/api/strava-webhook.js):
+  - Receives Strava push event
+  - Fetches full activity from Strava API
+  - Upserts to activities table (ON CONFLICT strava_id DO UPDATE)
+  - Sets enrichment_status = 'pending'
+  - Returns 200 immediately
+
+Stage 2 — Supabase (enrich-activity edge function):
+  - Triggered by DB trigger: AFTER INSERT OR UPDATE ON activities
+  - Condition: NEW.enrichment_status = 'pending' AND
+               (TG_OP = 'INSERT' OR OLD.enrichment_status IS DISTINCT FROM 'pending')
+  - The UPDATE condition is critical: upsert on conflict fires UPDATE, not INSERT
+  - Guard prevents infinite loop: enriching sets status='complete', which doesn't re-trigger
+  - Fetches 5 stream types from Strava, downsamples, computes zones/cadence/grade
+  - Writes to activity_streams, sets enrichment_status='complete'
+  - Generates coaching feedback via Claude Haiku → coaching_memory
+```
+
 ## Key Patterns
 
 - **Timezone**: All date comparisons use `timeZone: 'Europe/Vienna'` explicitly. Helper: `new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' })`
-- **Context layer**: `buildContext()` in `src/lib/buildContext.js` fetches all coaching data in one parallel round-trip; `formatContext()` formats it as text for Claude prompts
+- **Context layer**: `buildContext()` in `src/lib/buildContext.js` fetches all coaching data in one parallel round-trip; `formatContext()` formats it as text for Claude prompts. Includes: activities (with `raw_data` for splits), last 7 days sessions (planned vs actual), upcoming sessions, coaching memory (5 most recent with category labels), nutrition, cycle context, injury reports.
 - **Auth**: Supabase email/password auth. RLS policies scope all table reads/writes to `auth.uid()`
 - **Pull-to-refresh**: Custom touch hook (`usePullToRefresh`) on all main screens

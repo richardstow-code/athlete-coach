@@ -20,17 +20,19 @@ An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg mal
 ### What is working reliably
 
 - Strava webhook → activity ingestion (Vercel serverless function)
-- **Two-stage enrichment pipeline** (fixed 2026-03-24 — see below)
+- **Two-stage enrichment pipeline** — trigger fires on INSERT **and UPDATE** (upsert path) when enrichment_status = 'pending' (fixed 2026-03-30)
 - Activity coaching feedback → coaching_memory (written on each new activity)
+- Per-km splits included in coaching context via `raw_data.splits_metric`
 - Auth (email/password via Supabase)
 - Chat coaching with context (buildContext layer is solid, includes active injury reports)
 - Nutrition logging with AI macro + fibre/sodium/UPF parsing, manual timestamps, weekly digest
 - Plan tab: week view, session status, mismatch detection, sport-aware metrics
 - Onboarding flow (5-step, multi-sport — Strava connect at step 2)
-- Settings: profile, sliders, race management, Strava connection
+- Settings: profile, sliders, race management, Strava connection, **sport preferences (editable post-onboarding)**
 - PostWorkoutPopup after new activity
 - Cycle tracking (opt-in)
 - Injury reporting workflow with rehab session type in SessionDetail
+- Daily briefing includes last 7 days planned vs actual session data
 
 ### What is partially built or known to be buggy
 
@@ -40,6 +42,20 @@ An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg mal
   - Daily Briefing: `Dsws6deZc9bAlXkl`
   - Strava Sync: `RNTJRELH2Mj7rQtX`
 - **cadence_stats.avg**: enrich-activity stores raw Strava cadence (84 spm, one foot) rather than total spm (168). The `activities.avg_cadence` column correctly doubles the raw value via strava-sync; cadence_stats is consistent internally but note the unit difference
+
+### Recently completed (2026-04-01)
+
+- **Native app Phase 2 complete**: Push notifications, Apple HealthKit, Polar H10 BLE workout recording, and functional Plan screen all built and committed to `athlete-coach-native`. EAS project created (`61b032df-e637-47e2-9d58-70ca5df6603a`), dev build submitted to TestFlight.
+- **Three new DB tables for native app**: `health_snapshots` (resting_hr, hrv_ms, sleep_hours, sleep_quality — one row per user per day), `native_activities` (full workout recording with hr/rr/gps streams), `expo_push_token` column on `athlete_settings`.
+- **Recovery metrics in coaching context**: `buildContext.js` and `formatContext()` now query `health_snapshots` and surface resting HR, HRV, and sleep as a `RECOVERY METRICS` section in all coaching prompts (chat, briefing, activity feedback).
+- **BLE config plugin fix**: `@config-plugins/react-native-ble-plx` only supports Expo ≤49. Both `react-native-ble-plx` and `react-native-health` ship their own `app.plugin.js` — referenced directly in `app.json`.
+
+### Recently completed (2026-03-30)
+
+- **Fixed enrich-activity trigger not firing on upsert (Fix 1A)**: Strava webhook uses `ON CONFLICT (strava_id) DO UPDATE`, which takes the UPDATE path in Postgres. The old `AFTER INSERT` trigger never fired for existing activities. Replaced with `AFTER INSERT OR UPDATE` trigger (`trigger_enrich_activity`) that only fires when `enrichment_status = 'pending'` — prevents infinite loops when enrichment itself updates the row. Also updated `enrich-activity` edge function to accept both `INSERT` and `UPDATE` payloads.
+- **Added per-km splits to coaching context (Fix 1B)**: `buildContext.js` now fetches `raw_data` and `enrichment_status` in the activities query. `formatContext()` includes per-km split lines (`km1: 4:32 @152bpm | km2: ...`) when `raw_data.splits_metric` is present. Coaching memory limit raised from 3 to 5 and category labels added (`[Run feedback]`, `[Baseline analysis]`, `[Chat]`).
+- **Sport preferences editable post-onboarding (Fix 2)**: Added a dedicated "Sport Preferences" section to Settings (between Personal and Goals & Races). Shows active sports with priority badges and an "Edit sports & priorities" button that opens the existing `SportsPriorities` overlay. Sports list refreshes after the overlay closes.
+- **Daily brief reflects actuals not just plan (Fix 3)**: `buildContext.js` now fetches last 7 days of scheduled_sessions (with status) and includes a "LAST 7 DAYS — PLANNED vs ACTUAL" section in `formatContext()`. `daily-briefing` edge function also queries this data and the system prompt explicitly instructs Claude to reference actual completions and call out missed sessions.
 
 ### Recently completed (2026-03-24)
 
