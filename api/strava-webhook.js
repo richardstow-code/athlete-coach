@@ -1,38 +1,94 @@
 /**
  * Vercel Serverless Function — Strava Webhook Handler (Stage 1)
  *
- * Stage 1 only: receive event → fetch activity → write to DB with
- * enrichment_status='pending' → return 200 immediately.
+ * Stage 1 only: receive event → look up user → fetch activity
+ * → write to DB with enrichment_status='pending' → return 200.
  *
  * Stage 2 (enrichment, streams, coaching feedback) is handled by
  * the Supabase edge function `enrich-activity`, triggered by a
- * Supabase database webhook on activities INSERT.
+ * Supabase database trigger on activities INSERT.
+ *
+ * Multi-user: routes by Strava owner_id → strava_tokens table.
+ * No hardcoded user IDs or single-user refresh tokens.
  */
 
 const SUPABASE_URL = 'https://yjuhzmknabedjklsgbje.supabase.co'
 const TZ = 'Europe/Vienna'
-const ATHLETE_USER_ID = '40cfe68e-faea-491c-b410-0093572f02d6'
 
 function viennaDate(ts) {
   return new Date(ts).toLocaleDateString('en-CA', { timeZone: TZ })
 }
 
-// ── Strava token refresh ──────────────────────────────────────────────────────
+function supabaseHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'apikey': process.env.SUPABASE_SECRET_KEY,
+    'Authorization': `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+  }
+}
 
-async function getStravaToken() {
-  const res = await fetch('https://www.strava.com/oauth/token', {
+// ── Look up user by Strava athlete_id ────────────────────────────────────────
+
+async function getUserForStravaAthlete(stravaAthleteId) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/strava_tokens?athlete_id=eq.${stravaAthleteId}&select=user_id,access_token,refresh_token,expires_at`,
+    { headers: supabaseHeaders() }
+  )
+  if (!res.ok) throw new Error(`strava_tokens lookup failed: ${res.status}`)
+  const rows = await res.json()
+  if (!rows || rows.length === 0) {
+    throw new Error(`No user found for Strava athlete_id ${stravaAthleteId}`)
+  }
+  return rows[0] // { user_id, access_token, refresh_token, expires_at }
+}
+
+// ── Get a valid Strava access token for a user ────────────────────────────────
+// Refreshes automatically if expired, updates strava_tokens table.
+
+async function getStravaTokenForUser(tokenRow) {
+  const { user_id, access_token, refresh_token, expires_at } = tokenRow
+
+  // expires_at is a Unix timestamp (seconds). Refresh if within 5 minutes of expiry.
+  const nowSec = Math.floor(Date.now() / 1000)
+  if (expires_at && nowSec < expires_at - 300) {
+    return access_token // still valid
+  }
+
+  // Token expired — refresh it
+  console.log(`[strava-webhook] Refreshing token for user ${user_id}`)
+  const refreshRes = await fetch('https://www.strava.com/oauth/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       client_id: process.env.STRAVA_CLIENT_ID,
       client_secret: process.env.STRAVA_CLIENT_SECRET,
-      refresh_token: process.env.STRAVA_REFRESH_TOKEN,
+      refresh_token,
       grant_type: 'refresh_token',
     }),
   })
-  if (!res.ok) throw new Error(`Strava token refresh failed: ${res.status}`)
-  const data = await res.json()
-  return data.access_token
+  if (!refreshRes.ok) throw new Error(`Strava token refresh failed: ${refreshRes.status}`)
+  const refreshData = await refreshRes.json()
+
+  // Update strava_tokens table with new tokens
+  const updateRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/strava_tokens?user_id=eq.${user_id}`,
+    {
+      method: 'PATCH',
+      headers: supabaseHeaders(),
+      body: JSON.stringify({
+        access_token: refreshData.access_token,
+        refresh_token: refreshData.refresh_token,
+        expires_at: refreshData.expires_at,
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  )
+  if (!updateRes.ok) {
+    const body = await updateRes.text()
+    console.error(`[strava-webhook] Failed to update token in DB: ${body}`)
+  }
+
+  return refreshData.access_token
 }
 
 // ── Fetch full activity from Strava ──────────────────────────────────────────
@@ -45,9 +101,9 @@ async function fetchActivity(activityId, token) {
   return res.json()
 }
 
-// ── Minimal enrichment: pace and date ────────────────────────────────────────
+// ── Build activity row for DB ─────────────────────────────────────────────────
 
-function buildActivityRow(activity) {
+function buildActivityRow(activity, userId) {
   let pacePerKm = null
   if (activity.average_speed && activity.average_speed > 0) {
     const secPerKm = 1000 / activity.average_speed
@@ -69,7 +125,7 @@ function buildActivityRow(activity) {
 
   return {
     strava_id: String(activity.id),
-    user_id: ATHLETE_USER_ID,
+    user_id: userId,
     date,
     name: activity.name,
     type: activity.type,
@@ -94,14 +150,6 @@ function buildActivityRow(activity) {
 
 // ── Supabase upsert ───────────────────────────────────────────────────────────
 
-function supabaseHeaders() {
-  return {
-    'Content-Type': 'application/json',
-    'apikey': process.env.SUPABASE_SECRET_KEY,
-    'Authorization': `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
-  }
-}
-
 async function upsertActivity(activityRow) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/activities`, {
     method: 'POST',
@@ -119,41 +167,38 @@ async function upsertActivity(activityRow) {
 
 // ── Handle activity:update ────────────────────────────────────────────────────
 
-async function handleUpdate(activityId) {
-  const token = await getStravaToken()
+async function handleUpdate(activityId, stravaAthleteId) {
+  const tokenRow = await getUserForStravaAthlete(stravaAthleteId)
+  const token = await getStravaTokenForUser(tokenRow)
   const activity = await fetchActivity(activityId, token)
-  const row = buildActivityRow(activity)
-  // On update, preserve enrichment_status as-is (don't reset to pending)
+  const row = buildActivityRow(activity, tokenRow.user_id)
+  // On update, preserve enrichment_status — don't reset to pending
   delete row.enrichment_status
   await upsertActivity(row)
-  console.log(`[strava-webhook] Updated activity ${activityId}`)
+  console.log(`[strava-webhook] Updated activity ${activityId} for user ${tokenRow.user_id}`)
 }
 
 // ── Core processing (Stage 1) ─────────────────────────────────────────────────
 
-async function processNewActivity(activityId) {
-  console.log(`[strava-webhook] Stage 1: processing activity ${activityId}`)
+async function processNewActivity(activityId, stravaAthleteId) {
+  console.log(`[strava-webhook] Stage 1: activity ${activityId}, athlete ${stravaAthleteId}`)
 
   let activityRow
   try {
-    const token = await getStravaToken()
+    const tokenRow = await getUserForStravaAthlete(stravaAthleteId)
+    const token = await getStravaTokenForUser(tokenRow)
     const activity = await fetchActivity(activityId, token)
-    activityRow = buildActivityRow(activity)
-    console.log(`[strava-webhook] Fetched: "${activity.name}" (${activity.type})`)
+    activityRow = buildActivityRow(activity, tokenRow.user_id)
+    console.log(`[strava-webhook] Fetched: "${activity.name}" for user ${tokenRow.user_id}`)
   } catch (err) {
-    console.error(`[strava-webhook] Strava fetch failed — writing minimal failed row:`, err.message)
-    // Write a minimal row so Stage 2 can detect failure
-    activityRow = {
-      strava_id: String(activityId),
-      user_id: ATHLETE_USER_ID,
-      date: viennaDate(Date.now()),
-      name: `Activity ${activityId}`,
-      enrichment_status: 'failed',
-    }
+    console.error(`[strava-webhook] Failed for activity ${activityId}:`, err.message)
+    // If we can't resolve the user, we cannot write a meaningful row.
+    // Return early — Strava will retry the webhook later.
+    return
   }
 
   await upsertActivity(activityRow)
-  console.log(`[strava-webhook] Stage 1 complete: ${activityRow.strava_id} (${activityRow.enrichment_status})`)
+  console.log(`[strava-webhook] Stage 1 complete: ${activityRow.strava_id} (pending)`)
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -174,7 +219,7 @@ export default async function handler(req, res) {
 
   // POST — Activity notification
   if (req.method === 'POST') {
-    const { object_type, object_id, aspect_type } = req.body || {}
+    const { object_type, object_id, aspect_type, owner_id } = req.body || {}
 
     // Ignore non-activity events
     if (object_type !== 'activity') {
@@ -182,11 +227,17 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true })
     }
 
+    // owner_id is the Strava athlete ID — used to route to the correct user
+    if (!owner_id) {
+      console.error('[strava-webhook] No owner_id in webhook body — cannot route')
+      return res.status(200).json({ received: true })
+    }
+
     try {
       if (aspect_type === 'create') {
-        await processNewActivity(object_id)
+        await processNewActivity(object_id, owner_id)
       } else if (aspect_type === 'update') {
-        await handleUpdate(object_id)
+        await handleUpdate(object_id, owner_id)
       } else {
         console.log(`[strava-webhook] Ignored aspect_type: ${aspect_type}`)
       }

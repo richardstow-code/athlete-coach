@@ -1,5 +1,5 @@
 # Athlete Coach — Strategic Handover
-*Last updated: 2026-03-24.*
+*Last updated: 2026-04-05.*
 
 ---
 
@@ -42,6 +42,18 @@ An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg mal
   - Daily Briefing: `Dsws6deZc9bAlXkl`
   - Strava Sync: `RNTJRELH2Mj7rQtX`
 - **cadence_stats.avg**: enrich-activity stores raw Strava cadence (84 spm, one foot) rather than total spm (168). The `activities.avg_cadence` column correctly doubles the raw value via strava-sync; cadence_stats is consistent internally but note the unit difference
+
+### Recently completed (2026-04-05)
+
+- **Multi-user support**: removed hardcoded `ATHLETE_USER_ID` from `api/strava-webhook.js`. Webhook now reads `owner_id` from the Strava event body, looks up the matching user in `strava_tokens` by `athlete_id`, and fetches/refreshes their per-user token from that table. No env-var refresh token. `buildActivityRow()` now takes `userId` as a parameter. `STRAVA_REFRESH_TOKEN` Vercel env var is now unused (can be removed from dashboard).
+
+### Recently completed (2026-04-04)
+
+- **SVG chart redesign (native app)**: `ActivityTrendChart`, `HeartRateChart`, `PaceChart`, `ElevationChart` all rewritten with `react-native-svg`. Elevation silhouettes, zone-coloured HR segments, inverted pace axis, cubic bezier volume line. `constants/Colors.ts` centralises the brand palette.
+- **Post-activity subjective capture flow (native app)**: 4-step full-screen modal (`app/activity-capture.tsx`) captures injury flag, leg feel, RPE, and notes. AI coaching response (claude-proxy, 250 tokens) covers Recovery / Fuelling / Sleep / Tomorrow and conditionally proposes a reschedule. Evening check-in modal (`app/evening-checkin.tsx`) follows 3h later with injury feel + refuel questions. Home screen shows prompt cards when check-ins are pending. Morning briefing now injects yesterday's subjective data; injury escalations surface as priority lines.
+- **Notification settings (native app)**: "Training Notifications" section in Settings with post-activity, evening check-in, morning reference toggles, and hours-after stepper. Persists to `athlete_settings.notification_prefs`.
+- **`lib/notifications.ts` (native app)**: AsyncStorage-backed pending-state abstraction, Phase 2 ready for Expo Notifications. All calling code uses stable API.
+- **Schema additions**: 6 new columns on `activities` (rpe, feel_legs, injury_flag, subjective_notes, subjective_captured_at, evening_checkin_data) and 2 on `athlete_settings` (notification_prefs, last_evening_checkin_date).
 
 ### Recently completed (2026-04-01)
 
@@ -257,6 +269,15 @@ Toggle: Macro (monthly overview, by goal type) vs Micro (event-specific phase pr
 - Run zone calibration for the first time (Settings → Training Zones → Recalibrate zones) to populate `athlete_settings.hr_zones`
 - Consider bulk re-enrichment of pre-pipeline activities (those with `enrichment_status='complete'` but `zone_data IS NULL`) if stream history is wanted — requires calling enrich-activity for each strava_id manually
 
+### Phase 2: push notifications (native app)
+
+`lib/notifications.ts` currently stores pending state in AsyncStorage. All calling code is already abstracted behind stable function signatures. Phase 2 replaces the internals with `Expo Notifications.scheduleNotificationAsync()`:
+
+- `notifyActivityReady` → schedule a local notification (fires immediately, or after a short delay once the activity enriches)
+- `scheduleEveningCheckin` → `trigger: { seconds: hoursAfter * 3600 }` from activity end time
+- Requires a permission request flow on first launch (add to `app/_layout.tsx` after session resolves)
+- The `TODO Phase 2:` comments in `lib/notifications.ts` mark the exact insertion points
+
 ### Open questions
 
 - Should calorie/protein targets (2800kcal / 150g) be derived from athlete_settings rather than hardcoded?
@@ -289,13 +310,15 @@ Toggle: Macro (monthly overview, by goal type) vs Micro (event-specific phase pr
 
 ## TECHNICAL CONTEXT FOR CLAUDE AI
 
+> **Note (2026-04-04):** Active development is now on the **React Native app** at `/Users/richardstow/athlete-coach-native`. The web app (`/Users/richardstow/athlete-coach`) is feature-frozen; these docs apply to the Supabase backend and web-app architectural context, which is shared with the native app.
+
 When writing instructions for Claude Code to build features in this app:
 
 - **Date handling**: always use `timeZone: 'Europe/Vienna'` in all `toLocaleDateString` / `toLocaleString` calls. The app is always used in Vienna time.
 - **Auth**: Supabase client auth. All table queries are RLS-scoped to `auth.uid()` automatically. Service role is only used in Vercel serverless and Supabase edge functions.
 - **AI calls from client**: use `callClaude()` from `src/lib/claudeProxy.js` — this wraps `supabase.functions.invoke('claude-proxy')`.
 - **Coaching context**: use `buildContext()` + `formatContext()` from `src/lib/buildContext.js` for any new AI feature that needs athlete data.
-- **Single user**: this is a single-user app. `ATHLETE_USER_ID = '40cfe68e-faea-491c-b410-0093572f02d6'` is the only user.
+- **Multi-user**: each user has their own row in `strava_tokens` (unique on `user_id`). The Strava webhook routes by `owner_id` (Strava athlete ID) — `getUserForStravaAthlete()` looks up the correct user and fetches/refreshes their token from the table. No hardcoded user IDs anywhere. RLS scopes all client-side queries to `auth.uid()` automatically.
 - **Models**: all Claude calls use `claude-haiku-4-5-20251001`. Use Sonnet only if quality is clearly insufficient.
 - **Nested component anti-pattern**: do NOT define React components inside other components. Use plain render helper functions called as `{renderSomething()}` instead.
 - **Supabase service role key**: stored as `SUPABASE_SECRET_KEY` in Vercel (non-VITE). Not available in client-side code.

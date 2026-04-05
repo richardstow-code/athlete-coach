@@ -46,11 +46,11 @@ Strava API
 1. Athlete completes activity → Strava records it
 2. Strava POSTs to /api/strava-webhook (Vercel serverless)
 3. Webhook handler:
-   a. Fetches full activity detail from Strava API (using env var refresh token)
-   b. Enriches: computes pace_variation, classifies workout_type (steady/tempo/intervals)
-   c. Upserts activity row to Supabase `activities` table
-   d. Calls Supabase claude-proxy → Claude Haiku (2–3 sentence coaching feedback)
-   e. Inserts feedback into `coaching_memory` (category: activity_feedback)
+   a. Looks up user in `strava_tokens` by `owner_id` (Strava athlete ID)
+   b. Fetches/refreshes their per-user access token (auto-refreshes if within 5 min of expiry)
+   c. Fetches full activity detail from Strava API using that token
+   d. Enriches: computes pace_variation, classifies workout_type (steady/tempo/intervals)
+   e. Upserts activity row to Supabase `activities` table with correct `user_id`
 4. App next load / pull-to-refresh:
    a. Home.jsx fetches activities (last 20), today's briefing, scheduled sessions
    b. PostWorkoutPopup checks for activities in last 4 hours (sessionStorage prevents repeat)

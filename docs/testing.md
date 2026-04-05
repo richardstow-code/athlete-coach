@@ -111,6 +111,23 @@ Each run saves to `tests/ai-eval/results/[timestamp].json`. The last 20 runs are
 
 ---
 
+## Manual Multi-User Isolation Test
+
+Run this before onboarding any new real user onto the app.
+
+**What to check:**
+1. Open https://athlete-coach-alpha.vercel.app in an incognito window
+2. Sign up with a fresh email address (not Richard's)
+3. Complete onboarding — connect Strava if available, or skip
+4. Confirm the home screen loads with no errors and none of Richard's data visible (activities, briefings, plan sessions)
+5. Log into Richard's account in a separate browser — confirm his data is intact and unchanged
+
+**Why:** RLS scopes all Supabase queries to `auth.uid()`, and the Strava webhook routes by `owner_id` → `strava_tokens.athlete_id`. This test confirms both layers are working end-to-end for a real new account.
+
+**When to run:** Before each new real (non-test) user is onboarded.
+
+---
+
 ## Pipeline Tests
 
 API-level tests for the enrichment pipeline live in `tests/api/` and run via `npm run test:api`. They use Node's built-in `node:test` runner (no additional framework required). They run at **MINOR tier and above** in CI.
