@@ -2,6 +2,19 @@
 
 ## 2026-04-05
 
+### Native app: HealthKit → Supabase pipeline
+
+- **`lib/healthKitSync.ts`**: new file — `runHealthKitSync(userId)` pulls 6 months of workout and passive metric history from HealthKit into Supabase on first launch. Workouts are gap-filled into `activities` (source='healthkit', dedup by date+type vs existing Strava rows). Passive metrics (resting HR, HRV, sleep, steps) written to new `health_metrics` table.
+- **`health_metrics` table**: created with RLS, unique constraint on `(user_id, metric_type, date)`, indexes on `(user_id, date)` and `(user_id, metric_type, date)`.
+- **`activities` schema**: added `source TEXT DEFAULT 'strava'` and `healthkit_uuid TEXT` (unique index WHERE NOT NULL).
+- **`athlete_settings` schema**: added `healthkit_sync_enabled BOOLEAN` and `healthkit_last_synced_at TIMESTAMPTZ`.
+- **`app/(tabs)/index.tsx`**: `useEffect([userId])` calls `runHealthKitSync` once per session after auth confirmed. Silent background — no spinner, no user-visible error.
+- **`buildContext.js`** (web app): added `health_metrics` query (last 30 rows) to `buildContext()`; added `HEALTH METRICS` section to `formatContext()` showing 7-day avg resting HR, latest HRV, last night's sleep, yesterday's steps.
+
+### Web app: multi-user support
+
+- **Removed hardcoded `ATHLETE_USER_ID`**: `api/strava-webhook.js` now routes by Strava `owner_id` → `strava_tokens` table. Per-user token fetch and auto-refresh. No env-var refresh token.
+
 ### Web app: multi-user support
 
 - **Removed hardcoded `ATHLETE_USER_ID`**: `api/strava-webhook.js` no longer contains a hardcoded user UUID or uses `STRAVA_REFRESH_TOKEN` from env vars

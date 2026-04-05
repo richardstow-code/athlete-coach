@@ -111,6 +111,19 @@ Each run saves to `tests/ai-eval/results/[timestamp].json`. The last 20 runs are
 
 ---
 
+## Manual HealthKit Sync Verification
+
+After first launch of a build with `lib/healthKitSync.ts`, confirm in Supabase:
+
+1. **`activities` table** — rows exist with `source='healthkit'` for workouts not already covered by Strava. No duplicate rows for dates that had Strava activities (check `date` + `type` combination).
+2. **`health_metrics` table** — rows exist for `metric_type` values: `resting_hr`, `hrv`, `sleep`, `steps`. One row per type per day.
+3. **`athlete_settings`** — `healthkit_sync_enabled=true` and `healthkit_last_synced_at` is set.
+4. **Idempotency** — run the app a second time, confirm no duplicate rows are created.
+
+**When to run:** After any change to `lib/healthKitSync.ts` or the `health_metrics` schema.
+
+---
+
 ## Manual Multi-User Isolation Test
 
 Run this before onboarding any new real user onto the app.

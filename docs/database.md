@@ -394,6 +394,30 @@ Daily Apple HealthKit snapshot synced by the native app.
 
 ---
 
+### `health_metrics`
+Historical Apple HealthKit passive metrics — one row per metric per day per user. Written by `lib/healthKitSync.ts` (native app) on first launch and subsequent syncs.
+
+Added 2026-04-05.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| user_id | uuid | FK → auth.users ON DELETE CASCADE |
+| metric_type | text | `'resting_hr'` \| `'hrv'` \| `'sleep'` \| `'steps'` \| `'active_energy'` |
+| value | numeric | bpm / ms / min / count depending on type |
+| unit | text | `'bpm'` \| `'ms'` \| `'min'` \| `'count'` |
+| source | text | default `'healthkit'` |
+| recorded_at | timestamptz | original sample timestamp |
+| date | text | `YYYY-MM-DD` in Europe/Vienna — used as upsert key |
+| meta | jsonb | sleep: `{ total_sleep_min, in_bed_min }` |
+| created_at | timestamptz | |
+
+**Unique constraint**: `(user_id, metric_type, date)` — one reading per metric per day.
+
+**RLS**: user can read/insert/update own rows only. Queried by `buildContext.js` (last 30 rows) for coaching prompts.
+
+---
+
 ### `native_activities`
 Workouts recorded natively via Polar H10 BLE + GPS.
 
@@ -424,6 +448,10 @@ Workouts recorded natively via Polar H10 BLE + GPS.
 
 | Column | Table | Added | Purpose |
 |--------|-------|-------|---------|
+| `healthkit_sync_enabled` | athlete_settings | 2026-04-05 | Boolean — true once first HealthKit sync completes |
+| `healthkit_last_synced_at` | athlete_settings | 2026-04-05 | Timestamp of last successful `runHealthKitSync()` call |
+| `source` | activities | 2026-04-05 | `'strava'` \| `'healthkit'` \| `'manual'` — default `'strava'` |
+| `healthkit_uuid` | activities | 2026-04-05 | HealthKit workout UUID for dedup; null for Strava/manual. Unique index (WHERE NOT NULL) |
 | `expo_push_token` | athlete_settings | 2026-04-01 | Expo push notification token — written by native app on login, used for server-side push delivery |
 | `source` | activities | 2026-03-23 | `'strava'` or `'manual'` — distinguishes Strava-synced vs manually logged activities |
 | FK on `activity_id` | coaching_memory | 2026-03-23 | FK → activities.id ON DELETE SET NULL; previous orphaned rows (stored Strava IDs) were nulled |

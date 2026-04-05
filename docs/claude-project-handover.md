@@ -45,6 +45,8 @@ An AI-powered personal coaching app for a single athlete (Richard Stow, 79kg mal
 
 ### Recently completed (2026-04-05)
 
+- **HealthKit → Supabase pipeline (native app)**: `lib/healthKitSync.ts` pulls 6 months of workout history and passive metrics into Supabase on first launch. Workouts gap-fill `activities` (source='healthkit', dedup by date+type). Passive metrics go to new `health_metrics` table (resting HR, HRV, sleep, steps). `buildContext.js` now queries `health_metrics` and surfaces 7d avg resting HR, latest HRV, last sleep, yesterday's steps in the HEALTH METRICS coaching context section.
+- **Schema additions**: `activities.source`, `activities.healthkit_uuid`, `health_metrics` table (full schema in `docs/database.md`), `athlete_settings.healthkit_sync_enabled`, `athlete_settings.healthkit_last_synced_at`.
 - **Multi-user support**: removed hardcoded `ATHLETE_USER_ID` from `api/strava-webhook.js`. Webhook now reads `owner_id` from the Strava event body, looks up the matching user in `strava_tokens` by `athlete_id`, and fetches/refreshes their per-user token from that table. No env-var refresh token. `buildActivityRow()` now takes `userId` as a parameter. `STRAVA_REFRESH_TOKEN` Vercel env var is now unused (can be removed from dashboard).
 
 ### Recently completed (2026-04-04)

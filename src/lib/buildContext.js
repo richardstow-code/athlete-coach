@@ -27,6 +27,7 @@ export async function buildContext() {
     { data: sportsData },
     { data: injuryReports },
     { data: healthSnapshot },
+    { data: healthMetrics },
   ] = await Promise.all([
     supabase
       .from('activities')
@@ -96,6 +97,12 @@ export async function buildContext() {
       .select('resting_hr,hrv_ms,sleep_hours,sleep_quality,date')
       .order('date', { ascending: false })
       .limit(3),
+
+    supabase
+      .from('health_metrics')
+      .select('metric_type, value, unit, date, meta')
+      .order('date', { ascending: false })
+      .limit(30),
   ])
 
   // Cycle context — only populated if user has opted in
@@ -136,6 +143,7 @@ export async function buildContext() {
     all_sports:       sportsData        || [],
     injury_reports:   injuryReports    || [],
     health_snapshots: healthSnapshot   || [],
+    health_metrics:   healthMetrics    || [],
   }
 }
 
@@ -157,6 +165,7 @@ export function formatContext({
   all_sports = [],
   injury_reports = [],
   health_snapshots = [],
+  health_metrics = [],
 } = {}) {
   const parts = []
 
@@ -406,6 +415,43 @@ export function formatContext({
       lines.push(`Sleep: ${latest.sleep_hours}h${qualityNote}`)
     }
     if (lines.length > 1) parts.push('RECOVERY METRICS (from Apple Health):\n' + lines.map(l => `- ${l}`).join('\n'))
+  }
+
+  // ── Health metrics (historical, from health_metrics table) ────
+  if (health_metrics.length > 0) {
+    const byType = {}
+    for (const m of health_metrics) {
+      if (!byType[m.metric_type]) byType[m.metric_type] = []
+      byType[m.metric_type].push(m)
+    }
+
+    const lines = []
+
+    if (byType.resting_hr?.length > 0) {
+      const recent = byType.resting_hr.slice(0, 7)
+      const avg = Math.round(recent.reduce((s, m) => s + Number(m.value), 0) / recent.length)
+      lines.push(`Resting HR (7d avg): ${avg} bpm`)
+    }
+
+    if (byType.hrv?.length > 0) {
+      const latest = byType.hrv[0]
+      lines.push(`HRV (last reading): ${Math.round(latest.value)}ms on ${latest.date}`)
+    }
+
+    if (byType.sleep?.length > 0) {
+      const lastNight = byType.sleep[0]
+      const hrs = (Number(lastNight.value) / 60).toFixed(1)
+      lines.push(`Sleep last night: ${hrs}h`)
+    }
+
+    if (byType.steps?.length > 0) {
+      const yesterday = byType.steps[0]
+      lines.push(`Steps (${yesterday.date}): ${Math.round(yesterday.value).toLocaleString()}`)
+    }
+
+    if (lines.length > 0) {
+      parts.push('HEALTH METRICS (from Apple Health):\n' + lines.map(l => `- ${l}`).join('\n'))
+    }
   }
 
   // ── Cycle context ─────────────────────────────────────────────
