@@ -41,7 +41,8 @@ serve(async (req) => {
       if (existing) continue
 
       // Fetch recent context
-      const [{ data: activities }, { data: sports }] = await Promise.all([
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const [{ data: activities }, { data: sports }, { data: recentSessions }] = await Promise.all([
         supabase
           .from('activities')
           .select('date, name, type, distance_km, elevation_m, avg_hr, duration_min, pace_per_km')
@@ -53,6 +54,14 @@ serve(async (req) => {
           .select('sport_raw, sport_category, priority, current_goal_raw, target_date, lifecycle_state')
           .eq('user_id', user.user_id)
           .eq('is_active', true),
+        supabase
+          .from('scheduled_sessions')
+          .select('name, planned_date, session_type, status')
+          .eq('user_id', user.user_id)
+          .gte('planned_date', sevenDaysAgo)
+          .lt('planned_date', todayStr)
+          .order('planned_date', { ascending: false })
+          .limit(14),
       ])
 
       // Build context string
@@ -62,16 +71,37 @@ serve(async (req) => {
         ? Math.ceil((new Date(targetDate).getTime() - Date.now()) / 86400000)
         : null
 
-      const activityLines = (activities || []).map(a =>
-        `- ${new Date(a.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}: ${a.name} ${a.distance_km ? a.distance_km + 'km' : ''} ${a.avg_hr ? 'HR ' + Math.round(a.avg_hr) : ''} ${a.duration_min ? Math.round(a.duration_min) + 'min' : ''}`.trim()
-      ).join('\n')
+      // AC-141: emit day-delta so the model uses accurate relative language
+      // ("Saturday's run", "today's session") instead of defaulting to
+      // "yesterday" for anything older than today.
+      const msPerDay = 86400000
+      const activityLines = (activities || []).map(a => {
+        const d = new Date(a.date)
+        const daysSince = Math.round((Date.now() - d.getTime()) / msPerDay)
+        const weekday = d.toLocaleDateString('en-GB', { weekday: 'long' })
+        const shortDate = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+        return `- ${shortDate} (${weekday}, ${daysSince} day${daysSince === 1 ? '' : 's'} ago): ${a.name} ${a.distance_km ? a.distance_km + 'km' : ''} ${a.avg_hr ? 'HR ' + Math.round(a.avg_hr) : ''} ${a.duration_min ? Math.round(a.duration_min) + 'min' : ''}`.trim()
+      }).join('\n')
+
+      // Build last-7-days session summary
+      const sessionSummary = (() => {
+        if (!recentSessions?.length) return null
+        const completed = recentSessions.filter(s => s.status === 'completed')
+        const missed = recentSessions.filter(s => s.status === 'missed')
+        const unresolved = recentSessions.filter(s => s.status === 'planned' || !s.status)
+        const lines = [`Last 7 days: ${recentSessions.length} planned, ${completed.length} completed, ${missed.length} missed, ${unresolved.length} unresolved`]
+        missed.forEach(s => lines.push(`  ⚠ MISSED: ${s.planned_date} — ${s.name}`))
+        completed.forEach(s => lines.push(`  ✓ DONE: ${s.planned_date} — ${s.name}`))
+        return lines.join('\n')
+      })()
 
       const context = [
         `Athlete: ${user.name || 'Athlete'}, ${user.current_level || 'recreational'} level`,
         user.health_notes ? `Health: ${user.health_notes}` : null,
         primarySport ? `Primary goal: ${primarySport.current_goal_raw || primarySport.sport_raw} (${primarySport.lifecycle_state})` : null,
         daysToTarget ? `Days to target event: ${daysToTarget}` : null,
-        activities?.length ? `\nRecent training:\n${activityLines}` : 'No recent Strava data.',
+        sessionSummary,
+        activities?.length ? `\nRecent Strava activities:\n${activityLines}` : 'No recent Strava data.',
       ].filter(Boolean).join('\n')
 
       const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -86,7 +116,14 @@ serve(async (req) => {
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
           max_tokens: 600,
-          system: `You are Coach Claude, an elite performance coach. Generate a concise daily briefing. Format as 4-5 bullet points — direct, data-driven, specific. Reference actual numbers. Today is ${today}. No markdown headers or bold text. Each point on its own line starting with •.`,
+          system: `You are Coach Claude, an elite performance coach. Generate a concise daily briefing. Format as 4-5 bullet points — direct, data-driven, specific. Reference actual numbers. Today is ${today}. No markdown headers or bold text. Each point on its own line starting with •. You have access to last week's session history showing planned vs completed vs missed sessions. Always base your weekly review on ACTUAL completions, not planned sessions. If sessions were missed, call this out directly — do not pretend they were done.
+
+Relative date language: each activity line includes "(N days ago)". Use this exactly:
+  • 0 days ago → "this morning's" or "today's"
+  • 1 day ago → "yesterday's"
+  • 2–6 days ago → "{weekday}'s" (e.g. "Saturday's long run")
+  • 7+ days ago → "last {weekday}'s" or the explicit date
+Never say "yesterday" unless the activity was exactly 1 day ago.`,
           messages: [{
             role: 'user',
             content: `Generate today's coaching briefing.\n\n${context}`,

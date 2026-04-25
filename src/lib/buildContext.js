@@ -285,16 +285,33 @@ export function formatContext({
 
   // ── Recent activities ────────────────────────────────────
   if (activities.length > 0) {
-    // Use local-time dates so relative labels are correct for the user's timezone
+    // AC-141: emit the actual day-delta so the model can use accurate
+    // relative language ("Saturday's long run", "3 days ago") instead of
+    // defaulting to "yesterday" for anything older than today.
     const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
     const yesterdayLocal = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: TZ })
+    const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+    function relativeLabel(actDate) {
+      if (!actDate) return '?'
+      if (actDate === todayLocal) return 'today (0 days ago)'
+      if (actDate === yesterdayLocal) return 'yesterday (1 day ago)'
+      // Parse as Vienna-local midnight to get a stable day-delta regardless of UTC offset.
+      const parsed = new Date(actDate + 'T12:00:00')
+      const now = new Date()
+      const msPerDay = 86400000
+      const days = Math.round((now.getTime() - parsed.getTime()) / msPerDay)
+      const dow = DOW[parsed.getDay()]
+      if (days >= 2 && days <= 6) return `${dow} (${days} days ago)`
+      if (days >= 7 && days <= 13) return `last ${dow} (${days} days ago)`
+      return `${actDate} (${days} days ago)`
+    }
+
     parts.push(
       'RECENT ACTIVITIES:\n' +
       activities.map(a => {
         const actDate = a.date?.slice(0, 10)
-        const relLabel = actDate === todayLocal ? 'today'
-          : actDate === yesterdayLocal ? 'yesterday'
-          : actDate || '?'
+        const relLabel = relativeLabel(actDate)
         const bits = [
           relLabel,
           a.type,
