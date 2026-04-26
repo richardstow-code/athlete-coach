@@ -2,14 +2,21 @@ export const config = { maxDuration: 30 }
 
 const GRAPHHOPPER_BASE = 'https://graphhopper.com/api/1'
 
-// Map native-app sport values to GraphHopper profile names
+// AC-139: Map native-app sport values to GraphHopper profile names.
+// Trail runs and hikes get the 'hike' profile so off-road trail networks
+// are preferred — 'foot' returns urban-pavement-only routes which fail
+// for hill / forest workouts.
 function ghProfile(vehicle) {
   switch (vehicle) {
     case 'bike':
     case 'ride': return 'bike'
     case 'mtb':  return 'mtb'
     case 'car':  return 'car'
-    default:     return 'foot'   // run, hike, walk, unknown
+    case 'hike':
+    case 'trail':
+    case 'trailrun':
+    case 'trail_run': return 'hike'
+    default:     return 'foot'   // run, walk, unknown
   }
 }
 
@@ -29,17 +36,36 @@ async function handleRoute(body, res) {
   // GraphHopper route endpoint expects [lng, lat] order
   const ghPoints = points.map(([lat, lng]) => [lng, lat])
 
-  const resp = await fetch(`${GRAPHHOPPER_BASE}/route?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      points: ghPoints,
-      profile: ghProfile(vehicle),
-      locale: 'en',
-      points_encoded: false,
-      elevation,
-    }),
-  })
+  const requestedProfile = ghProfile(vehicle)
+
+  async function callGraphHopper(profile) {
+    return fetch(`${GRAPHHOPPER_BASE}/route?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        points: ghPoints,
+        profile,
+        locale: 'en',
+        points_encoded: false,
+        elevation,
+      }),
+    })
+  }
+
+  let resp = await callGraphHopper(requestedProfile)
+  let usedProfile = requestedProfile
+  let fallbackUsed = false
+
+  // AC-139: hike profile can return empty for purely urban inputs that
+  // have no trails within range. Retry once with 'foot' and surface a
+  // fallback flag so the client can show a heads-up.
+  if ((!resp.ok || resp.status === 400) && requestedProfile === 'hike') {
+    const detail = await resp.text().catch(() => '')
+    console.warn('[route-planner] hike profile failed, retrying as foot', detail)
+    resp = await callGraphHopper('foot')
+    usedProfile = 'foot'
+    fallbackUsed = true
+  }
 
   if (!resp.ok) {
     const detail = await resp.text().catch(() => '')
@@ -62,6 +88,8 @@ async function handleRoute(body, res) {
     polyline,
     distance_m: path.distance ?? 0,
     elevation_gain_m: path.ascend ?? 0,
+    profile_used: usedProfile,
+    fallback_profile: fallbackUsed,
   })
 }
 
