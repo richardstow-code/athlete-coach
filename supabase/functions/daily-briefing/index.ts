@@ -42,11 +42,18 @@ serve(async (req) => {
 
       // Fetch recent context
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-      const [{ data: activities }, { data: sports }, { data: recentSessions }] = await Promise.all([
+      const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+      const [
+        { data: activities },
+        { data: sports },
+        { data: recentSessions },
+        { data: recentCues },
+      ] = await Promise.all([
         supabase
           .from('activities')
           .select('date, name, type, distance_km, elevation_m, avg_hr, duration_min, pace_per_km')
           .eq('user_id', user.user_id)
+          .eq('is_deleted', false)
           .order('date', { ascending: false })
           .limit(7),
         supabase
@@ -62,6 +69,16 @@ serve(async (req) => {
           .lt('planned_date', todayStr)
           .order('planned_date', { ascending: false })
           .limit(14),
+        // AC-134: last 7 days of coaching cues so the model can avoid
+        // restating an observation it already made.
+        supabase
+          .from('coaching_memory')
+          .select('content, category, created_at, meta')
+          .eq('user_id', user.user_id)
+          .eq('category', 'cue')
+          .gte('created_at', sevenDaysAgoIso)
+          .order('created_at', { ascending: false })
+          .limit(15),
       ])
 
       // Build context string
@@ -74,13 +91,21 @@ serve(async (req) => {
       // AC-141: emit day-delta so the model uses accurate relative language
       // ("Saturday's run", "today's session") instead of defaulting to
       // "yesterday" for anything older than today.
+      // AC-152: also emit hours-since-completion so the model can frame
+      // a same-day already-completed activity as "this morning's" or
+      // "today's already-completed", not "yesterday's".
       const msPerDay = 86400000
       const activityLines = (activities || []).map(a => {
         const d = new Date(a.date)
         const daysSince = Math.round((Date.now() - d.getTime()) / msPerDay)
         const weekday = d.toLocaleDateString('en-GB', { weekday: 'long' })
         const shortDate = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-        return `- ${shortDate} (${weekday}, ${daysSince} day${daysSince === 1 ? '' : 's'} ago): ${a.name} ${a.distance_km ? a.distance_km + 'km' : ''} ${a.avg_hr ? 'HR ' + Math.round(a.avg_hr) : ''} ${a.duration_min ? Math.round(a.duration_min) + 'min' : ''}`.trim()
+        // Hours since the activity finished. Approximated as
+        // (now - start) − duration; floors at 0 for in-progress edges.
+        const hoursSinceEndRaw = ((Date.now() - d.getTime()) / 3600000) -
+          ((a.duration_min ?? 0) / 60)
+        const hoursSinceEnd = Math.max(0, Math.round(hoursSinceEndRaw))
+        return `- ${shortDate} (${weekday}, ${daysSince} day${daysSince === 1 ? '' : 's'} ago, ${hoursSinceEnd}h ago): ${a.name} ${a.distance_km ? a.distance_km + 'km' : ''} ${a.avg_hr ? 'HR ' + Math.round(a.avg_hr) : ''} ${a.duration_min ? Math.round(a.duration_min) + 'min' : ''}`.trim()
       }).join('\n')
 
       // Build last-7-days session summary
@@ -95,6 +120,15 @@ serve(async (req) => {
         return lines.join('\n')
       })()
 
+      // AC-134: format recent cues so the model knows what it already
+      // raised. One line per cue, oldest first within the 7-day window
+      // (the LIMIT above returns newest-first; we reverse here).
+      const cueLines = (recentCues || []).slice().reverse().map(c => {
+        const topic = (c.meta as any)?.topic ?? 'unspecified'
+        const when = new Date(c.created_at).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+        return `- [${topic}] ${when}: ${c.content}`
+      }).join('\n')
+
       const context = [
         `Athlete: ${user.name || 'Athlete'}, ${user.current_level || 'recreational'} level`,
         user.health_notes ? `Health: ${user.health_notes}` : null,
@@ -102,6 +136,7 @@ serve(async (req) => {
         daysToTarget ? `Days to target event: ${daysToTarget}` : null,
         sessionSummary,
         activities?.length ? `\nRecent Strava activities:\n${activityLines}` : 'No recent Strava data.',
+        recentCues?.length ? `\nCues already raised in the last 7 days (do NOT restate verbatim):\n${cueLines}` : null,
       ].filter(Boolean).join('\n')
 
       const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -118,12 +153,20 @@ serve(async (req) => {
           max_tokens: 600,
           system: `You are Coach Claude, an elite performance coach. Generate a concise daily briefing. Format as 4-5 bullet points — direct, data-driven, specific. Reference actual numbers. Today is ${today}. No markdown headers or bold text. Each point on its own line starting with •. You have access to last week's session history showing planned vs completed vs missed sessions. Always base your weekly review on ACTUAL completions, not planned sessions. If sessions were missed, call this out directly — do not pretend they were done.
 
-Relative date language: each activity line includes "(N days ago)". Use this exactly:
-  • 0 days ago → "this morning's" or "today's"
+Relative date language: each activity line includes "(N days ago, Xh ago)". Use this exactly:
+  • 0 days ago AND completed before now (Xh ago > 0) → "this morning's", "today's already-completed", or "today's run/ride/session" — this is REAL data; do NOT call it "yesterday's"
+  • 0 days ago AND not yet completed (planned/upcoming) → "today's planned" or upcoming framing
   • 1 day ago → "yesterday's"
   • 2–6 days ago → "{weekday}'s" (e.g. "Saturday's long run")
   • 7+ days ago → "last {weekday}'s" or the explicit date
-Never say "yesterday" unless the activity was exactly 1 day ago.`,
+NEVER say "yesterday" for activities with 0 days ago.
+NEVER bundle today's done-session with yesterday's session under "yesterday" — they are separate days. If multiple activities span multiple days, refer to each by its own correct day. Do not group "yesterday's run + today's ride" under one umbrella term.
+
+Coaching voice (do not violate):
+1. ONE cue per topic, never repeated. The "Cues already raised" list above shows what you said this week. Do NOT restate any of those critiques in similar framing. If the underlying trend has meaningfully worsened, you may escalate (ask a question, propose a specific fix). Otherwise step back.
+2. AGENCY-OFFERING language. Prefer "What if you…" over "You should…". Prefer "Tomorrow could be a rest day if…" over "Skip tomorrow." The athlete owns the plan; you are an advisor.
+3. NEVER nag about missed sessions. Acknowledge once if relevant; do not relitigate across briefings. The user already knows.
+4. NO motivational fluff, NO restating the obvious, NO lecturing on generic principles. Each bullet must contain specific data or a specific question.`,
           messages: [{
             role: 'user',
             content: `Generate today's coaching briefing.\n\n${context}`,
