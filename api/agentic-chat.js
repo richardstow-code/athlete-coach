@@ -1,15 +1,22 @@
 // Build 27 T1: server-side agentic chat endpoint.
 //
 // Both native chat surfaces (standalone Chat tab + Plan-tab embedded
-// chat) POST here with the same contract. The server runs the
-// Anthropic tool-use loop, dispatches each tool_use to a Supabase RPC
-// (with p_user_id derived from the JWT — never trusted from the body),
-// returns the final assistant text plus any pending proposal_ids the
-// model created for the native UI to render.
+// chat) POST here with the same contract. The server:
+//   1. Verifies the user via Supabase JWT (Authorization: Bearer …).
+//   2. Fetches canonical coaching context from
+//      get_athlete_coaching_context(user_id, 'chat') — the T2 RPC.
+//   3. Builds the system prompt from that context + canonical rules
+//      (NEVER FABRICATE, NO FALSE COMPLETION, USER OWNERSHIP, etc.).
+//   4. Runs the Anthropic tool-use loop, dispatching each tool_use
+//      to one of the four schedule RPCs (p_user_id from JWT).
+//   5. Returns final assistant text + proposal_ids / applied_ids /
+//      dismissed_ids so the native UI can render proposal cards
+//      without a second roundtrip.
 //
-// Companion module to api/claude-proxy.js — we keep that endpoint as
-// the lean pass-through used by briefing / route-coach / activity
-// coach's-take. agentic-chat owns the loop + side-effect surface.
+// Companion to api/claude-proxy.js — that endpoint stays as the lean
+// pass-through used by briefing / route-coach / activity coach's-take.
+// agentic-chat owns the loop, the canonical context fetch, and the
+// side-effect surface.
 
 export const config = { maxDuration: 60 };
 
@@ -174,6 +181,87 @@ async function persistTurn({ userId, threadId, role, content, turnIndex }) {
   }).catch(() => {});
 }
 
+// ── Canonical chat-surface system prompt builder ────────────────────
+// Rule D: every coaching surface reads from get_athlete_coaching_context.
+// Rule F: NEVER FABRICATE — name each missing metric explicitly.
+// Rule G: pass raw RPE; never invert into a feel score.
+// Rule H: multi-sport — never assume the athlete only runs.
+function buildChatSystemPrompt(ctx) {
+  const core = (ctx && ctx.core) || {};
+  const extras = (ctx && ctx.surface_extras) || {};
+  const ath = core.athlete || {};
+  const character = ath.coaching_character || 'standard';
+  const userMode = ath.user_mode || 'performance';
+  const dc = core.data_completeness || {};
+  const missing = Array.isArray(dc.missing_metrics) ? dc.missing_metrics : [];
+
+  const missingLine = missing.length === 0
+    ? 'All canonical metrics are present.'
+    : `NOT AVAILABLE today: ${missing.join(', ')}. Do NOT reference these metrics, do NOT estimate, do NOT invent values.`;
+
+  const sports = [];
+  if (core.primary_sport && core.primary_sport.sport_raw) {
+    sports.push(`primary: ${core.primary_sport.sport_raw}${core.primary_sport.target_metric ? ' → ' + core.primary_sport.target_metric : ''}`);
+  }
+  if (Array.isArray(core.supporting_sports)) {
+    for (const s of core.supporting_sports) {
+      if (s && s.sport_raw) sports.push(`supporting: ${s.sport_raw}`);
+    }
+  }
+  const sportsLine = sports.length > 0 ? sports.join('; ') : 'sports not declared';
+
+  const pendingProposals = Array.isArray(extras.pending_proposals) ? extras.pending_proposals : [];
+  const pendingLine = pendingProposals.length > 0
+    ? `PENDING PROPOSALS (awaiting user confirmation): ${pendingProposals.map(p => `#${p.id} ${p.change_type} — ${p.title || p.reasoning || ''}`).join(' | ')}`
+    : 'No pending schedule proposals.';
+
+  return `You are an elite multi-sport coach speaking with the athlete via chat.
+
+ATHLETE: ${ath.name || 'unknown'}${ath.age ? ` (${ath.age})` : ''} — ${ath.current_level || 'level unknown'} — coaching_character=${character}, user_mode=${userMode}.
+SPORTS: ${sportsLine}.
+
+${missingLine}
+
+CANONICAL CONTEXT (read-only — do not echo verbatim, use to inform answers):
+${JSON.stringify({
+  recent_training_summary: core.recent_training_summary,
+  todays_plan:             core.todays_plan,
+  tomorrows_plan:          core.tomorrows_plan,
+  upcoming_7d:             core.upcoming_7d,
+  active_injuries:         core.active_injuries,
+  next_race:               core.next_race,
+  data_completeness:       dc,
+  recent_chat_turns:       extras.recent_chat_turns,
+}, null, 0)}
+
+${pendingLine}
+
+ABSOLUTE RULE — SCHEDULE CHANGES VIA TOOLS:
+When the user requests a schedule change, you MUST follow this exact flow:
+  1. Call list_upcoming_sessions first to see what is planned (skip only if you JUST called it this turn).
+  2. Call propose_schedule_change with all required parameters.
+  3. Tell the user what you proposed in plain language and ASK THEM TO CONFIRM. Do NOT proceed without their reply.
+  4. Wait for the user's NEXT message.
+  5. ONLY after explicit user confirmation in that message, call apply_schedule_change.
+
+ABSOLUTE RULE — NO FALSE COMPLETION:
+You MUST NEVER claim a change has been made until apply_schedule_change has returned status='applied'. Saying "done" or "changes made" without that tool call having completed is a serious failure. If the user asks "did you move it?" mid-conversation, your truthful answer is "I drafted the change but it isn't applied yet — confirm the proposal to apply it."
+
+ABSOLUTE RULE — USER OWNERSHIP:
+Tools are scoped to the authenticated user server-side; you cannot act on another athlete. Do not invent session ids; always look them up via list_upcoming_sessions first.
+
+ABSOLUTE RULE — NEVER FABRICATE METRICS:
+For any metric listed as NOT AVAILABLE, you must not reference, estimate, qualitatively describe, or invent a value. If pressed, say it isn't available today.
+
+ABSOLUTE RULE — RPE IS RAW:
+RPE is a 1–10 effort rating. Low RPE on an easy session is GOOD execution, not poor feel. Read raw RPE alongside planned-session intensity; never invert.
+
+ABSOLUTE RULE — MULTI-SPORT:
+The athlete may train multiple sports. Before proposing a change to one sport's session, consider how it affects other sports' sessions in upcoming_7d.
+
+OUTPUT: Conversational, direct, no emojis. No "let me know if…" sign-offs.`;
+}
+
 // ── Anthropic call with tools ───────────────────────────────────────
 async function callAnthropic({ model, max_tokens, system, messages }) {
   const resp = await fetch(ANTHROPIC_URL, {
@@ -201,12 +289,29 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const model = body.model || DEFAULT_MODEL;
   const max_tokens = body.max_tokens || DEFAULT_MAX_TOKENS;
-  const system = body.system || '';
   const incomingMessages = Array.isArray(body.messages) ? body.messages.slice() : [];
   const threadId = body.thread_id || null;
 
   if (incomingMessages.length === 0) {
     return res.status(400).json({ error: 'messages required' });
+  }
+
+  // Build canonical system prompt server-side from T2 RPC. Native does
+  // NOT need to send `system` — single source of truth lives here.
+  // Allow an explicit body.system override (back-compat / debug only).
+  let system = typeof body.system === 'string' && body.system.length > 0 ? body.system : null;
+  if (!system) {
+    const ctxResp = await callRPC('get_athlete_coaching_context', {
+      p_user_id:      userId,
+      p_surface_type: 'chat',
+    });
+    if (!ctxResp.ok) {
+      return res.status(500).json({
+        error: `failed to load coaching context: ${ctxResp.status}`,
+        thread_id: threadId,
+      });
+    }
+    system = buildChatSystemPrompt(ctxResp.data);
   }
 
   const messages = incomingMessages;
