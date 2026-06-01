@@ -157,7 +157,11 @@ async function executeTool(toolName, toolInput, userId) {
 }
 
 // ── Coaching memory persistence ─────────────────────────────────────
+// Convention (turn persistence ticket): sequential turn_index 0..N across the
+// thread; user rows type='user_turn', coach rows type='coach_turn' (matches
+// lib/coachingThreads.ts loadTurns); coaching_threads.turn_count = row count.
 async function persistTurn({ userId, threadId, role, content, turnIndex }) {
+  if (!threadId) return; // never write orphan turns with no thread
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' });
   // Direct insert — RLS bypassed via service role.
   await fetch(`${SUPABASE_URL}/rest/v1/coaching_memory`, {
@@ -171,13 +175,48 @@ async function persistTurn({ userId, threadId, role, content, turnIndex }) {
     body: JSON.stringify({
       user_id: userId,
       thread_id: threadId,
-      type: 'chat',
+      type: role === 'user' ? 'user_turn' : 'coach_turn',
       source: 'agentic-chat',
-      category: 'chat',
+      category: 'chat_turn',
       content,
       turn_index: turnIndex,
       date: today,
     }),
+  }).catch(() => {});
+}
+
+// Current highest turn_index for a thread + 1 (0 if empty). Makes the base index
+// robust regardless of what the client sends — fixes the all-turn_index=0 bug.
+async function nextTurnIndex(threadId) {
+  if (!threadId) return 0;
+  try {
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/coaching_memory?thread_id=eq.${threadId}&select=turn_index&order=turn_index.desc&limit=1`,
+      { headers: { apikey: process.env.SUPABASE_SECRET_KEY, Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}` } },
+    );
+    if (!resp.ok) return 0;
+    const rows = await resp.json();
+    if (Array.isArray(rows) && rows.length && typeof rows[0].turn_index === 'number') {
+      return rows[0].turn_index + 1;
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+// Keep coaching_threads.turn_count + last_turn_at in step with persisted turns.
+async function updateThreadCounters(threadId, turnCount) {
+  if (!threadId) return;
+  await fetch(`${SUPABASE_URL}/rest/v1/coaching_threads?id=eq.${threadId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: process.env.SUPABASE_SECRET_KEY,
+      Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({ turn_count: turnCount, last_turn_at: new Date().toISOString() }),
   }).catch(() => {});
 }
 
@@ -259,6 +298,13 @@ RPE is a 1–10 effort rating. Low RPE on an easy session is GOOD execution, not
 ABSOLUTE RULE — MULTI-SPORT:
 The athlete may train multiple sports. Before proposing a change to one sport's session, consider how it affects other sports' sessions in upcoming_7d.
 
+ABSOLUTE RULE — PROTECT VOLUME UNDER REDUCED AVAILABILITY (recovery-aware):
+When the athlete flags reduced availability (travel, camping, hiking, less time, a busy stretch), PREFER a volume-protective adjustment over simply deleting sessions — e.g. front-load a key/quality session before the gap, or redistribute load to preserve the weekly total where feasible. Propose this via the tools (propose_schedule_change), never as a claim it's done.
+BUT respect recovery, using the raw recent context above (recent_training_summary, todays_plan, upcoming_7d, recent_chat_turns) and raw RPE alongside planned intensity:
+  • Never stack a quality/hard session onto a day that already had a long or hard effort.
+  • Never schedule back-to-back hard days to "save" volume.
+  • If protecting volume would compromise recovery, say so plainly and propose the lighter option instead. Recovery wins over volume when they conflict.
+
 OUTPUT: Conversational, direct, no emojis. No "let me know if…" sign-offs.`;
 }
 
@@ -319,7 +365,10 @@ export default async function handler(req, res) {
   const appliedIds = [];
   const dismissedIds = [];
   let iterations = 0;
-  let baseTurnIndex = body.turn_index_base || 0;
+  // Compute the running turn index from the thread itself — do NOT trust a
+  // client-sent base (the old `body.turn_index_base` was never sent, so every
+  // turn landed at index 0). Sequential 0..N across the thread.
+  let baseTurnIndex = await nextTurnIndex(threadId);
 
   // Persist the latest user message immediately so it appears in
   // coaching_memory even if the loop fails downstream. We assume the
@@ -329,6 +378,7 @@ export default async function handler(req, res) {
     await persistTurn({
       userId, threadId, role: 'user', content: lastIncoming.content, turnIndex: baseTurnIndex,
     });
+    await updateThreadCounters(threadId, baseTurnIndex + 1);
     baseTurnIndex += 1;
   }
 
@@ -370,6 +420,7 @@ export default async function handler(req, res) {
           userId, threadId, role: 'assistant',
           content: finalText, turnIndex: baseTurnIndex,
         });
+        await updateThreadCounters(threadId, baseTurnIndex + 1);
       }
 
       return res.status(200).json({
