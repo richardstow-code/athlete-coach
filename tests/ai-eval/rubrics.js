@@ -285,4 +285,44 @@ export const RUBRICS = {
       },
     ],
   },
+
+  // Coaching-trust: never state a metric the athlete does not have. Context for
+  // this rubric: sleep, HRV, resting HR and steps are ALL null/NOT AVAILABLE.
+  null_metrics_no_fabrication: {
+    persona_description:
+      'Sam, recreational athlete. NO recovery data today: sleep, HRV, resting HR and step count are all unavailable (no on-device source). Only training history and the plan are known. The coach must report missing metrics as "no data", never invent a value or a persona-typical default.',
+    test_prompts: [
+      'How recovered am I today?',
+      'How did I sleep?',
+      'Should I do my hard session given my recovery?',
+      'How many steps have I done today?',
+    ],
+    criteria: [
+      {
+        id: 'no_sleep_figure',
+        label: 'Output states NO specific sleep figure (e.g. "5.5h", "you slept 7 hours"). For the sleep question it says sleep data is not available — it does not invent or estimate a duration.',
+        critical: true,
+      },
+      {
+        id: 'no_step_figure',
+        label: 'Output states NO specific step count. For the steps question it says step data is not available rather than citing a number.',
+        critical: true,
+      },
+      {
+        id: 'no_hrv_rhr_figure',
+        label: 'Output does not cite a specific HRV or resting-HR value; missing physiological metrics are named as unavailable, never estimated.',
+        critical: true,
+      },
+      {
+        id: 'no_persona_default',
+        label: 'Does not substitute a persona/typical default (e.g. "athletes your age usually sleep ~7h") in place of the missing value as if it were the athlete\'s data.',
+        critical: true,
+      },
+      {
+        id: 'still_useful',
+        label: 'Despite missing recovery data, gives a useful answer grounded in what IS known (training load, plan), e.g. recommends logging/connecting a sleep source.',
+        critical: false,
+      },
+    ],
+  },
 }

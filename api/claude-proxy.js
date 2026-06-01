@@ -149,6 +149,58 @@ ABSOLUTE RULES:
 OUTPUT: 2-4 short sentences. Plain text, no markdown, no emojis, no sign-offs.`;
 }
 
+// ── Coaching-trust central guardrail (2026-06) ──────────────────────
+// Any state-bearing surface that opts in via surface_type gets the
+// NEVER-FABRICATE rule injected server-side from the canonical context,
+// so a null metric (e.g. sleep) is reported "no data" rather than
+// invented. This retrofits the briefing/route-coach guardrail onto the
+// surfaces that went through the lean pass-through (weekly review, plan
+// alternatives, cards, pre-session) without each one re-implementing it.
+const STATE_BEARING_SURFACES = new Set([
+  'route_coach', 'plan_alternative', 'workout_card', 'weekly_review',
+  'pre_session', 'session_debrief', 'daily_card', 'chat_coach',
+]);
+
+// All physiological metrics the coach might cite. missing_metrics from the
+// canonical context names the ones unavailable today; steps is tracked
+// separately (the RPC does not expose it) and is treated as unreliable.
+function buildStateGuardrailPrefix(dc, surfaceType) {
+  const missing = Array.isArray(dc.missing_metrics) ? dc.missing_metrics.slice() : [];
+  // steps is not in the RPC's data_completeness and is known-unreliable —
+  // never let a surface cite a specific step count unless it is explicitly
+  // present in the context passed by the client.
+  const missingWithSteps = missing.includes('steps') ? missing : [...missing, 'steps'];
+  const notAvail = missingWithSteps.length
+    ? `NOT AVAILABLE for this athlete right now: ${missingWithSteps.join(', ')}.`
+    : 'All canonical recovery metrics are available.';
+  const zoneLine = dc.has_zone_data_today
+    ? ''
+    : '\n  • No calibrated HR-zone data for today — do NOT print specific HR-zone bpm numbers as if measured; speak in qualitative terms only.';
+  return `CANONICAL DATA COMPLETENESS (authoritative — overrides anything below):
+${notAvail}
+ABSOLUTE RULE — NEVER FABRICATE METRICS:
+  • For every metric listed NOT AVAILABLE you MUST NOT state, estimate, qualitatively describe, or invent a value. Say "no <metric> data" instead (e.g. "no sleep data today").
+  • The word "sleep" may appear ONLY if sleep is NOT in the NOT AVAILABLE list. Same for HRV, resting HR, steps.
+  • Use ONLY metric values explicitly present in the context. Never substitute a persona/typical default for a missing value.${zoneLine}
+  • RPE is raw (1-10): read it alongside planned intensity; never invert into a feel score.
+
+`;
+}
+
+function buildGenericAudit(dc, surfaceType) {
+  return {
+    prompt_version: `proxy-guardrail@v1:${surfaceType}`,
+    surface_type: surfaceType,
+    has_sleep:           !!dc.has_sleep,
+    sleep_value:         null, // canonical context exposes flags only here
+    has_hrv:             !!dc.has_hrv,
+    has_resting_hr:      !!dc.has_resting_hr,
+    has_zone_data_today: !!dc.has_zone_data_today,
+    has_plan_for_today:  !!dc.has_plan_for_today,
+    missing_metrics:     Array.isArray(dc.missing_metrics) ? dc.missing_metrics : [],
+  };
+}
+
 function buildAuditFromContext(ctx) {
   const core = (ctx && ctx.core) || {};
   const extras = (ctx && ctx.surface_extras) || {};
@@ -248,6 +300,46 @@ export default async function handler(req, res) {
         _surface_type: 'activity_feedback',
         _audit: audit,
       });
+    }
+  }
+
+  // ── State-bearing surfaces: inject the NEVER-FABRICATE guardrail ──
+  // server-side from the canonical context so null metrics (sleep, etc.)
+  // can never be invented. Opt-in via surface_type; falls back to the
+  // lean pass-through if no JWT / context is unavailable (fail-open on
+  // availability, never fail-open on fabrication of a present metric).
+  if (surface_type && STATE_BEARING_SURFACES.has(surface_type)) {
+    const userId = await verifyJWT(req.headers.authorization || req.headers.Authorization);
+    if (userId) {
+      const ctxResp = await callRPC('get_athlete_coaching_context', {
+        p_user_id: userId,
+        p_surface_type: 'chat', // canonical core.data_completeness for any surface
+      });
+      const dc = (ctxResp.ok && ctxResp.data?.core?.data_completeness) || null;
+      if (dc) {
+        const guardrail = buildStateGuardrailPrefix(dc, surface_type);
+        const audit = buildGenericAudit(dc, surface_type);
+        const guardedSystem = `${guardrail}${typeof system === 'string' ? system : ''}`;
+        try {
+          const upstreamBody = { model, max_tokens, system: guardedSystem, messages };
+          if (Array.isArray(tools) && tools.length > 0) upstreamBody.tools = tools;
+          if (tool_choice) upstreamBody.tool_choice = tool_choice;
+          const resp = await fetch(ANTHROPIC_URL, {
+            method: 'POST',
+            headers: {
+              'x-api-key': process.env.ANTHROPIC_API_KEY,
+              'anthropic-version': ANTHROPIC_VERSION,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify(upstreamBody),
+          });
+          const data = await resp.json();
+          return res.status(200).json({ ...data, _status: resp.status, _surface_type: surface_type, _audit: audit });
+        } catch (err) {
+          return res.status(200).json({ type: 'error', error: { type: 'proxy_error', message: err.message }, _surface_type: surface_type, _audit: audit });
+        }
+      }
+      // dc unavailable → fall through to lean pass-through below.
     }
   }
 
