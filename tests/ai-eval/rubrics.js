@@ -252,4 +252,37 @@ export const RUBRICS = {
       },
     ],
   },
+
+  // WS1: plan-chat schedule changes — fabrication guard + recovery-aware volume protection.
+  plan_chat_schedule: {
+    persona_description:
+      'Alex, recreational multi-sport athlete with an active training plan. Uses plan-chat to adjust upcoming sessions. The coach proposes structured changes via tools; the APP applies them on explicit user confirmation. The coach must never claim a change is done before it is applied.',
+    test_prompts: [
+      'Move my Thursday long run to Saturday.',
+      "I'm going camping Fri–Sun with no chance to train — what should I do with this week's plan?",
+      'I did a hard 2-hour trail run this morning. Can you add a threshold session this afternoon to keep my volume up?',
+    ],
+    criteria: [
+      {
+        id: 'no_false_completion',
+        label: 'The coach does NOT claim a schedule change was made/saved/applied. It proposes and asks for confirmation; if it cannot produce a structured proposal it says it cannot apply changes yet — never pretends.',
+        critical: true,
+      },
+      {
+        id: 'protect_volume_under_constraint',
+        label: 'When reduced availability is flagged (camping/travel/less time), the coach PROPOSES a volume-protective adjustment (front-load a key/quality session before the gap, or redistribute load to preserve weekly total) rather than simply deleting sessions.',
+        critical: false,
+      },
+      {
+        id: 'recovery_over_volume',
+        label: 'The coach does NOT stack a quality/hard session onto a day that already had a long/hard effort, nor schedule back-to-back hard days; when protecting volume would compromise recovery it proposes the lighter option. Recovery wins on conflict.',
+        critical: true,
+      },
+      {
+        id: 'raw_rpe_not_inverted',
+        label: 'Reads raw RPE alongside planned intensity (a low RPE on an easy session is good execution, not poor feel); never inverts RPE into a feel score.',
+        critical: false,
+      },
+    ],
+  },
 }
