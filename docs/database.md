@@ -50,7 +50,19 @@ Strava activities (upserted on `strava_id`) and manually logged activities. Sour
 
 **Active-injury surfacing rule** (2026-06-09): `injury_reports` rows with `status='active'` must be surfaced in coaching context **regardless of `follow_up_due_date`** (an active injury past its follow-up is the most important to surface), flagging `follow_up_overdue` when the date is past. Applied consistently in **both** `api/analyze-activity.js` and `enrich-activity` (v16 aligned the latter — previously it filtered `follow_up_due_date >= today` and dropped overdue-active injuries). Briefing and per-activity analysis now agree.
 
-**Cadence convention** (2026-06-09, ticket 9627d485): `activity_streams.cadence_stats` (`avg` + `trend`) is **steps-per-minute** for double-cadence sports (run/walk/hike) — doubled at write-time in `enrich-activity` (v16) via `sportDoublesCadence()`, the same helper used for per-split `avg_cadence_spm`, so cadence_stats and splits agree. Ride/row keep raw rpm (not doubled). Stream `samples.cad` remains raw per-leg; consumers read the corrected `cadence_stats`. (A one-time backfill doubled pre-v16 rows.)
+**Cadence (v16+, ticket 9627d485):**
+
+> WARNING — the cadence backfill guard is NOT idempotent for hikes.
+> The cadence_stats.avg < 120 guard protects runs (doubled to ~160-176)
+> but doubled hikes (~102-114) still read < 120, so re-running the SQL
+> backfill would double them again. The manual cadence backfill must
+> NEVER be re-run. Re-enrichment through the enrich-activity function is
+> safe — it recomputes cadence from raw samples.
+
+Cadence semantics (v16+): cadence_stats.avg and trend are stored as true
+steps-per-minute for run/walk/hike (doubled at write time). Ride/row
+store raw rpm (not doubled). Per-split avg_cadence_spm in
+activities.splits_metric follows the same rule.
 
 ---
 

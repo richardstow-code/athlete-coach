@@ -2,11 +2,13 @@
 
 ## 2026-06-09
 
-### enrich-activity v16 — cadence doubling + injury-rule alignment
+### enrich-activity v16 — 2026-06-09
 
-- **Cadence (9627d485):** `computeCadenceStats` now doubles `avg` + every `trend` element for run/walk/hike via `sportDoublesCadence()` — the same helper the per-split `avg_cadence_spm` path already used, so `cadence_stats` and splits no longer disagree. Runs report steps-per-minute (~170) instead of per-leg (~85); ride/row keep raw rpm. Doubled at exactly one layer (write-time); native renders `cadence_stats` verbatim (no app-side doubling). A one-time guarded backfill (Architect) doubles pre-v16 rows.
-- **Injury rule:** the coaching-feedback injury query dropped `.gte('follow_up_due_date', today)` and keeps `status='active'` — surfacing active-but-overdue injuries (with "follow-up overdue since <date>"), matching `analyze-activity`. Resolves the divergence flagged earlier.
-- Edge-fn source lives in the native repo; deployed as v16 by the Architect via MCP (CC does not deploy edge functions). Tests: native `__tests__/cadenceInjuryEnrich.test.ts` (cadence doubling logic + source pins for both changes).
+Deployed via Supabase MCP (verify_jwt: false).
+- Cadence doubling for run/walk/hike: computeCadenceStats now applies x2 via sportDoublesCadence(), so cadence_stats agrees with per-split cadence. Steps-per-minute, not per-leg. Ride/row keep raw rpm.
+- Status-based injury rule: coaching-feedback injury query drops the .gte('follow_up_due_date', today) filter, keeps .eq('status','active'), and flags follow_up_overdue — surfacing active-but-overdue injuries (matches analyze-activity behaviour).
+- prompt_version intentionally unchanged ('enrich-activity@v14') to avoid touching the briefing hallucination detector.
+- One-time cadence backfill run against 60 historical run/hike activity_streams rows (doubled avg + trend).
 
 ### analyze-activity — load athlete RPE/feel + active injuries (data-complete)
 
