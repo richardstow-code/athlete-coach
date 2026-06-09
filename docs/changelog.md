@@ -2,6 +2,12 @@
 
 ## 2026-06-09
 
+### enrich-activity v16 — cadence doubling + injury-rule alignment
+
+- **Cadence (9627d485):** `computeCadenceStats` now doubles `avg` + every `trend` element for run/walk/hike via `sportDoublesCadence()` — the same helper the per-split `avg_cadence_spm` path already used, so `cadence_stats` and splits no longer disagree. Runs report steps-per-minute (~170) instead of per-leg (~85); ride/row keep raw rpm. Doubled at exactly one layer (write-time); native renders `cadence_stats` verbatim (no app-side doubling). A one-time guarded backfill (Architect) doubles pre-v16 rows.
+- **Injury rule:** the coaching-feedback injury query dropped `.gte('follow_up_due_date', today)` and keeps `status='active'` — surfacing active-but-overdue injuries (with "follow-up overdue since <date>"), matching `analyze-activity`. Resolves the divergence flagged earlier.
+- Edge-fn source lives in the native repo; deployed as v16 by the Architect via MCP (CC does not deploy edge functions). Tests: native `__tests__/cadenceInjuryEnrich.test.ts` (cadence doubling logic + source pins for both changes).
+
 ### analyze-activity — load athlete RPE/feel + active injuries (data-complete)
 
 Activity Detail QA showed Path A marking RPE "not available" on an activity that HAS `rpe=2`, and the older prose Take (now removed from the screen) was the only block citing the athlete's RPE + active injury — so the tidy-up shipped this data fix in the same pass to avoid losing information.

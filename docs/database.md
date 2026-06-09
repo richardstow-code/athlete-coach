@@ -48,7 +48,9 @@ Strava activities (upserted on `strava_id`) and manually logged activities. Sour
 
 **Soft-delete invariant** (2026-06-09, ticket 78d16ed2 / AC-153): every read of `activity_streams` MUST filter `.eq('is_deleted', false)` so soft-deleted stream rows are never read into enrichment, zone computation, or analysis. Enforced at source level by the native `ac-153-soft-delete-cascade` test; applied in `enrich-activity` and `api/analyze-activity.js`.
 
-**Active-injury surfacing rule** (2026-06-09): `injury_reports` rows with `status='active'` must be surfaced in coaching context **regardless of `follow_up_due_date`** (an active injury past its follow-up is the most important to surface). `api/analyze-activity.js` follows this rule and flags `follow_up_overdue` when the date is past. ⚠️ **Known divergence:** `enrich-activity` still filters injuries by `follow_up_due_date >= today` — a fast-follow to align it to the status-based rule so the briefing and the per-activity analysis agree.
+**Active-injury surfacing rule** (2026-06-09): `injury_reports` rows with `status='active'` must be surfaced in coaching context **regardless of `follow_up_due_date`** (an active injury past its follow-up is the most important to surface), flagging `follow_up_overdue` when the date is past. Applied consistently in **both** `api/analyze-activity.js` and `enrich-activity` (v16 aligned the latter — previously it filtered `follow_up_due_date >= today` and dropped overdue-active injuries). Briefing and per-activity analysis now agree.
+
+**Cadence convention** (2026-06-09, ticket 9627d485): `activity_streams.cadence_stats` (`avg` + `trend`) is **steps-per-minute** for double-cadence sports (run/walk/hike) — doubled at write-time in `enrich-activity` (v16) via `sportDoublesCadence()`, the same helper used for per-split `avg_cadence_spm`, so cadence_stats and splits agree. Ride/row keep raw rpm (not doubled). Stream `samples.cad` remains raw per-leg; consumers read the corrected `cadence_stats`. (A one-time backfill doubled pre-v16 rows.)
 
 ---
 
