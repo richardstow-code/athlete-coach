@@ -2,6 +2,10 @@
 
 ## 2026-06-09
 
+### Path A — go-live complete
+
+- Both branches merged (web `main` `bef4b8b`; native `main`). `ANALYZE_ACTIVITY_SECRET` wired on both Vercel (Production) and the Supabase trigger side. `trigger_analyze_activity` created and live (AFTER UPDATE → `enrichment_status='complete'`, fire-and-forget pg_net POST `{ activity_id }` + `x-analyze-secret`). Architect verified one real activity end-to-end: sync → enrichment → trigger → `analyze-activity` → `coach_analysis` populated (`generation_status='ok'`, `prompt_data_completeness` audited, no fabrication) → renders on Activity Detail + Coach's Take. iOS build **v1.5.0 (30)** submitted to TestFlight (native repo).
+
 ### analyze-activity@v1.1 — fix JSON truncation (parse_failed on data-rich activities)
 
 - **Bug:** on a data-rich activity (e.g. id 333 — HR zones + 14 splits + 424-sample stream + planned session) the Haiku output hit `max_tokens` and was cut off mid-string → `JSON.parse failed: Unterminated string` → `generation_status='parse_failed'`, `coach_analysis` stayed NULL (fail-closed, correct — but nothing rendered). Original `max_tokens` was **1200**.
