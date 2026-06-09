@@ -98,6 +98,27 @@ export function sportOf(activity) {
   return 'other';
 }
 
+// Run/walk/hike report ONE-FOOT (per-leg) cadence; true steps-per-minute is
+// ×2. SAME set + helper semantics as enrich-activity v16 (computeCadenceStats)
+// and lib/splits.ts (sportDoublesCadence) so analyze-activity, cadence_stats,
+// and per-split cadence all agree. Ride/row/swim/strength keep raw rpm.
+const CADENCE_DOUBLE_SPORTS = new Set([
+  'run', 'running', 'trailrun', 'trail run', 'trail_run', 'walk', 'walking', 'hike', 'hiking',
+]);
+export function sportDoublesCadence(sportType) {
+  return CADENCE_DOUBLE_SPORTS.has(String(sportType ?? '').trim().toLowerCase());
+}
+
+// The cadence value to present for THIS sport. activities.avg_cadence is stored
+// RAW per-leg by the Strava import (strava-webhook.js — average_cadence), never
+// doubled; enrich v16 only doubled cadence_stats. So double it HERE for
+// run/walk/hike (→ steps-per-minute, ~170), leave ride/row rpm untouched.
+// cadence_stats is already doubled upstream — do NOT double it again.
+export function cadenceDisplayAvg(avgCadence, sport) {
+  if (avgCadence == null) return null;
+  return sportDoublesCadence(sport) ? Math.round(Number(avgCadence) * 2) : avgCadence;
+}
+
 // Evenly-spaced downsample of the sample stream to ~target points. Drops
 // lat/lng (not needed for the read; saves tokens) and keeps t/hr/vel/alt/cad.
 export function downsampleSamples(samples, target = 140) {
@@ -313,7 +334,7 @@ ${JSON.stringify({
     name: activity.name, type: activity.type, workout_type: activity.workout_type,
     date_vienna: viennaDate(activity.date), distance_km: activity.distance_km,
     duration_min: activity.duration_min, avg_hr: activity.avg_hr, max_hr: activity.max_hr,
-    avg_cadence: activity.avg_cadence, elevation_m: activity.elevation_m, pace_per_km: activity.pace_per_km,
+    avg_cadence: cadenceDisplayAvg(activity.avg_cadence, sport), elevation_m: activity.elevation_m, pace_per_km: activity.pace_per_km,
     rpe: activity.rpe ?? null, feel: activity.feel ?? null, feel_legs: activity.feel_legs ?? null, injury_flag: activity.injury_flag ?? null,
   })}
 

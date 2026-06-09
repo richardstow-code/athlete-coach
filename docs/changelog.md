@@ -2,6 +2,16 @@
 
 ## 2026-06-09
 
+### analyze-activity — run/walk/hike cadence doubling (c4719e8b) + injury source confirmed single-source (9808c786 / 62b39fbb)
+
+On-device QA of the ITEM 3 release surfaced two correctness issues on the Coach Analysis card, same endpoint, one Vercel deploy.
+
+- **Cadence doubling (`api/analyze-activity.js`):** the card showed `CADENCE & STABILITY 85.1 avg` (raw per-leg) while enrich-activity v16's backfilled `cadence_stats` read ~170 (true steps-per-minute) — two surfaces disagreed. Root cause: `activities.avg_cadence` is written RAW per-leg by the Strava import (`api/strava-webhook.js` — `average_cadence`); enrich v16 only doubled `activity_streams.cadence_stats`, never `avg_cadence`. `analyze-activity` sent BOTH the raw `avg_cadence` (~85) and the doubled `cadence_stats` (~170) to the model. Fix: new `sportDoublesCadence()` + `cadenceDisplayAvg()` helpers (SAME `CADENCE_DOUBLE_SPORTS` set as enrich-activity v16 / `lib/splits.ts`) double `avg_cadence` for run/walk/hike in `buildAnalysisPrompt`; `cadence_stats` (already doubled upstream) and ride/row rpm are left untouched — no double-doubling. Now both cadence inputs agree at ~170.
+- **Injury source — confirmed already single-source (no change):** `analyze-activity` already reads `injury_reports` under the status-based rule (`status='active'`, `follow_up_overdue` computed live, regardless of `follow_up_due_date`) — it does NOT read `health_flags` or a frozen copy. Radar **62b39fbb** (health_flags vs injury_reports split) is therefore already folded for this endpoint.
+- **Stored-artifact staleness — deferred (design-only):** the observed bug (activity 333 still showing a now-resolved calf ~4.5h after resolution) is the **frozen stored `coach_analysis`** artifact, not the live read — `decideSkip` returns `'exists'` and never re-generates, and the native app renders the stored column verbatim (no serve-time overlay path exists server-only). The systemic fix is a generalised **regenerate-on-source-change** mechanism (covers injury status, zone recalibration, and the deferred macro Coach's-Take rolling refresh) — **designed, not built** this cycle (architect decision: avoid an injury-only pg_net trigger that risks the 30s timeout and would be rebuilt). Design: `docs/features/regenerate-on-source-change.md`. Stale cards (incl. 333) are cleared by the architect's manual post-deploy `force`-re-run, which also picks up the cadence doubling.
+- **Version:** `analyze-activity@v1.1` unchanged (it lives in `prompt_data_completeness.prompt_version`; independent of the `coach-take@v1` / `proxy-guardrail@v1` hallucination detector keyed off `raw_data.coach_take_audit` — no overlap).
+- Tests: `tests/api/analyze-activity.test.js` (+3: `sportDoublesCadence` set membership, `cadenceDisplayAvg` run→×2 / ride unchanged / null passthrough, `buildAnalysisPrompt` run `avg_cadence`→170 & ride→85 — 38 total, all pass).
+
 ### enrich-activity v16 — 2026-06-09
 
 Deployed via Supabase MCP (verify_jwt: false).
