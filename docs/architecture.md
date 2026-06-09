@@ -75,7 +75,25 @@ All Claude calls from the frontend go through the Supabase `claude-proxy` edge f
 
 The Vercel serverless function (`/api/strava-webhook.js`) also routes through `claude-proxy`, authenticating with `SUPABASE_SECRET_KEY` (service role key stored as Vercel env var).
 
-Direct Anthropic API calls are made only from Supabase edge functions (`infer-athlete-context`, `daily-briefing`) which have direct access to `ANTHROPIC_API_KEY`.
+Direct Anthropic API calls are made only from Supabase edge functions (`infer-athlete-context`, `daily-briefing`) which have direct access to `ANTHROPIC_API_KEY`, and from the Vercel `api/claude-proxy.js` / `api/agentic-chat.js` / `api/analyze-activity.js` functions (which hold `ANTHROPIC_API_KEY` as a Vercel env var).
+
+## Automatic Per-Activity Analysis (Path A)
+
+When an activity finishes enrichment, a structured multi-sport coaching read is generated server-side and stored on the activity, so a detailed per-activity analysis is available in-app without opening a chat. (Productised fix for `f76506ac`: `buildContext` feeds the coach summary-only activity data and never queries `activity_streams`/`splits_metric`.)
+
+Flow:
+
+1. `enrich-activity` sets `activities.enrichment_status = 'complete'`.
+2. DB trigger `trigger_analyze_activity` (`AFTER UPDATE`, on transition to `'complete'`) fires a **fire-and-forget** `pg_net` POST `{ activity_id }` (+ `x-analyze-secret` header) to `https://athlete-coach-alpha.vercel.app/api/analyze-activity`. It does NOT await the LLM (respects the ~5s pg_net limit).
+3. `api/analyze-activity.js` (service role):
+   - rejects unless `x-analyze-secret` matches `ANALYZE_ACTIVITY_SECRET`;
+   - **idempotency/dedup**: skips if `coach_analysis` already present (unless `force`), if not enriched / no streams-or-splits (`incomplete`), or if a duplicate-shaped sibling row already has an analysis (`dup` — the native-recorded + Strava-synced dual-source case);
+   - builds the athlete-state snapshot **inline** from base tables (activity row, `activity_streams` zone_seconds/cadence_stats/grade_correlation + a downsampled ~140-pt stream, `splits_metric`, the matching `scheduled_sessions` row for the Europe/Vienna date, `athlete_settings` + `athlete_sports`, last ~5 same-sport activities). `athlete_state_snapshot` is NOT read;
+   - asks Haiku for STRICT-JSON multi-sport output (branches by sport; NEVER FABRICATE with an explicit NOT AVAILABLE list; raw RPE; HR data-quality guard; tag-mismatch surfacing);
+   - writes back `coach_analysis` + `coach_analysis_generated_at` / `_model` / `_version` and a `prompt_data_completeness` audit. On parse failure it stores the audit (`generation_status: 'parse_failed'`), leaves `coach_analysis` null for retry, and returns 5xx.
+4. Native renders `coach_analysis` on the activity-detail screen (full report) and the feed card (headline + top flag). See `screens.md`.
+
+`ANALYZE_ACTIVITY_SECRET` is set in both Supabase (trigger header) and Vercel (endpoint check). Tests: `tests/api/analyze-activity.test.js` (guard logic + live wiring) and `tests/ai-eval/analyze-activity-eval.js` (fabrication detector).
 
 ## Automation: Current State (as of 2026-03-20)
 

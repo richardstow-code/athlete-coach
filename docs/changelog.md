@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-09
+
+### Path A — automatic per-activity AI analysis
+
+- **`api/analyze-activity.js`** (new Vercel function): generates a structured, multi-sport `coach_analysis` from the FULL detailed activity data (streams, splits, zones, cadence) when enrichment completes, and writes it back onto the activity. Auth via `x-analyze-secret` (`ANALYZE_ACTIVITY_SECRET`), service-role reads/writes. Idempotent with a dual-source dedup guard (skips `exists` / `incomplete` / `dup`). Builds the athlete-state snapshot inline from base tables (no `athlete_state_snapshot` view). STRICT-JSON Haiku output with NEVER-FABRICATE (explicit NOT AVAILABLE list), raw RPE (no computed feel score), HR data-quality guard, and tag-mismatch surfacing. Stores a `prompt_data_completeness` audit; on parse failure leaves `coach_analysis` null for retry and returns 5xx.
+- **`activities` schema**: added `coach_analysis` (jsonb), `coach_analysis_generated_at`, `coach_analysis_model`, `coach_analysis_version`, `prompt_data_completeness`. New trigger `trigger_analyze_activity` (`AFTER UPDATE` on transition to `enrichment_status='complete'`) fire-and-forget POSTs `{ activity_id }` to the endpoint.
+- **Tests**: `tests/api/analyze-activity.test.js` (pure guard-logic unit tests + live auth/method wiring smoke); `tests/ai-eval/analyze-activity-eval.js` + `npm run test:ai-eval:analyze` (fabrication detector — asserts no claim about NOT AVAILABLE metrics, reads the planned session, no invented splits/zones, and flags a Z2-run-tagged-tempo fixture).
+- **Native** (`athlete-coach-native`): activity-detail screen renders the full structured report (`renderCoachAnalysis` in `app/activity/[id].tsx`); feed card (`components/ActivityCard.tsx`) shows headline + top flag. Pure helpers + states in `lib/coachAnalysis.ts`. Handles pending / generating / present / failed.
+
 ## 2026-04-05
 
 ### Native app: HealthKit → Supabase pipeline

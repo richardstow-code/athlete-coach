@@ -34,10 +34,17 @@ Strava activities (upserted on `strava_id`) and manually logged activities. Sour
 | zone_data | jsonb | HR zone breakdown (reserved — not yet populated by webhook) |
 | enrichment_status | text | `'pending'` → `'processing'` → `'complete'` \| `'failed'` |
 | source | text | `'strava'` \| `'manual'` — added 2026-03-23; default `'strava'` |
+| coach_analysis | jsonb | structured per-activity AI read (Path A); shape: headline, sport, execution_vs_plan, effort_read, key_signals[], flags[], coach_note. Added 2026-06-09 |
+| coach_analysis_generated_at | timestamptz | when `coach_analysis` was generated. Added 2026-06-09 |
+| coach_analysis_model | text | model that produced it, e.g. `claude-haiku-4-5-20251001`. Added 2026-06-09 |
+| coach_analysis_version | int | default 1; incremented on forced regeneration. Added 2026-06-09 |
+| prompt_data_completeness | jsonb | audit of which metrics were present/NOT AVAILABLE for the analysis prompt + `generation_status` (`ok` \| `parse_failed`). Added 2026-06-09 |
 
 **Actively used**: Yes — main data source for Home, ActivityDetail, Plan, Stats screens.
 
 **DB Trigger**: `trigger_enrich_activity` — `AFTER INSERT OR UPDATE ON activities FOR EACH ROW`. Fires when `NEW.enrichment_status = 'pending'` AND (it's an INSERT OR the status changed TO `'pending'`). Calls `enrich-activity` edge function via `pg_net.http_post`. The UPDATE condition is required because Strava webhook uses upsert (`ON CONFLICT strava_id DO UPDATE`), which takes the UPDATE path when the activity already exists — an INSERT-only trigger would silently skip these. Updated 2026-03-30.
+
+**DB Trigger**: `trigger_analyze_activity` — `AFTER UPDATE ON activities FOR EACH ROW`, fires when `enrichment_status` transitions to `'complete'`. Fire-and-forget `pg_net.http_post` of `{ activity_id }` (+ `x-analyze-secret` header) to the Vercel `/api/analyze-activity` endpoint, which generates `coach_analysis` from the FULL detailed data (streams/splits/zones) and writes it back. Does NOT await the LLM (respects the ~5s pg_net limit). Added 2026-06-09 (Path A).
 
 ---
 
@@ -448,6 +455,7 @@ Workouts recorded natively via Polar H10 BLE + GPS.
 
 | Column | Table | Added | Purpose |
 |--------|-------|-------|---------|
+| `coach_analysis` (+ `_generated_at`, `_model`, `_version`, `prompt_data_completeness`) | activities | 2026-06-09 | Path A — automatic structured per-activity AI analysis generated server-side on enrichment completion via `trigger_analyze_activity` → `/api/analyze-activity` |
 | `healthkit_sync_enabled` | athlete_settings | 2026-04-05 | Boolean — true once first HealthKit sync completes |
 | `healthkit_last_synced_at` | athlete_settings | 2026-04-05 | Timestamp of last successful `runHealthKitSync()` call |
 | `source` | activities | 2026-04-05 | `'strava'` \| `'healthkit'` \| `'manual'` — default `'strava'` |

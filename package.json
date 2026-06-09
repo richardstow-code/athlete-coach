@@ -13,7 +13,9 @@
     "test:e2e:smoke": "playwright test --grep @smoke",
     "test:e2e:minor": "playwright test --grep \"@smoke|@minor\"",
     "test:e2e:major": "playwright test",
-    "test:ai-eval": "node tests/ai-eval/run-eval.js"
+    "test:api": "node --test tests/api/*.test.js",
+    "test:ai-eval": "node tests/ai-eval/run-eval.js",
+    "test:ai-eval:analyze": "node tests/ai-eval/analyze-activity-eval.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",

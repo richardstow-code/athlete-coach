@@ -49,6 +49,18 @@ Per-screen components (mounted inside each screen): OnboardingHints — one inst
 
 ---
 
+### Coach Analysis — per-activity AI read (Path A)
+
+**Surface (native, `athlete-coach-native`)**: the structured `activities.coach_analysis` (generated server-side by `api/analyze-activity.js` on enrichment completion — see `architecture.md`) renders without any extra client call.
+
+- **Activity detail** (`app/activity/[id].tsx`, `renderCoachAnalysis()`): full report card above the Training Analysis card — headline, execution-vs-plan verdict + note, effort/primary-zone read, key signals, flags (warn = amber, info = teal), and the coach note. Existing HR/pace/elevation/zone/splits charts are unchanged. States: **pending** (enriched, not yet generated), **failed** (generation parse error — retries next sync), **present**, **none** (not enriched).
+- **Feed card** (`components/ActivityCard.tsx`): headline + the single most important flag (warning outranks info).
+- Pure helpers and the `CoachAnalysis` type live in `lib/coachAnalysis.ts` (`deriveAnalysisState`, `pickPrimaryFlag`, `verdictLabel`/`verdictColor`, `zoneLabel`); tested in `__tests__/coachAnalysis.test.ts` + `__tests__/coachAnalysisRender.test.ts`.
+
+This supersedes the on-demand free-text Coach's Take (Build 27 T3, `coaching_memory`) as the canonical per-activity read; the free-text path remains as a fallback when `coach_analysis` is null.
+
+---
+
 ### Plan (`src/screens/Plan.jsx`)
 
 **Purpose**: Training plan view with week navigation, mismatch detection, coach proposal queue, and manual activity logging.
@@ -80,6 +92,8 @@ Per-screen components (mounted inside each screen): OnboardingHints — one inst
 - `+ FAB` button (bottom-right, above tab bar) → bottom sheet → "Log manual activity"
 - Manual activity form: type picker, date, duration (min), optional distance/notes; shows coach feedback after save
 - Delete activity modal: shown when tapping a manual activity (source ≠ strava); Strava activities still navigate to detail
+
+**Schedule change approval**: `acceptProposal` sets `schedule_changes.status = 'applied'` and writes `new_date` back to `scheduled_sessions.planned_date`. The status value must be `'applied'` (not `'accepted'`) for the change to be treated as done.
 
 **Known issues / gaps**:
 - Commit from plan_draft to scheduled_sessions may not be fully wired in all code paths
@@ -136,21 +150,33 @@ Per-screen components (mounted inside each screen): OnboardingHints — one inst
 
 ---
 
-### Progress (`src/screens/Stats.jsx`)
+### Progress (`src/screens/Stats.jsx` · native: `app/(tabs)/progress.tsx`)
 
-**Purpose**: Training progress analytics. Branches by `goal_type`.
+**Purpose**: Training progress analytics with Macro (holistic health dashboard) and Micro (per-sport drill-down) views. Toggle between views via pill selector at top.
+
+**Architecture (native app)**:
+- **Macro view**: AI weekly insight (cached in AsyncStorage per day), health signals row (RHR/HRV/sleep/steps derived from `health_snapshots`), 12-week training load chart, wellness/alcohol card, 6-month volume chart
+- **Micro view**: sport dropdown (inline accordion), phase progress donut, sport-specific metrics panel, 8-week compliance chart, strength panel
+- Sport panel routing: run/trail → marathon metrics (Z2 compliance, pace at Z2, long run, this week); strength → strength panel; maintenance/other → empty state
 
 **Data sources (reads)**:
-- `activities` — all activities for stats computation
-- `scheduled_sessions` — compliance calculation
-- `athlete_settings` — goal_type, races, health_notes
-- `athlete_sports` — primary sport for micro/event view
+- `activities` — last 90 days; zone_data for Z2 compliance; distance/duration for load and volume
+- `scheduled_sessions` — compliance calculation (planned vs actual, cross-referenced by Vienna-timezone date); earliest `planned_date` used as phase start
+- `athlete_sports` — all active sports for dropdown; `target_date` for phase progress
+- `health_snapshots` — last 30 days for health signals row (RHR, HRV, sleep, steps, active_calories)
+- `nutrition_logs` — last 30 days for alcohol units in wellness card
 
-**Claude calls**: None — purely data display.
+**Claude calls**:
+- Weekly insight: Haiku, 300 tokens, plain text paragraph; input = 7-day activity summary. Cached in AsyncStorage (`progress_insight` / `progress_insight_date` keys); regenerated once per day.
+
+**Design tokens (native, light-mode card)**:
+- `BG='#F2F3F7'`, `CARD='#FFFFFF'`, `TEAL='#1A9E8E'`, `TEAL_LIGHT='#9FE1CB'`, `TEAL_XL='#E1F5EE'`
+- `AMBER='#BA7517'`, `RED='#E24B4A'`, `GRAY_MID='#D3D1C7'`
+- `TEXT_PRI='#1A1A2E'`, `TEXT_SEC='#5A6070'`, `TEXT_TER='#9BA3AF'`, `BORDER='rgba(0,0,0,0.08)'`
 
 **Known issues / gaps**:
-- HR zone percentages and some chart data may be approximate/hardcoded placeholders
-- Personal bests computed from local activity data — may not reflect full history if backfill incomplete
+- HealthKit-derived resting HR (from `health_snapshots`) may differ from run-derived estimates shown in health signals row
+- Alcohol progress bar target (14 units/week) is hardcoded; not derived from athlete profile
 
 ---
 
