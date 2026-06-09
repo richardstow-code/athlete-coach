@@ -155,7 +155,7 @@ test('@minor buildCompleteness: full run has empty-ish not_available', () => {
   assert.equal(c.has_planned_session, true)
   assert.ok(!c.not_available.includes('hr_zones'))
   assert.ok(!c.not_available.includes('rpe')) // rpe=3 present
-  assert.equal(c.prompt_version, 'analyze-activity@v1')
+  assert.equal(c.prompt_version, 'analyze-activity@v1.1')
 })
 test('@minor buildCompleteness: missing channels land in not_available', () => {
   const bare = completeRun({ avg_hr: null, max_hr: null, avg_cadence: null, pace_per_km: null, elevation_m: null, splits_metric: null, rpe: null })
@@ -181,8 +181,12 @@ test('@minor buildAnalysisPrompt: names NOT AVAILABLE metrics and forbids fabric
   assert.match(system, /NEVER FABRICATE/)
   assert.match(system, /NOT AVAILABLE/)
   assert.match(system, /TAG MISMATCH/)
-  assert.match(system, /STRICT JSON/)
+  assert.match(system, /Output ONLY a single complete, valid JSON object/)
+  assert.match(system, /<= 90 chars/) // brevity caps bound the output size
   assert.ok(user.includes('not_available') || user.includes('DATA COMPLETENESS'))
+  // Truncation fix: send aggregates, NOT 140 raw stream samples.
+  assert.ok(!user.includes('DOWNSAMPLED STREAM'), 'raw per-sample stream must not be sent to the model')
+  assert.match(user, /HR ZONE DISTRIBUTION/)
 })
 test('@minor buildAnalysisPrompt: ride prompt forbids power', () => {
   const ride = completeRun({ type: 'Ride' })

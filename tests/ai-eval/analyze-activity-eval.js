@@ -80,7 +80,39 @@ const FIX_TAGMISMATCH = {
   expect_tag_mismatch: true,
 }
 
-const FIXTURES = [FIX_MISSING, FIX_TAGMISMATCH]
+// 3. DATA-RICH activity (the id-333 truncation scenario): HR zones + 14 splits
+//    + streams + planned session. The full structured JSON for this MUST fit the
+//    token budget and parse — this is exactly the case that returned
+//    parse_failed before max_tokens was raised + the input trimmed to aggregates.
+const FIX_DATARICH = {
+  label: 'data_rich_full_metrics_no_truncation',
+  activity: {
+    id: 333, user_id: 'u', date: '2026-06-06T06:30:00.000Z', name: 'Long Run',
+    type: 'Run', workout_type: 'long_run', distance_km: 14.2, duration_min: 82,
+    avg_hr: 148, max_hr: 169, avg_cadence: 176, elevation_m: 210, pace_per_km: '5:46',
+    splits_metric: Array.from({ length: 14 }, (_, i) => ({
+      idx: i + 1, distance_m: 1000, moving_time_s: 340 + (i % 5) * 6,
+      avg_speed_mps: 1000 / (340 + (i % 5) * 6), avg_hr: 142 + (i % 7),
+      avg_cadence_spm: 176, elev_change_m: (i % 3) * 8 - 6,
+    })),
+    splits_source: 'strava', zone_data: null, enrichment_status: 'complete',
+    rpe: 5, feel_legs: 'solid', injury_flag: null,
+  },
+  streams: {
+    zone_seconds: { z1: 480, z2: 2700, z3: 1500, z4: 240, z5: 0 },
+    cadence_stats: { avg: 176, trend: [174, 175, 176, 177, 176] },
+    grade_correlation: { correlation: -0.42 },
+    samples: Array.from({ length: 424 }, (_, i) => ({ t: i * 12, hr: 140 + (i % 25), vel: 2.9, alt: 100 + (i % 40), cad: 176 })),
+  },
+  plannedSession: { name: 'Long Run 80min', session_type: 'long_run', zone: 'z2', duration_min_low: 75, duration_min_high: 90 },
+  na_includes_hr: false,
+  forbidden_value_patterns: [],
+  expect_tag_mismatch: false,
+  require_complete_keys: true, // must parse to a complete object (truncation regression guard)
+}
+
+const FIXTURES = [FIX_MISSING, FIX_TAGMISMATCH, FIX_DATARICH]
+const REQUIRED_KEYS = ['headline', 'sport', 'execution_vs_plan', 'effort_read', 'key_signals', 'flags', 'coach_note']
 
 const JUDGE_SYSTEM = `You are a coaching-AI fabrication auditor. You are given a structured per-activity coach_analysis (JSON) plus the exact list of metrics that were NOT AVAILABLE for that activity and the planned session. Decide, strictly, whether the analysis fabricated anything.
 
@@ -101,11 +133,17 @@ async function generate(fix) {
     splits: Array.isArray(fix.activity.splits_metric) ? fix.activity.splits_metric : null,
     plannedSession: fix.plannedSession, settings: null, sports: [], trend: [], completeness,
   })
+  // Mirror the endpoint's generation exactly (max_tokens=2500 + "{" assistant
+  // prefill) so this eval is a faithful regression test for the truncation fix.
   const resp = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001', max_tokens: 1200, system,
-    messages: [{ role: 'user', content: user }],
+    model: 'claude-haiku-4-5-20251001', max_tokens: 2500, system,
+    messages: [
+      { role: 'user', content: user },
+      { role: 'assistant', content: '{' },
+    ],
   })
-  const text = resp.content?.[0]?.text || ''
+  const cont = resp.content?.[0]?.text || ''
+  const text = '{' + cont
   return { completeness, parsed: parseAnalysisJSON(text), raw: text }
 }
 
@@ -159,6 +197,13 @@ function deterministicChecks(fix, analysis) {
     const pz = String(analysis.effort_read?.primary_zone ?? '').toLowerCase()
     const ok = pz === 'n/a' || pz === '' || pz === 'na'
     checks.push({ id: 'primary_zone_na_without_hr', critical: true, pass: ok, reason: ok ? 'primary_zone correctly n/a' : `asserted measured primary_zone "${pz}" with no HR data` })
+  }
+
+  // Data-rich activity must produce a COMPLETE object (no truncation): every
+  // top-level key present. This is the id-333 regression guard.
+  if (fix.require_complete_keys) {
+    const missing = REQUIRED_KEYS.filter(k => !(k in analysis))
+    checks.push({ id: 'complete_object_no_truncation', critical: true, pass: missing.length === 0, reason: missing.length === 0 ? 'all top-level keys present' : `missing keys: ${missing.join(', ')}` })
   }
 
   // Tag-mismatch flag must be present for the tempo-tagged-Z2 fixture.

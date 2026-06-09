@@ -2,6 +2,17 @@
 
 ## 2026-06-09
 
+### analyze-activity@v1.1 — fix JSON truncation (parse_failed on data-rich activities)
+
+- **Bug:** on a data-rich activity (e.g. id 333 — HR zones + 14 splits + 424-sample stream + planned session) the Haiku output hit `max_tokens` and was cut off mid-string → `JSON.parse failed: Unterminated string` → `generation_status='parse_failed'`, `coach_analysis` stayed NULL (fail-closed, correct — but nothing rendered). Original `max_tokens` was **1200**.
+- **Fix (`api/analyze-activity.js`, `api/` only):**
+  - `max_tokens` 1200 → **2500** (full bounded schema worst-case ~1k output tokens + ~2x headroom).
+  - **Trimmed prompt input to aggregates**: stopped sending the 140 downsampled raw stream samples; the prompt now sends HR-zone distribution (min + %), cadence avg+trend, grade correlation, and a compact splits summary (idx/km/pace/HR, capped 16) — mirroring the enrich-activity coaching prompt. Less input → lower latency and smaller output.
+  - **JSON-only enforcement**: system prompt now says "Output ONLY a single complete, valid JSON object … no fence", with explicit per-field character caps so a complete object fits the budget; generation prefills the assistant turn with `{`.
+  - **One retry** on parse failure (then unchanged fail-closed: record `generation_status='parse_failed'` + `parse_error`, write no `coach_analysis`).
+  - `parseAnalysisJSON` made robust to trailing tokens after the object. Audit `prompt_version` → `analyze-activity@v1.1`.
+- **Test:** `tests/ai-eval/analyze-activity-eval.js` gains a `data_rich_full_metrics_no_truncation` fixture (the id-333 shape) asserting `generation_status` would be ok — a complete object with every top-level key parses (regression guard). Eval green (3/3 fixtures); 27 endpoint unit tests green.
+
 ### Path A — automatic per-activity AI analysis
 
 - **`api/analyze-activity.js`** (new Vercel function): generates a structured, multi-sport `coach_analysis` from the FULL detailed activity data (streams, splits, zones, cadence) when enrichment completes, and writes it back onto the activity. Auth via `x-analyze-secret` (`ANALYZE_ACTIVITY_SECRET`), service-role reads/writes. Idempotent with a dual-source dedup guard (skips `exists` / `incomplete` / `dup`). Builds the athlete-state snapshot inline from base tables (no `athlete_state_snapshot` view). STRICT-JSON Haiku output with NEVER-FABRICATE (explicit NOT AVAILABLE list), raw RPE (no computed feel score), HR data-quality guard, and tag-mismatch surfacing. Stores a `prompt_data_completeness` audit; on parse failure leaves `coach_analysis` null for retry and returns 5xx.

@@ -216,7 +216,7 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
   if (!has.has_rpe) not_available.push('rpe');
 
   return {
-    prompt_version: 'analyze-activity@v1',
+    prompt_version: 'analyze-activity@v1.1',
     sport,
     model: DEFAULT_MODEL,
     sample_count: samples.length,
@@ -236,7 +236,26 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
 // explicit NOT AVAILABLE list, tag-mismatch surfacing.
 export function buildAnalysisPrompt({ activity, sport, streams, splits, plannedSession, settings, sports, trend, completeness }) {
   const zoneSeconds = streams?.zone_seconds ?? activity?.zone_data ?? null;
-  const downsampled = downsampleSamples(streams?.samples ?? [], 140);
+
+  // Aggregate the streams into a compact summary instead of sending raw
+  // per-sample points. 140 raw samples bloated the input and pushed the
+  // model's JSON output past max_tokens (truncation → parse_failed). The
+  // zone seconds / cadence / grade / splits aggregates carry the signal.
+  const zTotal = ['z1', 'z2', 'z3', 'z4', 'z5'].reduce((s, k) => s + (Number(zoneSeconds?.[k]) || 0), 0);
+  const zoneDistribution = zTotal > 0
+    ? ['z1', 'z2', 'z3', 'z4', 'z5'].map(k => {
+        const secs = Number(zoneSeconds?.[k]) || 0;
+        return `${k}: ${Math.round(secs / 60)}min (${Math.round((secs / zTotal) * 100)}%)`;
+      }).join(', ')
+    : 'no HR-zone data';
+  // Compact splits summary (idx / km / pace / hr) capped to keep input small.
+  const splitsSummary = Array.isArray(splits)
+    ? splits.slice(0, 16).map(s => {
+        const km = (Number(s.distance_m) / 1000).toFixed(2);
+        const pace = s.avg_speed_mps > 0 ? (1000 / s.avg_speed_mps / 60).toFixed(2) : '?';
+        return `#${s.idx}: ${km}km @ ${pace}min/km${s.avg_hr != null ? `, HR ${s.avg_hr}` : ''}`;
+      })
+    : null;
 
   // Sport-specific channel guidance — only mention channels that exist.
   const SPORT_GUIDE = {
@@ -272,17 +291,17 @@ ABSOLUTE RULES:
 5. TAG MISMATCH. If the activity's workout_type / planned session implies intensity (tempo / threshold / interval / hard) but the effort was actually predominantly easy (Z1-Z2 / low RPE), SURFACE this as a flag (type "tag_mismatch"). This is high-value — do not smooth it over.
 6. Use only values present below. Reference specific numbers; no boilerplate, no motivational sign-offs.
 
-OUTPUT: STRICT JSON ONLY. No markdown, no code fence, no preamble. Exactly this shape:
+OUTPUT: Output ONLY a single complete, valid JSON object matching the schema below — no markdown, no code fence, no prose before or after. Do not wrap it in \`\`\`. Keep it COMPACT so the whole object fits: stay within the length caps. Exactly this shape:
 {
-  "headline": "string <= 90 chars",
+  "headline": "string, <= 90 chars",
   "sport": "${sport}",
-  "execution_vs_plan": { "planned_session": "string|null", "verdict": "as_planned|easier|harder|off_plan|no_plan", "note": "string" },
-  "effort_read": { "primary_zone": "z1|z2|z3|z4|z5|n/a", "distribution_note": "string" },
-  "key_signals": [ { "label": "string", "value": "string", "read": "string" } ],
-  "flags": [ { "type": "string", "severity": "info|warn", "message": "string" } ],
-  "coach_note": "1-3 sentence paragraph in your coaching voice"
+  "execution_vs_plan": { "planned_session": "string|null", "verdict": "as_planned|easier|harder|off_plan|no_plan", "note": "string, <= 160 chars" },
+  "effort_read": { "primary_zone": "z1|z2|z3|z4|z5|n/a", "distribution_note": "string, <= 160 chars" },
+  "key_signals": [ { "label": "string, <= 24 chars", "value": "string, <= 24 chars", "read": "string, <= 120 chars" } ],
+  "flags": [ { "type": "string", "severity": "info|warn", "message": "string, <= 140 chars" } ],
+  "coach_note": "1-3 short sentences in your coaching voice, <= 320 chars"
 }
-key_signals: 2-4 items grounded in real numbers. flags: omit (empty array) if nothing notable.`;
+key_signals: 2-4 items grounded in real numbers. flags: empty array [] if nothing notable. Respect every character cap — a complete object matters more than verbosity.`;
 
   const user = `ACTIVITY (summary):
 ${JSON.stringify({
@@ -293,11 +312,10 @@ ${JSON.stringify({
     rpe: activity.rpe ?? null, feel_legs: activity.feel_legs ?? null, injury_flag: activity.injury_flag ?? null,
   })}
 
-ZONE SECONDS (z1..z5, null if absent): ${JSON.stringify(zoneSeconds)}
-CADENCE STATS: ${JSON.stringify(streams?.cadence_stats ?? null)}
+HR ZONE DISTRIBUTION: ${zoneDistribution}
+CADENCE STATS (avg + 5-seg trend): ${JSON.stringify(streams?.cadence_stats ?? null)}
 GRADE CORRELATION: ${JSON.stringify(streams?.grade_correlation ?? null)}
-SPLITS (${activity.splits_source ?? 'none'}): ${JSON.stringify(Array.isArray(splits) ? splits.slice(0, 30) : null)}
-DOWNSAMPLED STREAM (${downsampled.length} pts, t/hr/vel/alt/cad): ${JSON.stringify(downsampled)}
+SPLITS (${activity.splits_source ?? 'none'}): ${splitsSummary ? splitsSummary.join(' | ') : 'none'}
 
 PLANNED SESSION for ${viennaDate(activity.date)} (null = off-plan / unplanned):
 ${JSON.stringify(plannedSession)}
@@ -319,16 +337,19 @@ Write the analysis as STRICT JSON now.`;
 // accidental code fence / leading prose. Returns { ok, value } or { ok:false, error }.
 export function parseAnalysisJSON(text) {
   if (!text || typeof text !== 'string') return { ok: false, error: 'empty model output' };
-  let s = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  // If there's leading/trailing prose, grab the outermost JSON object.
-  if (s[0] !== '{') {
+  const s = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  // Try a direct parse first; if that fails (leading/trailing prose, stray
+  // fence, or trailing tokens after the object), extract the outermost {...}.
+  const tryParse = (str) => { try { return { obj: JSON.parse(str) }; } catch (e) { return { err: e.message }; } };
+  let res = tryParse(s);
+  if (res.err) {
     const i = s.indexOf('{');
     const j = s.lastIndexOf('}');
-    if (i === -1 || j === -1 || j <= i) return { ok: false, error: 'no JSON object found' };
-    s = s.slice(i, j + 1);
+    if (i === -1 || j <= i) return { ok: false, error: `JSON.parse failed: ${res.err}` };
+    res = tryParse(s.slice(i, j + 1));
+    if (res.err) return { ok: false, error: `JSON.parse failed: ${res.err}` };
   }
-  let obj;
-  try { obj = JSON.parse(s); } catch (e) { return { ok: false, error: `JSON.parse failed: ${e.message}` }; }
+  const obj = res.obj;
   if (!obj || typeof obj !== 'object') return { ok: false, error: 'parsed value is not an object' };
   if (typeof obj.headline !== 'string' || typeof obj.coach_note !== 'string') {
     return { ok: false, error: 'missing required headline/coach_note' };
@@ -432,23 +453,38 @@ export default async function handler(req, res) {
     activity, sport, streams, splits, plannedSession, settings, sports, trend, completeness,
   });
 
-  // 5. Generate.
-  const { httpStatus, data } = await callAnthropic({
-    model: DEFAULT_MODEL, max_tokens: 1200, system,
-    messages: [{ role: 'user', content: user }],
-  });
-
-  const text = (data?.content || []).filter(b => b.type === 'text').map(b => b.text || '').join('\n');
-  const parsed = parseAnalysisJSON(text);
-
-  if (!parsed.ok) {
-    // Store the audit so the failure is diagnosable, but DO NOT write
-    // coach_analysis — leaving it null keeps the activity eligible for a
-    // retry (trigger re-fire or force). Return 5xx as the contract requires.
-    await restPatch('activities', `id=eq.${activity.id}`, {
-      prompt_data_completeness: { ...completeness, generation_status: 'parse_failed', parse_error: parsed.error },
+  // 5. Generate — up to 2 attempts. max_tokens=2500 comfortably fits the full
+  //    bounded schema (worst case ~1k output tokens) with ~2x headroom, fixing
+  //    the truncation that produced parse_failed on data-rich activities. Each
+  //    attempt prefills the assistant turn with "{" so the model starts the
+  //    JSON object immediately (no prose/fence preamble). One retry recovers
+  //    the occasional transient truncation/format slip.
+  let parsed = null;
+  let httpStatus = 0;
+  let lastError = 'no attempt';
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const resp = await callAnthropic({
+      model: DEFAULT_MODEL, max_tokens: 2500, system,
+      messages: [
+        { role: 'user', content: user },
+        { role: 'assistant', content: '{' },
+      ],
     });
-    return res.status(502).json({ ok: false, activity_id: activity.id, error: `analysis parse failed: ${parsed.error}`, anthropic_status: httpStatus });
+    httpStatus = resp.httpStatus;
+    const cont = (resp.data?.content || []).filter(b => b.type === 'text').map(b => b.text || '').join('\n');
+    const attemptParsed = parseAnalysisJSON('{' + cont);
+    if (attemptParsed.ok) { parsed = attemptParsed; break; }
+    lastError = attemptParsed.error;
+  }
+
+  if (!parsed) {
+    // Both attempts failed. Store the audit so the failure is diagnosable, but
+    // DO NOT write coach_analysis — leaving it null keeps the activity eligible
+    // for a retry (trigger re-fire or force). Return 5xx as the contract requires.
+    await restPatch('activities', `id=eq.${activity.id}`, {
+      prompt_data_completeness: { ...completeness, generation_status: 'parse_failed', parse_error: lastError },
+    });
+    return res.status(502).json({ ok: false, activity_id: activity.id, error: `analysis parse failed: ${lastError}`, anthropic_status: httpStatus });
   }
 
   // 6. Write back.
