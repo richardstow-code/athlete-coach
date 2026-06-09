@@ -178,7 +178,7 @@ Evaluate these criteria (return all, same ids):
   }
 }
 
-function deterministicChecks(fix, analysis) {
+function deterministicChecks(fix, analysis, completeness) {
   const checks = []
   const blob = JSON.stringify(analysis)
 
@@ -204,6 +204,10 @@ function deterministicChecks(fix, analysis) {
   if (fix.require_complete_keys) {
     const missing = REQUIRED_KEYS.filter(k => !(k in analysis))
     checks.push({ id: 'complete_object_no_truncation', critical: true, pass: missing.length === 0, reason: missing.length === 0 ? 'all top-level keys present' : `missing keys: ${missing.join(', ')}` })
+    // Subjective data must be LOADED, not dropped — the id-333 regression.
+    const hasRpe = completeness?.has_rpe === true
+    checks.push({ id: 'rpe_loaded_has_rpe_true', critical: true, pass: hasRpe, reason: hasRpe ? 'prompt_data_completeness.has_rpe=true' : `has_rpe should be true (fixture has rpe=${fix.activity.rpe}); got ${completeness?.has_rpe}` })
+    checks.push({ id: 'rpe_not_in_not_available', critical: true, pass: !completeness?.not_available?.includes('rpe'), reason: completeness?.not_available?.includes('rpe') ? "'rpe' wrongly listed NOT AVAILABLE" : 'ok' })
   }
 
   // Tag-mismatch flag must be present for the tempo-tagged-Z2 fixture.
@@ -240,7 +244,7 @@ async function run() {
     const analysis = gen.parsed.value
     console.log(`  headline: ${analysis.headline}`)
 
-    const det = deterministicChecks(fix, analysis)
+    const det = deterministicChecks(fix, analysis, gen.completeness)
     const judged = await judge(fix, gen.completeness, analysis)
     const all = [...det, ...(judged.criteria || [])]
 

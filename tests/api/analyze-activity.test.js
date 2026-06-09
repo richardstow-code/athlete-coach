@@ -172,6 +172,22 @@ test('@minor buildCompleteness: ride always declares power not available', () =>
   assert.ok(c.not_available.includes('intensity_factor'))
   assert.equal(c.has_power, false)
 })
+test('@minor buildCompleteness: data-rich activity (id-333 shape) reports has_rpe=true, rpe not in not_available', () => {
+  // The exact regression: subjective RPE silently dropped → "not available".
+  const rich = completeRun({ rpe: 2, feel: 'normal', feel_legs: 'normal' })
+  const c = buildCompleteness({ activity: rich, sport: 'run', streams: RUN_STREAMS, splits: [{ idx: 1 }], plannedSession: { name: 'Easy' }, trend: [], injuries: [] })
+  assert.equal(c.has_rpe, true)
+  assert.equal(c.rpe_value, 2)
+  assert.ok(!c.not_available.includes('rpe'), "'rpe' must NOT be in not_available when rpe is present")
+  assert.equal(c.has_feel, true)
+  assert.equal(c.has_feel_legs, true)
+})
+test('@minor buildCompleteness: active injuries audited (status-based, regardless of follow-up date)', () => {
+  const injuries = [{ body_location: 'calf_left', severity: 'moderate', status: 'active', follow_up_due_date: '2026-04-29', follow_up_overdue: true }]
+  const c = buildCompleteness({ activity: completeRun(), sport: 'run', streams: RUN_STREAMS, splits: null, plannedSession: null, trend: [], injuries })
+  assert.equal(c.has_active_injuries, true)
+  assert.equal(c.active_injury_count, 1)
+})
 
 // ── buildAnalysisPrompt ─────────────────────────────────────────────────────
 test('@minor buildAnalysisPrompt: names NOT AVAILABLE metrics and forbids fabrication', () => {
@@ -201,6 +217,25 @@ test('@minor buildAnalysisPrompt: suspect HR triggers the data-quality guard', (
   assert.equal(comp.hr_quality, 'suspect')
   const { system } = buildAnalysisPrompt({ activity: act, sport: 'run', streams: badStreams, splits: null, plannedSession: null, settings: null, sports: [], trend: [], completeness: comp })
   assert.match(system, /HR DATA QUALITY|low confidence/i)
+})
+test('@minor buildAnalysisPrompt: surfaces active injuries + raw RPE/feel, with INJURY-AWARE rule', () => {
+  const act = completeRun({ rpe: 2, feel: 'normal', feel_legs: 'normal' })
+  const injuries = [{ body_location: 'calf_left', severity: 'moderate', status: 'active', follow_up_due_date: '2026-04-29', follow_up_overdue: true }]
+  const comp = buildCompleteness({ activity: act, sport: 'run', streams: RUN_STREAMS, splits: null, plannedSession: { name: 'Easy', zone: 'z2' }, trend: [], injuries })
+  const { system, user } = buildAnalysisPrompt({ activity: act, sport: 'run', streams: RUN_STREAMS, splits: null, plannedSession: { name: 'Easy', zone: 'z2' }, settings: null, sports: [], trend: [], injuries, completeness: comp })
+  assert.match(system, /INJURY-AWARE/)
+  assert.match(system, /RAW RPE/)
+  assert.match(user, /ACTIVE INJURIES/)
+  assert.match(user, /calf_left/)
+  assert.match(user, /follow_up_overdue/)
+  // raw subjective passed through, no computed score
+  assert.match(user, /"rpe":2/)
+  assert.match(user, /"feel":"normal"/)
+})
+test('@minor buildAnalysisPrompt: no injuries → "none active", never invents one', () => {
+  const comp = buildCompleteness({ activity: completeRun(), sport: 'run', streams: RUN_STREAMS, splits: null, plannedSession: null, trend: [], injuries: [] })
+  const { user } = buildAnalysisPrompt({ activity: completeRun(), sport: 'run', streams: RUN_STREAMS, splits: null, plannedSession: null, settings: null, sports: [], trend: [], injuries: [], completeness: comp })
+  assert.match(user, /ACTIVE INJURIES[^\n]*\nnone active/)
 })
 
 // ── parseAnalysisJSON / coerceAnalysisShape ─────────────────────────────────

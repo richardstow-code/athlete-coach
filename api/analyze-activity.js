@@ -186,7 +186,7 @@ export function findDuplicateSibling(activity, candidates) {
 // were present vs NOT AVAILABLE for THIS activity. This is both the prompt's
 // fabrication boundary and the testable artefact written to
 // prompt_data_completeness.
-export function buildCompleteness({ activity, sport, streams, splits, plannedSession, trend }) {
+export function buildCompleteness({ activity, sport, streams, splits, plannedSession, trend, injuries }) {
   const samples = Array.isArray(streams?.samples) ? streams.samples : [];
   const zoneSeconds = streams?.zone_seconds ?? activity?.zone_data ?? null;
   const has = {
@@ -203,6 +203,9 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
     has_grade_correlation: streams?.grade_correlation != null,
     has_planned_session: plannedSession != null,
     has_rpe: activity?.rpe != null,
+    has_feel: activity?.feel != null,
+    has_feel_legs: activity?.feel_legs != null,
+    has_active_injuries: Array.isArray(injuries) && injuries.length > 0,
   };
 
   // NOT AVAILABLE list — channels the model must not reference for this sport.
@@ -225,6 +228,7 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
     rpe_value: activity?.rpe ?? null,
     hr_quality: hrQuality({ zoneSeconds, avgHr: activity?.avg_hr, maxHr: activity?.max_hr }),
     trend_count: Array.isArray(trend) ? trend.length : 0,
+    active_injury_count: Array.isArray(injuries) ? injuries.length : 0,
     ...has,
     not_available,
   };
@@ -234,7 +238,7 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
 // Follows the daily-briefing v12 / claude-proxy Coach's-Take framework:
 // NEVER FABRICATE, raw RPE (no computed feel score), HR data-quality guard,
 // explicit NOT AVAILABLE list, tag-mismatch surfacing.
-export function buildAnalysisPrompt({ activity, sport, streams, splits, plannedSession, settings, sports, trend, completeness }) {
+export function buildAnalysisPrompt({ activity, sport, streams, splits, plannedSession, settings, sports, trend, injuries, completeness }) {
   const zoneSeconds = streams?.zone_seconds ?? activity?.zone_data ?? null;
 
   // Aggregate the streams into a compact summary instead of sending raw
@@ -289,7 +293,8 @@ ABSOLUTE RULES:
 3. ${hrGuard || 'Use only HR-zone values actually present in the data.'}
 4. PLAN-FIRST. If a planned session is supplied, execution_vs_plan MUST compare actual zone/duration/intensity to it. If none, verdict is "no_plan".
 5. TAG MISMATCH. If the activity's workout_type / planned session implies intensity (tempo / threshold / interval / hard) but the effort was actually predominantly easy (Z1-Z2 / low RPE), SURFACE this as a flag (type "tag_mismatch"). This is high-value — do not smooth it over.
-6. Use only values present below. Reference specific numbers; no boilerplate, no motivational sign-offs.
+6. INJURY-AWARE. If ACTIVE INJURIES are listed, you MUST acknowledge in one short clause how THIS session interacts with the injured area (load/aggravation risk). An active injury whose follow_up_overdue is true is the MOST important to surface — never omit it; note "follow-up overdue since <follow_up_due>" and surface it as a flag (severity "warn"). Do not invent injuries that are not listed.
+7. Use only values present below (subjective rpe/feel/feel_legs are RAW — never compute a feel score). Reference specific numbers; no boilerplate, no motivational sign-offs.
 
 OUTPUT: Output ONLY a single complete, valid JSON object matching the schema below — no markdown, no code fence, no prose before or after. Do not wrap it in \`\`\`. Keep it COMPACT so the whole object fits: stay within the length caps. Exactly this shape:
 {
@@ -309,7 +314,7 @@ ${JSON.stringify({
     date_vienna: viennaDate(activity.date), distance_km: activity.distance_km,
     duration_min: activity.duration_min, avg_hr: activity.avg_hr, max_hr: activity.max_hr,
     avg_cadence: activity.avg_cadence, elevation_m: activity.elevation_m, pace_per_km: activity.pace_per_km,
-    rpe: activity.rpe ?? null, feel_legs: activity.feel_legs ?? null, injury_flag: activity.injury_flag ?? null,
+    rpe: activity.rpe ?? null, feel: activity.feel ?? null, feel_legs: activity.feel_legs ?? null, injury_flag: activity.injury_flag ?? null,
   })}
 
 HR ZONE DISTRIBUTION: ${zoneDistribution}
@@ -319,6 +324,11 @@ SPLITS (${activity.splits_source ?? 'none'}): ${splitsSummary ? splitsSummary.jo
 
 PLANNED SESSION for ${viennaDate(activity.date)} (null = off-plan / unplanned):
 ${JSON.stringify(plannedSession)}
+
+ACTIVE INJURIES (status=active — present regardless of follow-up date; follow_up_overdue=true means the follow-up is past due):
+${Array.isArray(injuries) && injuries.length
+    ? JSON.stringify(injuries.map(i => ({ area: i.body_location, severity: i.severity, follow_up_due: i.follow_up_due_date ?? null, follow_up_overdue: !!i.follow_up_overdue })))
+    : 'none active'}
 
 ATHLETE: goal=${JSON.stringify(settings?.goal_type ?? null)} level=${JSON.stringify(settings?.current_level ?? null)} next_race=${JSON.stringify(nextRace ?? null)} sports=${JSON.stringify((sports || []).map(s => ({ sport: s.sport_raw, priority: s.priority })))}
 HR ZONES (config): ${JSON.stringify(settings?.hr_zones ?? null)}
@@ -403,7 +413,7 @@ export default async function handler(req, res) {
   if (activity_id == null) return res.status(400).json({ ok: false, error: 'activity_id required' });
 
   // 1. Activity row (summary + audit fields).
-  const cols = 'id,strava_id,user_id,date,type,workout_type,source,distance_km,duration_min,avg_hr,max_hr,avg_cadence,elevation_m,pace_per_km,splits_metric,splits_source,zone_data,enrichment_status,rpe,feel_legs,injury_flag,coach_analysis,coach_analysis_version';
+  const cols = 'id,strava_id,user_id,date,type,workout_type,source,distance_km,duration_min,avg_hr,max_hr,avg_cadence,elevation_m,pace_per_km,splits_metric,splits_source,zone_data,enrichment_status,rpe,feel,feel_legs,injury_flag,coach_analysis,coach_analysis_version';
   const rows = await restGet(`activities?id=eq.${activity_id}&select=${cols}`);
   const activity = rows[0];
   if (!activity) return res.status(404).json({ ok: false, error: 'activity not found' });
@@ -437,20 +447,32 @@ export default async function handler(req, res) {
   const sport = sportOf(activity);
   const dayVienna = viennaDate(activity.date);
 
-  const [plannedRows, settingsRows, sportsRows, trendRows] = await Promise.all([
+  const [plannedRows, settingsRows, sportsRows, trendRows, injuryRows] = await Promise.all([
     restGet(`scheduled_sessions?user_id=eq.${activity.user_id}&planned_date=eq.${dayVienna}&select=name,session_type,zone,intensity,duration_min_low,duration_min_high,notes,status&limit=1`),
     restGet(`athlete_settings?user_id=eq.${activity.user_id}&select=hr_zones,training_zones,goal_type,current_level,races,health_flags&limit=1`),
     restGet(`athlete_sports?user_id=eq.${activity.user_id}&select=sport_raw,sport_category,priority`),
     restGet(`activities?user_id=eq.${activity.user_id}&id=neq.${activity.id}&type=eq.${encodeURIComponent(activity.type ?? '')}&order=date.desc&limit=5&select=date,distance_km,duration_min,avg_hr,pace_per_km`),
+    // ACTIVE injuries — status-based rule: surface status='active' REGARDLESS of
+    // follow_up_due_date. An active injury past its follow-up is the MOST important
+    // to surface, not silently drop. (enrich-activity currently filters by
+    // follow_up_due_date >= today — a divergence flagged for a fast-follow.)
+    restGet(`injury_reports?user_id=eq.${activity.user_id}&status=eq.active&select=body_location,severity,status,follow_up_due_date&order=follow_up_due_date.asc.nullslast`),
   ]);
   const plannedSession = plannedRows[0] || null;
   const settings = settingsRows[0] || null;
   const sports = sportsRows || [];
   const trend = trendRows || [];
+  // Flag overdue follow-ups (relative to today, Europe/Vienna) so the prompt can
+  // surface "follow-up overdue since <date>" as context.
+  const todayVienna = viennaDate(new Date());
+  const injuries = (injuryRows || []).map(inj => ({
+    ...inj,
+    follow_up_overdue: inj.follow_up_due_date != null && String(inj.follow_up_due_date) < todayVienna,
+  }));
 
-  const completeness = buildCompleteness({ activity, sport, streams, splits, plannedSession, trend });
+  const completeness = buildCompleteness({ activity, sport, streams, splits, plannedSession, trend, injuries });
   const { system, user } = buildAnalysisPrompt({
-    activity, sport, streams, splits, plannedSession, settings, sports, trend, completeness,
+    activity, sport, streams, splits, plannedSession, settings, sports, trend, injuries, completeness,
   });
 
   // 5. Generate — up to 2 attempts. max_tokens=2500 comfortably fits the full

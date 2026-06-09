@@ -2,6 +2,15 @@
 
 ## 2026-06-09
 
+### analyze-activity — load athlete RPE/feel + active injuries (data-complete)
+
+Activity Detail QA showed Path A marking RPE "not available" on an activity that HAS `rpe=2`, and the older prose Take (now removed from the screen) was the only block citing the athlete's RPE + active injury — so the tidy-up shipped this data fix in the same pass to avoid losing information.
+
+- **Subjective data:** `api/analyze-activity.js` SELECT now includes `feel` (already loaded `rpe`, `feel_legs`, `injury_flag`); the prompt passes raw `rpe`/`feel`/`feel_legs` as RAW inputs (no computed feel/effort score — the RAW-RPE rule interprets them against the planned session intensity). Audit gains `has_feel`, `has_feel_legs`; `prompt_data_completeness.has_rpe` now reports `true` when rpe is present (and `rpe` is not listed in `not_available`).
+- **Active injuries:** loads from `injury_reports` under a **status-based rule** — surface `status='active'` REGARDLESS of `follow_up_due_date`, flagging `follow_up_overdue` and noting "follow-up overdue since <date>" (an active injury past its follow-up is the most important to surface, not silently drop). New INJURY-AWARE system rule; audit gains `has_active_injuries` + `active_injury_count`.
+- **⚠️ Divergence flagged:** `enrich-activity` still filters injuries by `follow_up_due_date >= today` (a different rule) — so its briefing feedback can drop an overdue-but-active injury that the analysis now surfaces. Aligning `enrich-activity` to the status-based rule is a fast-follow (not in this pass).
+- Tests: `tests/api/analyze-activity.test.js` (+4: `has_rpe=true` on the id-333 shape, `rpe` not in `not_available`, injuries audited, prompt surfaces injuries + raw rpe/feel — 31 total); `tests/ai-eval/analyze-activity-eval.js` data-rich fixture adds `rpe_loaded_has_rpe_true` / `rpe_not_in_not_available` (eval 3/3).
+
 ### Path A — go-live complete
 
 - Both branches merged (web `main` `bef4b8b`; native `main`). `ANALYZE_ACTIVITY_SECRET` wired on both Vercel (Production) and the Supabase trigger side. `trigger_analyze_activity` created and live (AFTER UPDATE → `enrichment_status='complete'`, fire-and-forget pg_net POST `{ activity_id }` + `x-analyze-secret`). Architect verified one real activity end-to-end: sync → enrichment → trigger → `analyze-activity` → `coach_analysis` populated (`generation_status='ok'`, `prompt_data_completeness` audited, no fabrication) → renders on Activity Detail + Coach's Take. iOS build **v1.5.0 (30)** submitted to TestFlight (native repo).

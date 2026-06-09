@@ -48,6 +48,8 @@ Strava activities (upserted on `strava_id`) and manually logged activities. Sour
 
 **Soft-delete invariant** (2026-06-09, ticket 78d16ed2 / AC-153): every read of `activity_streams` MUST filter `.eq('is_deleted', false)` so soft-deleted stream rows are never read into enrichment, zone computation, or analysis. Enforced at source level by the native `ac-153-soft-delete-cascade` test; applied in `enrich-activity` and `api/analyze-activity.js`.
 
+**Active-injury surfacing rule** (2026-06-09): `injury_reports` rows with `status='active'` must be surfaced in coaching context **regardless of `follow_up_due_date`** (an active injury past its follow-up is the most important to surface). `api/analyze-activity.js` follows this rule and flags `follow_up_overdue` when the date is past. ⚠️ **Known divergence:** `enrich-activity` still filters injuries by `follow_up_due_date >= today` — a fast-follow to align it to the status-based rule so the briefing and the per-activity analysis agree.
+
 ---
 
 ### `athlete_settings`

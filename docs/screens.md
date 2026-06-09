@@ -53,13 +53,11 @@ Per-screen components (mounted inside each screen): OnboardingHints — one inst
 
 **Surface (native, `athlete-coach-native`)**: the structured `activities.coach_analysis` (generated server-side by `api/analyze-activity.js` on enrichment completion — see `architecture.md`) renders without any extra client call.
 
-- **Activity detail** (`app/activity/[id].tsx`, `renderCoachAnalysis()`): full report card above the Training Analysis card — headline, execution-vs-plan verdict + note, effort/primary-zone read, key signals, flags (warn = amber, info = teal), and the coach note. Existing HR/pace/elevation/zone/splits charts are unchanged. States: **pending** (enriched, not yet generated), **failed** (generation parse error — retries next sync), **present**, **none** (not enriched).
+- **Activity detail** (`app/activity/[id].tsx`, `renderCoachAnalysis()`): the **single** coach surface — full report card above the Training Analysis card: headline, execution-vs-plan verdict + note, effort/primary-zone read, key signals (label+value on one row, `read` full-width below), flags (warn = amber, info = teal), and the coach note. Existing HR/pace/elevation/zone/splits charts are unchanged. States: **pending** (enriched, not yet generated), **failed** (generation parse error — retries next sync), **present**, **none** (not enriched).
 - **Feed card** (`components/ActivityCard.tsx`): headline + the single most important flag (warning outranks info).
 - Pure helpers and the `CoachAnalysis` type live in `lib/coachAnalysis.ts` (`deriveAnalysisState`, `pickPrimaryFlag`, `verdictLabel`/`verdictColor`, `zoneLabel`); tested in `__tests__/coachAnalysis.test.ts` + `__tests__/coachAnalysisRender.test.ts`.
 
-This supersedes the on-demand free-text Coach's Take (Build 27 T3, `coaching_memory`) as the canonical per-activity read; the free-text path remains as a fallback when `coach_analysis` is null.
-
-**Coach's Take (prose), 693ada6a**: the free-text take in `coaching_memory` is rendered by `renderCoachsTake()` as its own white card, distinct from the structured `coach_analysis`. Previously the `memory` row was fetched but never rendered, so a written take was invisible on activities without intervals data. It renders only when the intervals-backed `analysisSummary` isn't already showing the take (no duplication); empty state renders nothing.
+**Single coach surface (2026-06-09 tidy-up):** the older prose "Coach's Take" was REMOVED from Activity Detail — both the live `claude-proxy` `activity_feedback` generation (`analysisSummary`, which produced a second coach text that disagreed with `coach_analysis`) and the `coaching_memory` fallback (`renderCoachsTake`, 693ada6a). Path A `coach_analysis` (structured + `coach_note`) is now the only per-activity coach read on the screen. `coaching_memory` still generates server-side in `enrich-activity` (feeds the briefing / longitudinal memory); the `claude-proxy` `activity_feedback` endpoint stays for the briefing and other surfaces — it's just no longer called from Activity Detail.
 
 ---
 
