@@ -32,6 +32,8 @@ import {
   parseAnalysisJSON,
   coerceAnalysisShape,
   viennaDate,
+  sportDoublesCadence,
+  cadenceDisplayAvg,
 } from '../../api/analyze-activity.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -187,6 +189,39 @@ test('@minor buildCompleteness: active injuries audited (status-based, regardles
   const c = buildCompleteness({ activity: completeRun(), sport: 'run', streams: RUN_STREAMS, splits: null, plannedSession: null, trend: [], injuries })
   assert.equal(c.has_active_injuries, true)
   assert.equal(c.active_injury_count, 1)
+})
+
+// ── cadence doubling (c4719e8b — match enrich-activity v16) ─────────────────
+test('@minor sportDoublesCadence: run/walk/hike double, ride/row/swim do not', () => {
+  for (const s of ['run', 'running', 'trailrun', 'trail run', 'walk', 'walking', 'hike', 'hiking']) {
+    assert.equal(sportDoublesCadence(s), true, `${s} should double`)
+  }
+  for (const s of ['ride', 'row', 'rowing', 'swim', 'strength', 'other', null, undefined, '']) {
+    assert.equal(sportDoublesCadence(s), false, `${s} should NOT double`)
+  }
+})
+test('@minor cadenceDisplayAvg: per-leg run cadence doubles to steps-per-minute', () => {
+  // 85.1 per-leg → ~170 spm (rounded), agreeing with the backfilled cadence_stats.
+  assert.equal(cadenceDisplayAvg(85.1, 'run'), 170)
+  assert.equal(cadenceDisplayAvg(85, 'hike'), 170)
+  // ride rpm is NOT doubled
+  assert.equal(cadenceDisplayAvg(85, 'ride'), 85)
+  assert.equal(cadenceDisplayAvg(90, 'row'), 90)
+  // null passes through
+  assert.equal(cadenceDisplayAvg(null, 'run'), null)
+})
+test('@minor buildAnalysisPrompt: run avg_cadence is doubled to spm; ride rpm is not', () => {
+  // run: stored per-leg 85 → model sees 170 (matches cadence_stats)
+  const run = completeRun({ avg_cadence: 85 })
+  const runComp = buildCompleteness({ activity: run, sport: 'run', streams: RUN_STREAMS, splits: null, plannedSession: null, trend: [], injuries: [] })
+  const { user: runUser } = buildAnalysisPrompt({ activity: run, sport: 'run', streams: RUN_STREAMS, splits: null, plannedSession: null, settings: null, sports: [], trend: [], injuries: [], completeness: runComp })
+  assert.match(runUser, /"avg_cadence":170/)
+  assert.ok(!/"avg_cadence":85\b/.test(runUser), 'run must not send raw per-leg 85')
+  // ride: rpm 85 unchanged
+  const ride = completeRun({ type: 'Ride', avg_cadence: 85 })
+  const rideComp = buildCompleteness({ activity: ride, sport: 'ride', streams: RUN_STREAMS, splits: null, plannedSession: null, trend: [], injuries: [] })
+  const { user: rideUser } = buildAnalysisPrompt({ activity: ride, sport: 'ride', streams: RUN_STREAMS, splits: null, plannedSession: null, settings: null, sports: [], trend: [], injuries: [], completeness: rideComp })
+  assert.match(rideUser, /"avg_cadence":85/)
 })
 
 // ── buildAnalysisPrompt ─────────────────────────────────────────────────────

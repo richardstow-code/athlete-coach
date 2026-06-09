@@ -34,7 +34,7 @@ Strava activities (upserted on `strava_id`) and manually logged activities. Sour
 | zone_data | jsonb | HR zone breakdown (reserved — not yet populated by webhook) |
 | enrichment_status | text | `'pending'` → `'processing'` → `'complete'` \| `'failed'` |
 | source | text | `'strava'` \| `'manual'` — added 2026-03-23; default `'strava'` |
-| coach_analysis | jsonb | structured per-activity AI read (Path A); shape: headline, sport, execution_vs_plan, effort_read, key_signals[], flags[], coach_note. Added 2026-06-09 |
+| coach_analysis | jsonb | structured per-activity AI read (Path A); shape: headline, sport, execution_vs_plan, effort_read, key_signals[], flags[], coach_note. Added 2026-06-09. **Frozen snapshot** — generated once, rendered verbatim; does NOT auto-update when source state changes (e.g. an injury resolved in `injury_reports`). Cleared by a `force`-re-run; systemic regenerate-on-source-change fix is designed-not-built (`docs/features/regenerate-on-source-change.md`). Cadence in the read is steps-per-minute (run/walk/hike `avg_cadence` doubled, matching enrich-activity v16 `cadence_stats`). |
 | coach_analysis_generated_at | timestamptz | when `coach_analysis` was generated. Added 2026-06-09 |
 | coach_analysis_model | text | model that produced it, e.g. `claude-haiku-4-5-20251001`. Added 2026-06-09 |
 | coach_analysis_version | int | default 1; incremented on forced regeneration. Added 2026-06-09 |
