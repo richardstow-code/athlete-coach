@@ -9,6 +9,15 @@
 - **Tests**: `tests/api/analyze-activity.test.js` (pure guard-logic unit tests + live auth/method wiring smoke); `tests/ai-eval/analyze-activity-eval.js` + `npm run test:ai-eval:analyze` (fabrication detector — asserts no claim about NOT AVAILABLE metrics, reads the planned session, no invented splits/zones, and flags a Z2-run-tagged-tempo fixture).
 - **Native** (`athlete-coach-native`): activity-detail screen renders the full structured report (`renderCoachAnalysis` in `app/activity/[id].tsx`); feed card (`components/ActivityCard.tsx`) shows headline + top flag. Pure helpers + states in `lib/coachAnalysis.ts`. Handles pending / generating / present / failed.
 
+### enrich-activity: soft-deleted streams never read (78d16ed2 / AC-153)
+
+- **`supabase/functions/enrich-activity/index.ts`** (the canonical copy lives in the **native** repo — the web-repo copy is a stale March fork with no stream reads): added `.eq('is_deleted', false)` to all three `activity_streams.select(...)` reads (the enrichment-score count + two `samples` reads for splits reconstruction), matching the predicate in `api/analyze-activity.js`. Prevents a soft-deleted stream row from being read into enrichment/splits, and prevents the `.maybeSingle()` "multiple rows" error when a live + soft-deleted row coexist. Source-level guard `ac-153-soft-delete-cascade` now green.
+- **Test**: `tests/api/enrich-activity-soft-delete.test.js` — gated on `TEST_SUPABASE_FUNCTIONS_URL`; seeds a live + a soft-deleted stream row and asserts enrichment reads only the live row.
+
+### Coach's Take (prose) now renders on Activity Detail (693ada6a)
+
+- **`app/activity/[id].tsx`** (native): the prose Coach's Take stored in `coaching_memory` (the `memory` state) was fetched but never rendered, so a written take was invisible on activities without intervals data (e.g. manual logs). Added `renderCoachsTake()` — a white-card render distinct from the structured `coach_analysis` card. To avoid duplicating the take when the intervals-backed `analysisSummary` already shows it inside `renderTrainingAnalysis`, it renders only when `analysisSummary` is absent. Empty state is quiet (renders nothing). Smoke-pinned in `__tests__/coachAnalysisRender.test.ts`.
+
 ## 2026-04-05
 
 ### Native app: HealthKit → Supabase pipeline

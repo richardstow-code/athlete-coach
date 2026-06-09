@@ -59,6 +59,8 @@ Per-screen components (mounted inside each screen): OnboardingHints — one inst
 
 This supersedes the on-demand free-text Coach's Take (Build 27 T3, `coaching_memory`) as the canonical per-activity read; the free-text path remains as a fallback when `coach_analysis` is null.
 
+**Coach's Take (prose), 693ada6a**: the free-text take in `coaching_memory` is rendered by `renderCoachsTake()` as its own white card, distinct from the structured `coach_analysis`. Previously the `memory` row was fetched but never rendered, so a written take was invisible on activities without intervals data. It renders only when the intervals-backed `analysisSummary` isn't already showing the take (no duplication); empty state renders nothing.
+
 ---
 
 ### Plan (`src/screens/Plan.jsx`)

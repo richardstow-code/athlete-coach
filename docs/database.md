@@ -46,6 +46,8 @@ Strava activities (upserted on `strava_id`) and manually logged activities. Sour
 
 **DB Trigger**: `trigger_analyze_activity` — `AFTER UPDATE ON activities FOR EACH ROW`, fires when `enrichment_status` transitions to `'complete'`. Fire-and-forget `pg_net.http_post` of `{ activity_id }` (+ `x-analyze-secret` header) to the Vercel `/api/analyze-activity` endpoint, which generates `coach_analysis` from the FULL detailed data (streams/splits/zones) and writes it back. Does NOT await the LLM (respects the ~5s pg_net limit). Added 2026-06-09 (Path A).
 
+**Soft-delete invariant** (2026-06-09, ticket 78d16ed2 / AC-153): every read of `activity_streams` MUST filter `.eq('is_deleted', false)` so soft-deleted stream rows are never read into enrichment, zone computation, or analysis. Enforced at source level by the native `ac-153-soft-delete-cascade` test; applied in `enrich-activity` and `api/analyze-activity.js`.
+
 ---
 
 ### `athlete_settings`
