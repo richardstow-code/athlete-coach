@@ -40,7 +40,7 @@ async function verifyJWT(authHeader) {
   return user?.id || null;
 }
 
-async function callRPC(fnName, body) {
+export async function callRPC(fnName, body) {
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, {
     method: 'POST',
     headers: {
@@ -55,7 +55,7 @@ async function callRPC(fnName, body) {
   return { ok: resp.ok, status: resp.status, data };
 }
 
-async function persistCoachTake({ userId, activityId, content, audit }) {
+export async function persistCoachTake({ userId, activityId, content, audit }) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' });
   await fetch(`${SUPABASE_URL}/rest/v1/coaching_memory`, {
     method: 'POST',
@@ -97,7 +97,7 @@ async function persistCoachTake({ userId, activityId, content, audit }) {
 }
 
 // Build 27 T3: canonical Coach's-Take system prompt.
-function buildCoachTakeSystemPrompt(ctx) {
+export function buildCoachTakeSystemPrompt(ctx) {
   const core = (ctx && ctx.core) || {};
   const extras = (ctx && ctx.surface_extras) || {};
   const ath = core.athlete || {};
@@ -201,7 +201,7 @@ function buildGenericAudit(dc, surfaceType) {
   };
 }
 
-function buildAuditFromContext(ctx) {
+export function buildAuditFromContext(ctx) {
   const core = (ctx && ctx.core) || {};
   const extras = (ctx && ctx.surface_extras) || {};
   const dc = core.data_completeness || {};
