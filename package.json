@@ -18,9 +18,11 @@
     "test:ai-eval:analyze": "node tests/ai-eval/analyze-activity-eval.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/supabase-js": "^2.99.1",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

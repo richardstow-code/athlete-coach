@@ -17,7 +17,8 @@
 | `STRAVA_CLIENT_SECRET` | `api/strava-webhook.js` | Strava app client secret |
 | `STRAVA_REFRESH_TOKEN` | `api/strava-webhook.js` | Long-lived refresh token (single-user app) |
 | `STRAVA_VERIFY_TOKEN` | `api/strava-webhook.js` | Webhook verification token (`athletecoach2026`) |
-| `SUPABASE_SECRET_KEY` | `api/strava-webhook.js` | Supabase service role key — bypasses RLS for webhook writes |
+| `SUPABASE_SECRET_KEY` | `api/strava-webhook.js`, `api/mcp.js` | Supabase service role key — bypasses RLS for webhook writes + MCP reads |
+| `MCP_SHARED_SECRET` | `api/mcp.js` | **NEW (set before connecting the MCP server).** Static bearer token the MCP client presents as `Authorization: Bearer`. Alternatively a valid Supabase user JWT is accepted. |
 
 > **Architecture note**: All Claude calls from the React frontend (`callClaude()` in `src/lib/claudeProxy.js`) go through `/api/claude-proxy` (Vercel serverless). The `VITE_ANTHROPIC_KEY` frontend var is no longer used and can be removed.
 

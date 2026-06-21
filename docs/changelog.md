@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-06-21
+
+### Coach Claude MCP server — Phase 1 (read-only), code complete on `mcp-server-phase1`
+
+New remote MCP server exposing the athlete's training data as tools so any MCP
+client (Claude chat) can pull live state. Built on a worktree off `origin/main`
+(491396b) — does not touch the in-flight `b1-regenerate-coaching-artifact` work.
+
+- **Host:** Vercel Node serverless route `api/mcp.js`, stateless MCP
+  Streamable-HTTP (`@modelcontextprotocol/sdk` ^1.29), `maxDuration: 30`. New
+  helper `api/_supabaseRest.js` (injectable copy of the analyze-activity
+  `restGet`/`callRPC` plumbing — does not perturb the live analyze path); tools
+  in `api/_mcpTools.js`.
+- **7 read-only tools** (all single-athlete): `get_athlete_profile`,
+  `get_recent_activities`, `get_activity_detail`, `get_scheduled_sessions`,
+  `get_training_zones`, `get_recovery`, `get_coaching_memory`. See `docs/mcp.md`.
+- **Wrap not reimplement:** Tier-1 tools wrap `get_athlete_coaching_context`
+  (HR zones from `training_zones`, never the NULL `hr_zones`); Tier-2 are plain
+  column reads. No zone/pace/compliance maths recomputed.
+- **NEVER FABRICATE:** every missing field returns an explicit `"NOT AVAILABLE"`
+  marker. `intervals_data` multi-activity-day ambiguity is flagged + the block
+  omitted (the `(user_id,date)` keying has no `activity_id`).
+- **Auth:** `Authorization: Bearer` = `MCP_SHARED_SECRET` (**new Vercel env, to
+  set**) or a valid Supabase JWT. Service-role key stays server-side.
+- **Tests:** `tests/api/mcp.test.js` — 16 cases green (`node --test`). Layer-1
+  deterministic mock-projection (incl. SDK wiring, Vienna bucketing, sparseness)
+  + Layer-2 live seed-and-parity against the test project for `coaching_memory`
+  and `scheduled_sessions` (RPC/view/intervals tools not on the test project —
+  covered by Layer-1 + the Gate-1.5 manual prod check). Prod-guard respected.
+- **Pending:** GATE 1 = deploy (merge to `main` → Vercel) + Architect deploy-ID
+  verify + one real multi-tool flow in Claude. Phases 2/3 not started.
+
 ## 2026-06-09
 
 ### analyze-activity — run/walk/hike cadence doubling (c4719e8b) + injury source confirmed single-source (9808c786 / 62b39fbb)

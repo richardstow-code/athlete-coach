@@ -77,6 +77,17 @@ The Vercel serverless function (`/api/strava-webhook.js`) also routes through `c
 
 Direct Anthropic API calls are made only from Supabase edge functions (`infer-athlete-context`, `daily-briefing`) which have direct access to `ANTHROPIC_API_KEY`, and from the Vercel `api/claude-proxy.js` / `api/agentic-chat.js` / `api/analyze-activity.js` functions (which hold `ANTHROPIC_API_KEY` as a Vercel env var).
 
+## MCP Server (read-only, Phase 1)
+
+`api/mcp.js` is a Vercel Node serverless route exposing the athlete's training
+data as MCP tools (stateless Streamable-HTTP, `@modelcontextprotocol/sdk`). It is
+single-athlete, read-only, and **wraps** existing canonical sources rather than
+recomputing — Tier-1 tools call the `get_athlete_coaching_context` RPC (HR zones
+from `training_zones`, never `hr_zones`); the rest are plain PostgREST reads via
+`api/_supabaseRest.js`, with tools in `api/_mcpTools.js`. Auth: `Authorization:
+Bearer` = `MCP_SHARED_SECRET` or a valid Supabase JWT; the service-role key never
+leaves the server. Full catalogue, sources, and limitations: `docs/mcp.md`.
+
 ## Automatic Per-Activity Analysis (Path A)
 
 When an activity finishes enrichment, a structured multi-sport coaching read is generated server-side and stored on the activity, so a detailed per-activity analysis is available in-app without opening a chat. (Productised fix for `f76506ac`: `buildContext` feeds the coach summary-only activity data and never queries `activity_streams`/`splits_metric`.)
