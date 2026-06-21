@@ -4,6 +4,17 @@ Supabase project: `yjuhzmknabedjklsgbje`
 
 > **RLS Status**: RLS is enabled and policies are in place scoping all queries to `auth.uid()`. The service role key bypasses RLS — used only by Vercel webhook and Supabase edge functions. All client-side queries use the authenticated user's JWT.
 
+> **MCP server (`api/mcp.js`)** reads/writes these tables with the service-role
+> key, single-athlete scoped: reads `activities` (incl. `compliance_score/_grade/
+> _summary`), `nutrition_logs` (incl. `alcohol_units`, `meal_timing`),
+> `athlete_state_snapshot`, `intervals_data`, `scheduled_sessions`, `athlete_routes`,
+> `coaching_memory` (incl. `category='weekly_review'`); writes `activities`
+> (subjective feedback: `rpe`, `feel_legs`, `injury_flag`, `subjective_notes`,
+> `subjective_captured_at`), `schedule_changes` (`status='pending'` only),
+> `coaching_memory` (upsert on the `coaching_memory_user_date_source_unique`
+> index), and `athlete_settings` (`weight_kg`, `goal_type`, `health_notes` only).
+> See `docs/mcp.md`.
+
 ---
 
 ## Tables

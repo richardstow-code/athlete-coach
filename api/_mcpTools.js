@@ -32,6 +32,14 @@ function addDaysISO(isoDate, days) {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
+// Whole days between a metric date and a reference day (plain date math — NOT a
+// freshness threshold; the canonical 24/24/36h thresholds live in the RPC).
+export function daysSince(isoDate, todayISO) {
+  if (!isoDate) return null;
+  const a = new Date(`${String(isoDate).slice(0, 10)}T00:00:00Z`);
+  const b = new Date(`${todayISO}T00:00:00Z`);
+  return Math.round((b - a) / 86400000);
+}
 
 // ── Activity classification (mirrors native app/activity/[id].tsx:647-756) ──
 // Returns 'trail' | 'interval' | 'easy'. 'trail' suppresses interval framing.
@@ -110,11 +118,11 @@ export async function getRecentActivities(client, args = {}, opts = {}) {
     const rows = await client.restGet(
       `activities?user_id=eq.${userId}&is_deleted=eq.false` +
         `&date=gte.${loUtc}&date=lte.${hiUtc}` +
-        `&select=id,name,date,type,distance_km,duration_min,avg_hr,max_hr,elevation_m,pace_per_km,rpe` +
+        `&select=id,name,date,type,distance_km,duration_min,avg_hr,max_hr,elevation_m,pace_per_km,rpe,compliance_score` +
         `&order=date.desc`
     );
     const activities = rows
-      .map((r) => ({ ...r, vienna_date: viennaDateOf(r.date) }))
+      .map((r) => ({ ...r, vienna_date: viennaDateOf(r.date), compliance_score: r.compliance_score ?? NOT_AVAILABLE }))
       .filter((r) => r.vienna_date >= from && r.vienna_date <= to)
       .slice(0, limit);
     return { range: { from, to }, count: activities.length, activities };
@@ -134,7 +142,8 @@ export async function getActivityDetail(client, args = {}, opts = {}) {
     const rows = await client.restGet(
       `activities?id=eq.${activityId}&user_id=eq.${userId}&is_deleted=eq.false` +
         `&select=id,name,date,type,workout_type,distance_km,duration_min,avg_hr,max_hr,` +
-        `elevation_m,pace_per_km,rpe,feel_legs,injury_flag,splits_metric,splits_source`
+        `elevation_m,pace_per_km,rpe,feel_legs,injury_flag,splits_metric,splits_source,` +
+        `compliance_score,compliance_grade,compliance_summary`
     );
     const act = rows[0];
     if (!act) return err(`activity ${activityId} not found`);
@@ -201,6 +210,9 @@ export async function getActivityDetail(client, args = {}, opts = {}) {
       injury_flag: act.injury_flag ?? NOT_AVAILABLE,
       splits,
       splits_source: act.splits_source ?? NOT_AVAILABLE,
+      compliance_score: act.compliance_score ?? NOT_AVAILABLE,
+      compliance_grade: act.compliance_grade ?? NOT_AVAILABLE,
+      compliance_summary: act.compliance_summary ?? NOT_AVAILABLE,
       intervals,
       intervals_attribution,
     };
@@ -305,15 +317,18 @@ export async function getRecovery(client, _args = {}, opts = {}) {
       load = NOT_AVAILABLE;
     }
 
+    // age_days = whole days since the metric was measured (plain date math; the
+    // canonical freshness threshold is NOT re-derived here — Architect ruling #4).
+    const today = viennaToday();
     const recovery = {
       resting_hr: snap?.has_resting_hr
-        ? { value: snap.resting_hr, date: snap.resting_hr_date, source: snap.snapshot_sources?.resting_hr ?? null }
+        ? { value: snap.resting_hr, date: snap.resting_hr_date, age_days: daysSince(snap.resting_hr_date, today), source: snap.snapshot_sources?.resting_hr ?? null }
         : NOT_AVAILABLE,
       hrv: snap?.has_hrv
-        ? { value_ms: snap.hrv_ms, date: snap.hrv_date, source: snap.snapshot_sources?.hrv_ms ?? null }
+        ? { value_ms: snap.hrv_ms, date: snap.hrv_date, age_days: daysSince(snap.hrv_date, today), source: snap.snapshot_sources?.hrv_ms ?? null }
         : NOT_AVAILABLE,
       sleep: snap?.has_sleep
-        ? { hours: snap.sleep_hours, quality: snap.sleep_quality ?? NOT_AVAILABLE, date: snap.sleep_date }
+        ? { hours: snap.sleep_hours, quality: snap.sleep_quality ?? NOT_AVAILABLE, date: snap.sleep_date, age_days: daysSince(snap.sleep_date, today) }
         : NOT_AVAILABLE,
     };
 
@@ -344,6 +359,210 @@ export async function getCoachingMemory(client, args = {}, opts = {}) {
     return { count: rows.length, memory: rows };
   } catch (e) {
     return err(`get_coaching_memory failed: ${e.message}`);
+  }
+}
+
+// ═══════════════════════ PHASE 2 — nice-to-have reads ═══════════════════════
+
+// 8. get_nutrition — TIER 2, nutrition_logs over a range + alcohol tally
+export async function getNutrition(client, args = {}, opts = {}) {
+  const userId = opts.userId || ATHLETE_USER_ID;
+  const to = args.to || viennaToday();
+  const from = args.from || addDaysISO(to, -7);
+  try {
+    const rows = await client.restGet(
+      `nutrition_logs?user_id=eq.${userId}&date=gte.${from}&date=lte.${to}` +
+        `&select=id,date,meal_name,meal_timing,calories,protein_g,carbs_g,fat_g,fibre_g,` +
+        `sodium_mg,upf_score,rating,notes,alcohol_units,logged_at&order=date.asc,logged_at.asc`
+    );
+    const alcohol_units_total = rows.reduce((s, r) => s + (Number(r.alcohol_units) || 0), 0);
+    return {
+      range: { from, to },
+      count: rows.length,
+      alcohol_units_total: Math.round(alcohol_units_total * 10) / 10,
+      entries: rows,
+    };
+  } catch (e) {
+    return err(`get_nutrition failed: ${e.message}`);
+  }
+}
+
+// 9. get_weekly_review — TIER 2, latest coaching_memory category='weekly_review'
+export async function getWeeklyReview(client, _args = {}, opts = {}) {
+  const userId = opts.userId || ATHLETE_USER_ID;
+  try {
+    const rows = await client.restGet(
+      `coaching_memory?user_id=eq.${userId}&category=eq.weekly_review` +
+        `&select=date,content,created_at&order=created_at.desc&limit=1`
+    );
+    const r = rows[0];
+    if (!r) return { weekly_review: NOT_AVAILABLE, date: NOT_AVAILABLE };
+    return { weekly_review: r.content ?? NOT_AVAILABLE, date: r.date ?? NOT_AVAILABLE, generated_at: r.created_at };
+  } catch (e) {
+    return err(`get_weekly_review failed: ${e.message}`);
+  }
+}
+
+// 10. get_routes — TIER 2 list athlete_routes; TIER 1 per-route via RPC
+export async function getRoutes(client, args = {}, opts = {}) {
+  const userId = opts.userId || ATHLETE_USER_ID;
+  try {
+    if (args.route_id) {
+      const rpc = await client.callRPC('get_route_coach_context', {
+        p_user_id: userId,
+        p_route_id: args.route_id,
+        p_session_type: args.session_type || null,
+      });
+      if (!rpc.ok || !rpc.data) return err(`get_route_coach_context RPC failed (status ${rpc.status})`);
+      return { route_coach_context: rpc.data };
+    }
+    // list — only named locations (privacy): no raw lat/lng
+    const rows = await client.restGet(
+      `athlete_routes?user_id=eq.${userId}` +
+        `&select=id,name,reverse_geocode_name,sport_type,distance_km,elevation_m,` +
+        `surface_type,terrain_profile,is_loop,activity_count,last_run_date` +
+        `&order=activity_count.desc&limit=${Math.min(Math.max(Number(args.limit) || 10, 1), 50)}`
+    );
+    return { count: rows.length, routes: rows };
+  } catch (e) {
+    return err(`get_routes failed: ${e.message}`);
+  }
+}
+
+// ═══════════════════════ PHASE 2 — writes (propose → commit) ════════════════
+// Every write is propose-by-default: with commit !== true it returns the
+// proposed diff and mutates nothing; with commit === true it performs the write
+// and returns the ACTUAL mutated row. No silent-fill (only provided fields).
+
+function proposal(table, op, payload, extra) {
+  return { committed: false, commit_required: true, proposed: { table, op, payload }, ...(extra || {}) };
+}
+
+// 11. log_session_feedback — PATCH activities (RAW rpe; never a feel_score)
+export async function logSessionFeedback(client, args = {}, opts = {}) {
+  const userId = opts.userId || ATHLETE_USER_ID;
+  const activityId = args.activity_id;
+  if (activityId === undefined || activityId === null) return err('activity_id is required');
+  if (args.rpe !== undefined && args.rpe !== null) {
+    if (!Number.isInteger(args.rpe) || args.rpe < 1 || args.rpe > 10) {
+      return err('rpe must be a raw integer 1-10 (never a computed feel_score)');
+    }
+  }
+  // No silent-fill: only fields the caller explicitly supplied.
+  const payload = {};
+  if (args.rpe !== undefined) payload.rpe = args.rpe; // RAW passthrough
+  if (args.feel_legs !== undefined) payload.feel_legs = args.feel_legs;
+  if (args.injury_flag !== undefined) payload.injury_flag = args.injury_flag;
+  if (args.notes !== undefined) payload.subjective_notes = args.notes;
+  if (Object.keys(payload).length === 0) {
+    return err('provide at least one of: rpe, feel_legs, injury_flag, notes');
+  }
+  payload.subjective_captured_at = new Date().toISOString();
+
+  if (args.commit !== true) {
+    return proposal('activities', `update (PATCH id=${activityId})`, payload, {
+      note: 'raw rpe passed through; no feel_score is computed or sent',
+    });
+  }
+  try {
+    const rows = await client.restPatch('activities', `id=eq.${activityId}&user_id=eq.${userId}`, payload);
+    if (!rows || !rows.length) return err(`activity ${activityId} not found for this athlete`);
+    return { committed: true, row: rows[0] };
+  } catch (e) {
+    return err(`log_session_feedback failed: ${e.message}`);
+  }
+}
+
+// 12. propose_schedule_change — INSERT schedule_changes status='pending' ONLY
+export async function proposeScheduleChange(client, args = {}, opts = {}) {
+  const userId = opts.userId || ATHLETE_USER_ID;
+  if (!args.change_type) return err('change_type is required');
+  if (!args.title) return err('title is required (schedule_changes.title is NOT NULL)');
+  if (!args.reasoning) return err('reasoning is required (schedule_changes.reasoning is NOT NULL)');
+  const payload = { user_id: userId, status: 'pending', proposed_by: 'mcp', change_type: args.change_type };
+  for (const k of ['title', 'reasoning', 'original_session_id', 'new_date', 'new_name',
+    'new_notes', 'new_intensity', 'new_duration_low', 'new_duration_high', 'proposed_session', 'context']) {
+    if (args[k] !== undefined) payload[k] = args[k];
+  }
+  const guard = { guarantee: 'writes schedule_changes (status=pending) only; never mutates scheduled_sessions' };
+  if (args.commit !== true) return proposal('schedule_changes', 'insert', payload, guard);
+  try {
+    const rows = await client.restPost('schedule_changes', payload);
+    return { committed: true, row: rows[0], ...guard };
+  } catch (e) {
+    return err(`propose_schedule_change failed: ${e.message}`);
+  }
+}
+
+// 13. write_coaching_memory — UPSERT onConflict (user_id,date,source)
+export async function writeCoachingMemory(client, args = {}, opts = {}) {
+  const userId = opts.userId || ATHLETE_USER_ID;
+  if (!args.source) return err('source is required (part of the unique key user_id,date,source)');
+  if (!args.content) return err('content is required');
+  const payload = {
+    user_id: userId,
+    date: args.date || viennaToday(),
+    source: args.source,
+    content: args.content,
+  };
+  if (args.type !== undefined) payload.type = args.type;
+  if (args.category !== undefined) payload.category = args.category;
+
+  if (args.commit !== true) {
+    return proposal('coaching_memory', 'upsert onConflict (user_id,date,source)', payload, {
+      note: 'idempotent: re-running the same (user_id,date,source) merges, never double-inserts',
+    });
+  }
+  try {
+    const rows = await client.restPost('coaching_memory', payload, {
+      onConflict: 'user_id,date,source',
+      merge: true,
+    });
+    return { committed: true, row: rows[0] };
+  } catch (e) {
+    return err(`write_coaching_memory failed: ${e.message}`);
+  }
+}
+
+// 14. update_athlete_profile — scoped to verified-real athlete_settings columns
+const PROFILE_ALLOWED = ['weight_kg', 'goal_type', 'health_notes'];
+export async function updateAthleteProfile(client, args = {}, opts = {}) {
+  const userId = opts.userId || ATHLETE_USER_ID;
+  const update = {};
+  const rejected = [];
+  for (const [k, v] of Object.entries(args)) {
+    if (k === 'commit') continue;
+    if (PROFILE_ALLOWED.includes(k)) update[k] = v;
+    else rejected.push(k); // never silent-fill unknown/deferred columns
+  }
+  if (Object.keys(update).length === 0) {
+    return err(`no updatable fields. Allowed: ${PROFILE_ALLOWED.join(', ')}. ` +
+      'Race date / goal live in athlete_sports and are deferred.', { rejected_fields: rejected });
+  }
+
+  if (args.commit !== true) {
+    return {
+      committed: false,
+      commit_required: true,
+      proposed: { table: 'athlete_settings', op: 'upsert onConflict user_id', fields: update },
+      rejected_fields: rejected,
+      note: 'confirm each field, then resend with commit:true',
+    };
+  }
+  try {
+    const payload = { user_id: userId, ...update, updated_at: new Date().toISOString() };
+    const rows = await client.restPost('athlete_settings', payload, { onConflict: 'user_id', merge: true });
+    // best-effort audit row (mirrors the native PROFILE_UPDATE behaviour)
+    try {
+      await client.restPost(
+        'coaching_memory',
+        { user_id: userId, date: viennaToday(), type: 'profile_update', category: 'profile', source: 'mcp', content: JSON.stringify(update) },
+        { onConflict: 'user_id,date,source', merge: true }
+      );
+    } catch { /* audit is non-fatal */ }
+    return { committed: true, row: rows[0], rejected_fields: rejected };
+  } catch (e) {
+    return err(`update_athlete_profile failed: ${e.message}`);
   }
 }
 
@@ -391,5 +610,46 @@ export const TOOLS = [
     description:
       'Recent coaching memory notes, optionally filtered by type/category/date range.',
     fn: getCoachingMemory,
+  },
+  {
+    name: 'get_nutrition',
+    description:
+      'Nutrition/fuel logs over a Vienna date range (default last 7 days) with calories/macros + a total alcohol_units tally.',
+    fn: getNutrition,
+  },
+  {
+    name: 'get_weekly_review',
+    description: 'The most recent generated weekly review text.',
+    fn: getWeeklyReview,
+  },
+  {
+    name: 'get_routes',
+    description:
+      'List the athlete\'s known routes (named locations only); pass route_id for that route\'s coaching context.',
+    fn: getRoutes,
+  },
+  {
+    name: 'log_session_feedback',
+    description:
+      'Log subjective feedback on an activity (raw RPE 1-10, leg feel, injury flag, notes). Propose-by-default: requires commit:true to write; returns the mutated row.',
+    fn: logSessionFeedback,
+  },
+  {
+    name: 'propose_schedule_change',
+    description:
+      'Propose a schedule change as a PENDING schedule_changes row (never mutates the plan directly). Propose-by-default: requires commit:true.',
+    fn: proposeScheduleChange,
+  },
+  {
+    name: 'write_coaching_memory',
+    description:
+      'Append/update a coaching memory note (idempotent upsert on user_id,date,source). Propose-by-default: requires commit:true.',
+    fn: writeCoachingMemory,
+  },
+  {
+    name: 'update_athlete_profile',
+    description:
+      'Update athlete profile fields (weight_kg, goal_type, health_notes only; race/goal are deferred). Propose-by-default, confirm each field; requires commit:true. No silent-fill.',
+    fn: updateAthleteProfile,
   },
 ];

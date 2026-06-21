@@ -49,6 +49,55 @@ const SHAPES = {
     to: z.string().describe('date YYYY-MM-DD').optional(),
     limit: z.number().int().describe('max rows, default 10').optional(),
   },
+  // ── Phase 2 reads ──
+  get_nutrition: {
+    from: z.string().describe('Vienna start date YYYY-MM-DD (default 7 days ago)').optional(),
+    to: z.string().describe('Vienna end date YYYY-MM-DD (default today)').optional(),
+  },
+  get_weekly_review: {},
+  get_routes: {
+    route_id: z.string().describe('athlete_routes.id (uuid) — returns that route\'s coaching context').optional(),
+    session_type: z.string().optional(),
+    limit: z.number().int().describe('max routes when listing, default 10').optional(),
+  },
+  // ── Phase 2 writes (propose-by-default; commit:true required to mutate) ──
+  log_session_feedback: {
+    activity_id: z.number().int().describe('activities.id'),
+    rpe: z.number().int().describe('RAW RPE 1-10 (never a computed feel_score)').optional(),
+    feel_legs: z.string().optional(),
+    injury_flag: z.string().optional(),
+    notes: z.string().optional(),
+    commit: z.boolean().describe('must be true to write; otherwise returns the proposed diff').optional(),
+  },
+  propose_schedule_change: {
+    change_type: z.string().describe('reschedule|skip|intensity_adjust|add_session|adjust|...'),
+    title: z.string().describe('required (schedule_changes.title is NOT NULL)'),
+    reasoning: z.string().describe('required (schedule_changes.reasoning is NOT NULL)'),
+    original_session_id: z.number().int().optional(),
+    new_date: z.string().optional(),
+    new_name: z.string().optional(),
+    new_notes: z.string().optional(),
+    new_intensity: z.string().optional(),
+    new_duration_low: z.number().int().optional(),
+    new_duration_high: z.number().int().optional(),
+    proposed_session: z.record(z.string(), z.any()).optional(),
+    context: z.any().optional(),
+    commit: z.boolean().describe('must be true to write the pending row').optional(),
+  },
+  write_coaching_memory: {
+    source: z.string().describe('part of the unique key (user_id,date,source)'),
+    content: z.string(),
+    date: z.string().describe('YYYY-MM-DD (default today, Vienna)').optional(),
+    type: z.string().optional(),
+    category: z.string().optional(),
+    commit: z.boolean().describe('must be true to upsert').optional(),
+  },
+  update_athlete_profile: {
+    weight_kg: z.number().optional(),
+    goal_type: z.string().optional(),
+    health_notes: z.string().optional(),
+    commit: z.boolean().describe('must be true to write; confirm each field first').optional(),
+  },
 };
 
 // Build a fresh McpServer with all tools bound to a given Supabase client.

@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-06-21 (later) — MCP server Phase 2 (nice-to-have reads + first writes)
+
+Code complete on branch `mcp-server-phase2` (worktree off origin/main 076941a).
+Adds 7 tools to the MCP server (now 14) per Architect mini-gate rulings.
+
+- **New reads:** `get_nutrition` (nutrition_logs range + alcohol_units tally),
+  `get_weekly_review` (coaching_memory `category='weekly_review'`), `get_routes`
+  (list athlete_routes named locations; `route_id` → `get_route_coach_context` RPC).
+- **get_recovery** now returns `date` + `age_days` per metric (ruling #4 — plain
+  date math; the canonical 24/24/36h freshness threshold is NOT re-derived
+  in-server). `compliance_score` added as a field on `get_recent_activities` and
+  `get_activity_detail` (+ grade/summary on detail).
+- **New writes (propose-by-default; `commit:true` required; return mutated row):**
+  `log_session_feedback` (PATCH activities, raw RPE, never a feel_score),
+  `propose_schedule_change` (INSERT schedule_changes `status='pending'`, never
+  mutates scheduled_sessions; title+reasoning required NOT NULL),
+  `write_coaching_memory` (idempotent upsert on user_id,date,source),
+  `update_athlete_profile` (only weight_kg/goal_type/health_notes; no silent-fill).
+- **Deferred (rulings):** `get_compliance` aggregate (no server source → flagged
+  for future RPC; per-activity compliance_score surfaced as a field instead),
+  `get_weather_context` (net-new outbound API), race/goal profile edits
+  (athlete_sports). The native `index.tsx` PROFILE_UPDATE handler writes 6
+  nonexistent athlete_settings columns — logged for a separate native fix.
+- **REST client** gained `restPost`/`restPatch` (Prefer return=representation;
+  upsert via on_conflict + merge-duplicates) in `api/_supabaseRest.js`.
+- **Tests:** `tests/api/mcp-phase2.test.js` — 17 cases (33 total with Phase 1),
+  all green. Layer-1 deterministic (propose/commit gating, no-silent-fill,
+  propose-not-mutate, raw-rpe, age_days, compliance field, idempotency) + Layer-2
+  live read-back / idempotency / parity on the test project (nutrition_logs,
+  coaching_memory, athlete_settings, activities, schedule_changes). Test-fixture
+  parity migrations applied to the **test project only** (additive, idempotent):
+  activities feedback/compliance cols, coaching_memory unique index,
+  nutrition_logs.meal_timing.
+- **Pending:** GATE 2 = merge to main → Vercel deploy → Architect deploy-ID
+  verify + Gate-2.5 one real write flow. Phase 3 not started.
+
 ## 2026-06-21
 
 ### Coach Claude MCP server — Phase 1 (read-only), code complete on `mcp-server-phase1`

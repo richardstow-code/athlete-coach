@@ -60,8 +60,31 @@ Coach-Analysis-card divergence we are avoiding).
 | `get_activity_detail` | `activities` + `intervals_data` | classification (trail/interval/easy); intervals attached only when unambiguous |
 | `get_scheduled_sessions` | `scheduled_sessions` | excludes `superseded` by default; optional `statuses`; **no `cancelled` status exists** |
 | `get_training_zones` | RPC (HR) + `athlete_settings.pace_zones` | HR from `training_zones`, never `hr_zones` |
-| `get_recovery` | `athlete_state_snapshot` view + `intervals_data` | RHR / HRV / sleep + CTL/ATL/TSB |
+| `get_recovery` | `athlete_state_snapshot` view + `intervals_data` | RHR / HRV / sleep (each with `date` + `age_days`) + CTL/ATL/TSB |
 | `get_coaching_memory` | `coaching_memory` | optional `type` / `category` / date filters |
+| `get_nutrition` | `nutrition_logs` | date range (default 7d) + total `alcohol_units` tally (Phase 2) |
+| `get_weekly_review` | `coaching_memory` `category='weekly_review'` | latest generated weekly review (Phase 2) |
+| `get_routes` | `athlete_routes` + RPC `get_route_coach_context` | list (named locations only); pass `route_id` for that route's coaching context (Phase 2) |
+
+### Writes (Phase 2) — propose-by-default
+
+Each write tool is **propose-by-default**: called without `commit: true` it returns
+the proposed diff and **mutates nothing**; with `commit: true` it performs the write
+and returns the **actual mutated row**. No silent-fill (only fields the caller
+supplied are written).
+
+| Write tool | Target | Guarantees |
+|------------|--------|------------|
+| `log_session_feedback` | PATCH `activities` | writes **raw RPE** (1–10) + feel/injury/notes + `subjective_captured_at`; never computes a `feel_score` |
+| `propose_schedule_change` | INSERT `schedule_changes` `status='pending'` | **never mutates `scheduled_sessions`**; `proposed_by='mcp'`; `title`+`reasoning` required (NOT NULL); the architect-owned DB trigger handles regen |
+| `write_coaching_memory` | UPSERT `coaching_memory` | idempotent on `(user_id,date,source)` — re-run merges, never double-inserts |
+| `update_athlete_profile` | UPSERT `athlete_settings` | **only** `weight_kg`, `goal_type`, `health_notes`; unknown/deferred fields are rejected (reported, not written). Race/goal edits live in `athlete_sports` — deferred |
+
+Deferred (not built): `get_compliance` aggregate (no server-reachable canonical
+source — per-activity `compliance_score` is instead surfaced as a field on
+`get_recent_activities` / `get_activity_detail`; the time-weighted/training-only/
+capped aggregate is flagged for a future RPC), `get_weather_context` (net-new
+outbound API), and race/goal profile edits.
 
 ### Data-sparseness contract (NEVER FABRICATE)
 
