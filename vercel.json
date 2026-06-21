@@ -3,5 +3,19 @@
     "api/strava-webhook.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "/api/well-known-protected-resource"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource/api/mcp",
+      "destination": "/api/well-known-protected-resource"
+    },
+    {
+      "source": "/oauth/authorize",
+      "destination": "/api/oauth/authorize"
+    }
+  ]
 }

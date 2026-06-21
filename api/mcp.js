@@ -16,6 +16,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { makeSupabaseRest } from './_supabaseRest.js';
 import { TOOLS, ATHLETE_USER_ID } from './_mcpTools.js';
+import { validateOAuthToken } from './_oauth.js';
 
 export const config = { maxDuration: 30 };
 
@@ -120,11 +121,18 @@ export function buildServer(client) {
   return server;
 }
 
+// Canonical resource + its RFC 9728 metadata URL (Path B / OAuth discovery).
+const RESOURCE_URL = 'https://athlete-coach-alpha.vercel.app/api/mcp';
+const RESOURCE_METADATA_URL =
+  'https://athlete-coach-alpha.vercel.app/.well-known/oauth-protected-resource';
+
 function corsHeaders(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'content-type, authorization, mcp-session-id, mcp-protocol-version');
 }
 
+// Legacy Supabase-JWT introspection (CC/Desktop/API path — works for HS256
+// session tokens not in the JWKS). Unchanged behaviour.
 async function verifyJWT(jwt) {
   const resp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: { apikey: process.env.SUPABASE_SECRET_KEY, Authorization: `Bearer ${jwt}` },
@@ -134,14 +142,38 @@ async function verifyJWT(jwt) {
   return user?.id || null;
 }
 
-async function authorize(authHeader) {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return false;
+// Decide whether a request is authorized. THREE accepted paths (single athlete):
+//   1. shared_secret  — Bearer === MCP_SHARED_SECRET (CC/Desktop/API)
+//   2. oauth          — OAuth 2.1 access token validated via Supabase JWKS
+//                       (web/mobile connector) — ruling #1
+//   3. supabase_jwt   — legacy Supabase session JWT via remote introspection
+// Exported + dependency-injectable for unit tests. Returns { ok, via, userId? }.
+export async function authorizeRequest(authHeader, deps = {}) {
+  const checkOAuth = deps.validateOAuthToken || validateOAuthToken;
+  const introspect = deps.verifyJWT || verifyJWT;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return { ok: false };
   const token = authHeader.slice(7).trim();
-  if (!token) return false;
+  if (!token) return { ok: false };
+
   const secret = process.env.MCP_SHARED_SECRET;
-  if (secret && token === secret) return true;
-  const uid = await verifyJWT(token);
-  return !!uid;
+  if (secret && token === secret) return { ok: true, via: 'shared_secret' };
+
+  const oauth = await checkOAuth(token);
+  if (oauth.ok) return { ok: true, via: 'oauth', userId: oauth.userId, clientId: oauth.clientId };
+
+  const uid = await introspect(token);
+  if (uid && uid === ATHLETE_USER_ID) return { ok: true, via: 'supabase_jwt', userId: uid };
+
+  return { ok: false };
+}
+
+function unauthorized(res) {
+  // RFC 9728 §5.1: point the client at the protected-resource metadata so the
+  // web/mobile connector can discover the authorization server and start OAuth.
+  res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${RESOURCE_METADATA_URL}"`);
+  return res
+    .status(401)
+    .json({ jsonrpc: '2.0', error: { code: -32001, message: 'unauthorized' }, id: null });
 }
 
 export default async function handler(req, res) {
@@ -154,11 +186,8 @@ export default async function handler(req, res) {
   }
 
   const authHeader = req.headers.authorization || req.headers.Authorization || '';
-  if (!(await authorize(authHeader))) {
-    return res
-      .status(401)
-      .json({ jsonrpc: '2.0', error: { code: -32001, message: 'unauthorized' }, id: null });
-  }
+  const auth = await authorizeRequest(authHeader);
+  if (!auth.ok) return unauthorized(res);
 
   const client = makeSupabaseRest({}); // env-wired: prod URL + SUPABASE_SECRET_KEY
   const server = buildServer(client);

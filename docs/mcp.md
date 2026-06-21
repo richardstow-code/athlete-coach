@@ -20,19 +20,71 @@ live state and reason over it at full depth.
 
 ### Auth (single-user v1)
 
-`Authorization: Bearer <token>` is required, where `<token>` is **either**:
-- `MCP_SHARED_SECRET` (set in Vercel env + your MCP client config), **or**
-- a valid Supabase user JWT (validated against `/auth/v1/user`).
+There are **two auth paths** — pick by client:
 
-The Supabase **service-role key never leaves the server** (Ground Rule 5). There
-is no per-user scoping yet — the server always reads the single athlete.
+**A. OAuth 2.1 (Claude WEB / MOBILE connector)** — the in-app "Connect" button.
+The web/mobile connector only does OAuth; it cannot use a static bearer. Flow:
+1. Unauthenticated `POST /api/mcp` → `401` with
+   `WWW-Authenticate: Bearer resource_metadata="https://athlete-coach-alpha.vercel.app/.well-known/oauth-protected-resource"`.
+2. The client fetches `/.well-known/oauth-protected-resource` (RFC 9728) →
+   `authorization_servers: ["https://yjuhzmknabedjklsgbje.supabase.co/auth/v1"]`.
+3. The client reads the Supabase AS metadata
+   (`…/.well-known/oauth-authorization-server/auth/v1`), **Dynamic Client
+   Registration** (RFC 7591) self-registers the client, then runs OAuth 2.1
+   authorization-code **+ PKCE S256**. Supabase redirects the user to our consent
+   page (`/oauth/authorize`), where Richard signs in and Approves.
+4. The connector calls `/api/mcp` with the OAuth access token.
+
+The server validates the access token via Supabase **JWKS** (`_oauth.js`):
+signature + expiry + `iss` = the Supabase auth issuer + `aud` = `authenticated`,
+and **`sub` = ATHLETE_USER_ID** (single-athlete binding); the consent-approved
+`client_id` is captured.
+
+> **Audience deviation (ruling #1, documented).** The MCP spec MUSTs the resource
+> server validate the token's audience is *this resource* (RFC 8707). Supabase
+> issues `aud="authenticated"` with no resource-indicator binding, so we accept
+> that fixed value and instead bind to the single athlete via `sub`. This is safe
+> in a single-user, all-first-party setup. **Revisit trigger:** if this ever
+> becomes multi-user, or additional distinct resource servers trust the same
+> Supabase project, move to resource-bound tokens (a self-hosted AS, or Supabase
+> resource indicators if added).
+
+**B. Static bearer (Claude Code / Desktop / API)** — unchanged. `Authorization:
+Bearer <token>` where `<token>` is `MCP_SHARED_SECRET`, **or** a Supabase user JWT
+(validated by remote introspection at `/auth/v1/user`, then `sub` must equal the
+single athlete). This path is preserved exactly; OAuth is additive.
+
+The Supabase **service-role key never leaves the server** (Ground Rule 5).
+
+### Discovery / consent endpoints
+
+| Path | Serves |
+|------|--------|
+| `/.well-known/oauth-protected-resource` (+ `…/api/mcp`) | RFC 9728 protected-resource metadata → Supabase as the AS |
+| `/oauth/authorize` | consent page (requires Supabase login before Approve) |
+| Supabase AS metadata | `https://yjuhzmknabedjklsgbje.supabase.co/.well-known/oauth-authorization-server/auth/v1` (Supabase-hosted) |
 
 ### Required env vars (Vercel)
 
 | Var | Purpose | Status |
 |-----|---------|--------|
-| `SUPABASE_SECRET_KEY` | service-role key for PostgREST/RPC reads | already set (used by other routes) |
-| `MCP_SHARED_SECRET` | static bearer for the MCP client | **NEW — Richard must set** before connecting |
+| `SUPABASE_SECRET_KEY` | service-role key for PostgREST/RPC reads | already set |
+| `MCP_SHARED_SECRET` | static bearer for CC/Desktop/API (path B); **rotate — was exposed** | set |
+| `SUPABASE_ANON_KEY` (or `VITE_SUPABASE_KEY`) | anon key for the consent page's browser Supabase client | confirm available to functions |
+| `MCP_OAUTH_AUD` | override expected `aud` (default `authenticated`) | optional |
+
+### Dashboard config (Richard, one-time — required for OAuth)
+
+1. **Authentication → OAuth Server**: enabled (done) + **Dynamic Client
+   Registration** on. Confirm DCR redirect-URI validation is restricted to
+   Anthropic's connector domains (exact-match URIs; no wildcards).
+2. **Authentication → OAuth Server → Authorization Path** = `/oauth/authorize`.
+3. **Authentication → URL Configuration → Site URL** =
+   `https://athlete-coach-alpha.vercel.app` (so the consent redirect resolves).
+
+### Connect (web): Settings → Connectors → add the server URL
+`https://athlete-coach-alpha.vercel.app/api/mcp` → **Connect** → complete the
+OAuth consent → tools list appears.
 
 ## Wrap, don't reimplement (tiering)
 
