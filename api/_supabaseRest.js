@@ -57,7 +57,53 @@ export function makeSupabaseRest({ baseUrl, serviceKey, fetchImpl } = {}) {
     return { ok: resp.ok, status: resp.status, data };
   }
 
-  return { url, restGet, callRPC };
+  // INSERT/UPSERT. Returns the inserted/updated row(s) (Prefer return=representation).
+  // Pass onConflict + merge:true for an upsert (resolution=merge-duplicates).
+  async function restPost(table, body, { onConflict, merge = false } = {}) {
+    const prefer = ['return=representation'];
+    if (merge) prefer.push('resolution=merge-duplicates');
+    const path = onConflict ? `${table}?on_conflict=${onConflict}` : table;
+    const resp = await doFetch(`${url}/rest/v1/${path}`, {
+      method: 'POST',
+      headers: headers({ 'Content-Type': 'application/json', Prefer: prefer.join(',') }),
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const b = await resp.text().catch(() => '');
+      const e = new Error(`restPost ${resp.status} on ${table}`);
+      e.status = resp.status;
+      e.body = b;
+      throw e;
+    }
+    try {
+      return await resp.json();
+    } catch {
+      return [];
+    }
+  }
+
+  // PATCH by query. Returns the updated row(s).
+  async function restPatch(table, query, body) {
+    const resp = await doFetch(`${url}/rest/v1/${table}?${query}`, {
+      method: 'PATCH',
+      headers: headers({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const b = await resp.text().catch(() => '');
+      const e = new Error(`restPatch ${resp.status} on ${table}`);
+      e.status = resp.status;
+      e.body = b;
+      throw e;
+    }
+    try {
+      return await resp.json();
+    } catch {
+      return [];
+    }
+  }
+
+  return { url, restGet, callRPC, restPost, restPatch };
 }
 
 export { PROD_SUPABASE_URL };
