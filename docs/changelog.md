@@ -1,5 +1,57 @@
 # Changelog
 
+## 2026-06-22 (later 4) — AC-157: MCP server Phase 3 (power / high-blast-radius) + consent scope-split fix
+
+Adds 6 tools to the MCP server (now **20 total**: 11 read, 9 write) in
+`api/_mcpTools.js` + `api/mcp.js`, on top of Phase 1/2 + Path B. Server-side only
+(no EAS). Every write is propose-by-default; the three HIGH-BLAST mutators also
+require `confirm:true`.
+
+- **`get_athlete_state`** (R) — thin wrap of the `athlete_state_snapshot` view;
+  `has_X` flags labelled last-known-existence (not freshness); missing → NOT AVAILABLE.
+- **`log_nutrition`** (W, low) — RAW insert into `nutrition_logs`
+  (`meal_type='food'`, `parsed=false`); macros filled by the existing parse
+  pipeline, never computed server-side (D1).
+- **`regenerate_coaching_take`** (W, med) — Coach's-Take only via the Vercel route
+  `api/regenerate-coaching-artifact.js` (D2); morning briefing rejected/out of
+  scope; idempotent + rate-limited; returns the real `regen_status` read back.
+- **`apply_schedule_change`** (W, HIGH) — commits an approved/accepted
+  `schedule_changes` row into `scheduled_sessions` per native app parity
+  (reschedule/add/remove(=cancelled)/modify), then marks it `applied`
+  (`resolved_by='mcp'`); refuses pending/dismissed; idempotent on applied;
+  `commit:true`+`confirm:true`.
+- **`request_plan_regeneration`** (W, HIGH) — invokes the `generate-periodised-plan`
+  edge function; idempotent + rate-limited; returns its real status verbatim.
+  ⚠ that function is currently a **skeleton (501 `design_pending`, ticket
+  `8933a7c4`)** that writes no plan — the tool surfaces this honestly
+  (`plan_written:false`), never a fabricated completion. `commit:true`+`confirm:true`.
+- **`log_activity`** (W, HIGH) — manual `activities` insert (`source='manual'`)
+  with **cross-row dedup** (same Vienna day + type case-insensitive + distance/
+  duration window); on a suspected duplicate **REFUSES + reports** the match (D3),
+  never merging or blind-inserting. `commit:true`+`confirm:true`.
+
+**Bundled fix:** the OAuth consent page rendered scopes via
+`String(data.scope).split(/\s+/)` — inside the template literal the backslash
+collapsed so it split on the letter "s". Fixed to `split(' ')` (display-only,
+`api/oauth/authorize.js`).
+
+**Verify-first deviations flagged:** `generate-periodised-plan` is a 501 skeleton
+(no plan write/canary yet); `recalibrate_zones` stays DEFERRED (the
+`calibrate-zones` source exists in-repo but is **not** a deployed edge function,
+confirmed via `list_edge_functions` — no tool stubbed against a non-existent backend).
+
+**Tests:** `tests/api/mcp-phase3.test.js` — 18 deterministic LAYER-1 cases
+(dedup refusal, propose/commit/confirm gating, apply gating + idempotency + real
+`scheduled_sessions` mutation, real plan-regen status + rate-limit, raw nutrition
+`parsed=false`, `get_athlete_state` detector, regen targets Vercel + rejects
+briefing, 20-tool wiring). Full API suite 126 tests / 123 pass / 0 fail / 3 unrelated
+skips. eslint baseline-parity (no new rule categories; the scope-split fix removed a
+`no-useless-escape`). The live end-to-end per-HIGH-BLAST-tool flow is the MANUAL
+production GATE (Architect/Richard).
+
+`docs/database.md` updated (live `schedule_changes`/`scheduled_sessions`,
+`nutrition_logs` raw columns, `athlete_state_snapshot` view).
+
 ## 2026-06-22 (later 3) — AC-156: harden the OAuth consent page (show approving account + account switch)
 
 Consent-page-only hardening in `api/oauth/authorize.js` (no tool/schema/discovery

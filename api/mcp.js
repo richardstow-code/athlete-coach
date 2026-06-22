@@ -125,6 +125,42 @@ const SHAPES = {
     health_notes: z.string().optional(),
     commit: z.boolean().describe('must be true to write; confirm each field first').optional(),
   },
+  // ── Phase 3 (power / high blast radius) ──
+  get_athlete_state: {},
+  log_nutrition: {
+    raw_text: z.string().describe("the athlete's OWN free-text food log; stored verbatim, parsed by the pipeline (no server-side macros)"),
+    date: z.string().describe('Vienna date YYYY-MM-DD (default today)').optional(),
+    meal_timing: z.string().describe('optional timing label in the athlete\'s words, e.g. breakfast / pre-run / during-workout').optional(),
+    commit: z.boolean().describe('must be true to insert; otherwise returns the proposed row').optional(),
+  },
+  regenerate_coaching_take: {
+    activity_id: z.number().int().describe('activities.id whose Coach\'s Take to regenerate'),
+    artifact: z.string().describe("only 'coach_take' is supported; 'morning_briefing' is client-driven and rejected").optional(),
+    reason: z.string().optional(),
+    commit: z.boolean().describe('must be true to trigger the regen; otherwise returns the proposed action').optional(),
+  },
+  apply_schedule_change: {
+    change_id: z.number().int().describe('schedule_changes.id to apply (must be status approved/accepted)'),
+    commit: z.boolean().describe('must be true to apply').optional(),
+    confirm: z.boolean().describe('HIGH BLAST: must ALSO be true (explicit athlete confirm) — mutates the real plan').optional(),
+  },
+  request_plan_regeneration: {
+    target_date: z.string().describe('race/target date YYYY-MM-DD (optional)').optional(),
+    commit: z.boolean().describe('must be true to invoke the plan regeneration').optional(),
+    confirm: z.boolean().describe('HIGH BLAST: must ALSO be true (explicit athlete confirm) — regenerates the whole plan').optional(),
+  },
+  log_activity: {
+    type: z.string().describe('sport/type, e.g. run/ride/swim/strength/hike (stored lowercase)'),
+    date: z.string().describe('Vienna date YYYY-MM-DD of the activity'),
+    name: z.string().optional(),
+    distance_km: z.number().describe('optional; used for cross-row dedup').optional(),
+    duration_min: z.number().optional(),
+    avg_hr: z.number().optional(),
+    elevation_m: z.number().optional(),
+    workout_type: z.string().optional(),
+    commit: z.boolean().describe('must be true to insert').optional(),
+    confirm: z.boolean().describe('HIGH BLAST: must ALSO be true (explicit athlete confirm) — creates a real activity').optional(),
+  },
 };
 
 // Build a fresh McpServer with all tools bound to a given Supabase client.

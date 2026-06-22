@@ -1,3 +1,45 @@
+# HANDOVER — AC-157: MCP server Phase 3 (power / high blast radius)
+
+- **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `feat/ac-157-mcp-phase3` (worktree off `origin/main` @ `fe09163`, PR #8 merge). **Type:** server-side (`api/_mcpTools.js`, `api/mcp.js`, `api/_supabaseRest.js`, `api/oauth/authorize.js`) — **no EAS, no native**. CC does **not** self-merge. STOP at GATE 3.
+- **Result:** 6 tools added → **20 total** (11 read, 9 write). Full API suite **126 / 123 pass / 0 fail / 3 unrelated skips**; Phase-3 suite 18/18.
+
+## STEP 0 — verify-first enumeration (live, this session)
+
+- **0a `athlete_state_snapshot`** — IS a view. Cols (all nullable): user_id, snapshot_date, resting_hr(+_date), hrv_ms(+_date), sleep_hours(+_date), sleep_quality, steps, active_calories, has_resting_hr/has_hrv/has_sleep/has_steps, snapshot_sources(jsonb), injury_id/_body_location/_severity/_follow_up_due_date/_follow_up_overdue/_days_since_reported/_follow_up_count.
+- **0b `scheduled_sessions` + apply semantics** — `id` is **bigint**; status adds `cancelled`. Native `app/(tabs)/plan.tsx` applyProposal is the canonical mapping: `reschedule`→UPDATE planned_date; `add`→INSERT status='planned'; `remove`→UPDATE status='cancelled' (**not delete**); `modify`→UPDATE new_* fields; then `schedule_changes.status='applied', resolved_at`. (`plan.tsx` references a `proposal.original_date` that is **not** a real `schedule_changes` column — so the MCP keys off `original_session_id` and refuses if absent, rather than guessing by a phantom column.)
+- **0b `schedule_changes`** — `id` bigint; live status `pending`→`approved`/`accepted`→`applied`/`dismissed`; change_type reschedule|add|remove|modify (+ skip/add_session/review from other paths, not applied). `docs/database.md` was stale and is now corrected.
+- **0c `activities` manual insert** (`app/log.tsx`) — `{ user_id, name, type(lowercase), date(`${d}T12:00:00Z`), distance_km, duration_min, …, source:'manual', enrichment_status:'done' }`. Dedup fields: type (Strava stores `'Run'`, manual `'run'` → compare case-insensitively), date, distance_km, duration_min, source, strava_id, is_deleted.
+- **0d `nutrition_logs` raw insert** (`app/(tabs)/fuel.tsx`) — `{ date, raw_text, meal_timing, logged_at, meal_type:'food', user_id, parsed:false }`; pipeline parses macros. Matches D1 exactly.
+- **0e `generate-periodised-plan`** — deployed, ACTIVE, verify_jwt:true, BUT a **SKELETON**: `POST {target_date,regenerate?}` → **501 `{status:'design_pending', design_ticket_id:'8933a7c4', blockers[]}`**, writes nothing. **No version/row canary exists.** ⇒ `request_plan_regeneration` invokes it and returns the real status verbatim; never fabricates a completion.
+- **0f `regenerate-coaching-artifact.js`** (Vercel route) — `POST` w/ `x-analyze-secret`=`ANALYZE_ACTIVITY_SECRET`, body `{artifact='coach_take', activity_id, user_id?, fingerprint?, reason?}`; **rejects `morning_briefing`** (400); returns `{ok, regen_status:'fresh'|'error', regenerated_at}`.
+- **calibrate-zones discrepancy resolved** — source exists in `supabase/functions/calibrate-zones/` but is **NOT** in the deployed `list_edge_functions` output → not active. Brief's "no calibrate-zones exists" is correct about *deployed* state. `recalibrate_zones` stays DEFERRED (no stub).
+
+## Per-tool RISK notes
+
+- `get_athlete_state` — R, none (read-only view wrap).
+- `log_nutrition` — **low**: additive insert; no plan/activity impact; never computes macros.
+- `regenerate_coaching_take` — **med**: rewrites a stored coaching artifact (Coach's Take); prior content kept on error; rate-limited; briefing out of scope.
+- `apply_schedule_change` — **HIGH / irreversible plan mutation**: a wrong/duplicate session can enter the plan; mitigated by approved/accepted precondition, idempotency, original_session_id requirement, `commit`+`confirm`.
+- `request_plan_regeneration` — **HIGH / would replace the whole plan** once generation ships; today a no-op against the 501 skeleton; rate-limited; `commit`+`confirm`.
+- `log_activity` — **HIGH / pollutes history + feeds coaching**: cross-row dedup REFUSES suspected duplicates (D3); `commit`+`confirm`.
+
+## STEP 3 — tests + lint
+
+- `tests/api/mcp-phase3.test.js` (18 LAYER-1, no network): dedup refusal (D3), apply gating (refuse pending/dismissed) + idempotency (no-op on applied) + **real `scheduled_sessions` mutation asserted** (payload, not a 200) + `remove`→cancelled + `add`→insert, plan-regen **real `design_pending`** (not "done") + rate-limit (no 2nd invoke), nutrition `parsed=false`/no macros, `get_athlete_state` detector + NOT AVAILABLE, regen targets the Vercel route + rejects morning_briefing, confirm-required on all three HIGH tools, 20-tool wiring.
+- Full `node --test tests/api/*.test.js`: 126 / 123 pass / 0 fail / 3 unrelated skips.
+- eslint: no new rule categories vs main (more instances of the pre-existing `process` no-undef config gap + the `_args` convention; the scope-split fix **removed** a `no-useless-escape`).
+- **MANUAL GATE (pending, Architect/Richard on prod):** one real end-to-end flow per HIGH-BLAST tool (apply_schedule_change, request_plan_regeneration, log_activity) — not run from CC; record results here.
+
+## Bundled fix
+
+`api/oauth/authorize.js`: `String(data.scope).split(/\s+/)` → `split(' ')` (the `\s` collapsed in the template literal and split on the letter "s"). Display-only; consent page only.
+
+## Handback
+
+Branch / SHA / PR# in the chat note. Architect bypass-merges to main (only red expected = chronic `loginAs` e2e flake), confirms the Vercel production deployment-ID flips, runs the behavioural checks + the MANUAL high-blast flows. **GATE 3 — stop for Architect sign-off.**
+
+---
+
 # HANDOVER — AC-156: harden the OAuth consent page (approving account + switch)
 
 - **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `fix/ac-156-oauth-consent-account` (off `origin/main` @ `4032e71`). **File:** `api/oauth/authorize.js` (consent page only). **Type:** UI/auth-flow hardening — no tool/schema/discovery/`vercel.json` changes, no native. CC does **not** self-merge.
