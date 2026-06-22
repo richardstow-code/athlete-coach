@@ -1,3 +1,39 @@
+# HANDOVER — AC-154: reconcile `mcp-oauth` (PR #5) with main (fold in the AC-153 guardrail)
+
+- **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `mcp-oauth` (PR #5). **Type:** server-side history reconciliation — **NOT** EAS/native. CC does **not** self-merge.
+- **Goal:** PR #5 was cut **before** AC-153, so merging it as-is would overwrite main's hardened tool and silently reintroduce the fabrication bug. This merge brings the branch current so the connector (OAuth) path is held to the same verbatim-only standard as the Bearer path.
+
+## STEP 1 — verify-first findings (recorded before resolving)
+
+- **1.1 merge-base** `git merge-base origin/main mcp-oauth` = `8e55265` (the Phase-2 tip, PR #4 merge) — as expected.
+- **1.2 did OAuth touch tool logic?** **No.** `git diff 8e55265 origin/mcp-oauth -- api/_mcpTools.js` = **0 lines** (byte-identical), and mcp-oauth's `_mcpTools.js` had **0** guardrail markers. OAuth made no tool-logic change ⇒ taking main's `_mcpTools.js` resolves clean.
+- **1.3 PR #5 file surface** (`8e55265..mcp-oauth`): `api/_oauth.js`, `api/mcp.js`, `api/oauth/authorize.js`, `api/well-known-protected-resource.js`, `docs/changelog.md`, `docs/mcp.md`, `package.json`, `package-lock.json`, `tests/api/mcp-oauth.test.js`, `vercel.json`. Overlap with the AC-153 surface (the real conflict set) = **`api/mcp.js`, `docs/changelog.md`, `docs/mcp.md`**.
+
+## STEP 2 — merge resolution (`git merge origin/main`, no rebase/force-push)
+
+Of the predicted conflicts, git **auto-merged** `api/mcp.js` and `docs/mcp.md` (the two sides touched different regions); only `docs/changelog.md` conflicted.
+
+- **`api/_mcpTools.js`** → main's version, verbatim. Working tree is **byte-identical to `origin/main`** (`git diff origin/main -- api/_mcpTools.js` = 0). Guardrail markers present: `refused`, `No athlete-provided`, `changed_columns`, `Never infer`, `verbatim`.
+- **`api/mcp.js`** → **kept BOTH** (verified by grep): OAuth layer (`validateOAuthToken`×2, `RESOURCE_METADATA_URL`×2, `authorizeRequest`×2, `WWW-Authenticate`, `shared_secret`×2) **and** main's AC-153 verbatim-only inputSchema descriptions (`VERBATIM-ONLY`×4, `NEVER summarise the activity`, `never infer`×2, `refuses and writes nothing`). The auto-merge was confirmed semantically correct — OAuth changes live in the imports/`authorizeRequest`/handler region, AC-153 changes in the `SHAPES.log_session_feedback` descriptions.
+- **`docs/changelog.md`** → conflict resolved deterministically (split on markers, no eyeball-blend): newest-first **AC-154 → AC-153 → Path B OAuth**, both prior entries preserved intact.
+- **`docs/mcp.md`** → auto-merged; retained both the OAuth Path-B section and the AC-153 verbatim-only contract; added an AC-154 note that both auth paths share the guardrail.
+- **`vercel.json`**, `api/_oauth.js`, `api/oauth/authorize.js`, `api/well-known-protected-resource.js` → mcp-oauth-only, unchanged.
+
+## STEP 3 — tests (both capabilities intact)
+
+- **AC-153 guardrail** (`tests/api/mcp-phase2.test.js`): **23/23 pass, 0 skipped** — incl. the live readback layer (rpe-only preserves an existing note byte-for-byte; empty call mutates nothing; happy-path `created_at` unchanged).
+- **OAuth** (`tests/api/mcp-oauth.test.js`): **13/13 pass, 0 skipped** (token aud/sub/expiry, three authorize paths incl. bearer regression + cross-user rejection, PRM JSON, 401-with-header, OPTIONS).
+- **Overall** `node --test tests/api/*.test.js`: **105 pass / 0 fail / 3 skipped** (the 3 skips are an unrelated `decideSkip` suite).
+- **Static guards:** `_mcpTools.js` has the guardrail markers; `api/mcp.js` has BOTH `authorizeRequest` and the `NEVER summarise the activity` description.
+- **eslint:** working-tree `api/mcp.js` = 2 problems (pre-existing `process` no-undef node-globals gap), `api/_mcpTools.js` = 4 problems (== origin/main; pre-existing `_args` convention). **No new errors.**
+
+## STEP 5 — handback
+
+- Merge commit pushed to `mcp-oauth` (updates PR #5). No rebase, no force-push, no branch delete. **Committed-but-NOT-deployed** until the Architect merges to main.
+- Architect merges to main (after Richard's four Supabase/Vercel dashboard config actions), then verifies the Vercel deployment-ID flip and that `/api/mcp` (Bearer) **and** the main app still resolve. Branch / SHA / PR# in the chat handback.
+
+---
+
 # HANDOVER — AC-153: `log_session_feedback` fabrication guardrail (GATE 2 blocker)
 
 - **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `fix/ac-153-log-session-feedback-guardrail` (off `origin/main` @ `5ab5df8`, the Phase-2 tip = current prod).

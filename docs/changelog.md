@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-06-22 (later) — AC-154: reconcile `mcp-oauth` (Path B) with main to fold in the AC-153 guardrail
+
+Branch `mcp-oauth` (PR #5) was cut from the Phase-2 tip (`8e55265`) **before**
+AC-153 merged, so its tool code was the old pre-guardrail version. Merged
+`origin/main` (incl. the AC-153 merge `6d7ef6e`) into `mcp-oauth` so the
+OAuth/Path-B connector path is held to the same verbatim-only standard as the
+Bearer path — merging PR #5 as-is would have silently reintroduced the
+fabrication bug.
+
+- **`api/_mcpTools.js`** — took main's version entirely (the AC-153 guardrail:
+  refuse-when-empty, partial-update, `changed_columns`, verbatim-only). Verified
+  OAuth never touched this file (mcp-oauth's copy was byte-identical to the merge
+  base `8e55265`), so this resolved clean.
+- **`api/mcp.js`** — kept BOTH: the OAuth auth layer (`validateOAuthToken`,
+  `RESOURCE_METADATA_URL`, `authorizeRequest` with shared_secret|oauth, the
+  RFC 9728 `401` + `WWW-Authenticate`) AND main's AC-153 verbatim-only
+  inputSchema descriptions for `rpe`/`feel_legs`/`injury_flag`/`notes` plus
+  the commit-param refusal note. Auto-merged cleanly (the two changes touch
+  different regions); both capabilities verified present by grep.
+- **`vercel.json`**, `api/_oauth.js`, `api/oauth/authorize.js`,
+  `api/well-known-protected-resource.js` — mcp-oauth-only, unchanged.
+- **Tests:** both suites green on the reconciled branch —
+  `tests/api/mcp-phase2.test.js` (AC-153 guardrail) and
+  `tests/api/mcp-oauth.test.js` (token validation + three authorize paths).
+  `node --test` overall green; eslint at baseline parity (no new errors).
+
+History reconciliation only — no tool logic or native code changed. CC did not
+self-merge; the Architect merges to main after Richard's dashboard config and
+verifies the Vercel deploy.
+
 ## 2026-06-22 — AC-153: `log_session_feedback` fabrication guardrail (GATE 2 blocker)
 
 Branch `fix/ac-153-log-session-feedback-guardrail` (off `origin/main`). Server-side
@@ -38,6 +68,38 @@ gated live-readback layer. No new lint errors (baseline parity).
 **Out of scope / flagged:** the unmerged `mcp-oauth` branch carries its own copy of
 this tool and needs the same guardrail before it merges. The `feel` column is not
 currently writable by the tool (not expanded here — a separate decision).
+
+## 2026-06-21 (later 2) — MCP server Path B: OAuth for the web/mobile connector
+
+Adds OAuth 2.1 discovery + consent so the Claude WEB/MOBILE connector can connect
+(it can't use a static bearer). Auth layer only — 14 tools + single-user scoping
+unchanged. Branch `mcp-oauth` off origin/main 8e55265. Mechanism: Supabase-
+delegated (Supabase Auth is the OAuth 2.1 authorization server).
+
+- `api/mcp.js`: unauthenticated requests now return `401` with
+  `WWW-Authenticate: Bearer resource_metadata="…"` (RFC 9728). New exported,
+  dependency-injectable `authorizeRequest()` accepts THREE paths: shared_secret
+  (MCP_SHARED_SECRET), oauth (Supabase JWKS-validated access token), supabase_jwt
+  (legacy remote introspection). Bearer/JWT path preserved (regression-tested).
+- `api/_oauth.js`: validates OAuth access tokens via Supabase JWKS (jose) —
+  signature/expiry + issuer + `aud="authenticated"` + `sub=ATHLETE_USER_ID`
+  (single-user binding). Documented audience deviation (ruling #1) + revisit
+  trigger in docs/mcp.md.
+- `api/well-known-protected-resource.js` + vercel.json rewrites: serves RFC 9728
+  protected-resource metadata at `/.well-known/oauth-protected-resource`
+  (and `…/api/mcp`) pointing at the Supabase issuer.
+- `api/oauth/authorize.js` + rewrite: consent page (ruling #2) — REQUIRES Supabase
+  login before Approve (makes DCR safe); uses supabase-js `auth.oauth`
+  getAuthorizationDetails/approveAuthorization/denyAuthorization.
+- Dep: `jose` for JWKS validation.
+- Tests: `tests/api/mcp-oauth.test.js` — 13 cases (46 total across all suites),
+  all green: token validation (aud/sub/expiry/array-aud), three authorize paths
+  incl. bearer regression + cross-user rejection, PRM JSON, 401-with-header,
+  OPTIONS. (Real token + browser consent covered by the manual web-connector GATE.)
+- Pending: Richard dashboard config (Site URL, Authorization Path=/oauth/authorize,
+  DCR redirect validation, anon key available to functions) → merge → deploy →
+  Architect verifies unauthenticated request returns WWW-Authenticate → manual
+  web-connector connect test. Rotate MCP_SHARED_SECRET (still needed for CC/API).
 
 ## 2026-06-21 (later) — MCP server Phase 2 (nice-to-have reads + first writes)
 
