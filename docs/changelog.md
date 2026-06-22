@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-06-22 (later 3) — AC-156: harden the OAuth consent page (show approving account + account switch)
+
+Consent-page-only hardening in `api/oauth/authorize.js` (no tool/schema/discovery
+changes). Path B went live but the consent page silently authorized whichever
+Supabase session was cached on the `…vercel.app` origin — it approved as Richard's
+**IBM work account** (no training data) instead of the **hotmail athlete account**
+that owns the data, with zero indication of which account.
+
+- **Shows the approving account:** the consent screen now displays **"Signed in as
+  `<email>`"** above Approve/Deny.
+- **Account switch:** **"Not you? Use a different account"** signs out and returns
+  to the login form **without dropping `authorization_id`** — after re-login the
+  page returns to consent for the *same* authorization request.
+- **Robust session check:** `getSession()` (local cache) is re-validated with
+  `getUser()` before showing consent; a stale/expired session falls through to the
+  login form instead of a consent screen that fails at approve time.
+- **Styling:** matched the design system — white bg (`#ffffff`), dark text
+  (`#0a0a0a`), teal (`#14b8a6`) primary Approve, muted grey secondary; no banned
+  `#e8ff47`.
+- **Test:** one `@smoke` Playwright check (`tests/e2e/oauth-consent.spec.js`) —
+  no session ⇒ login form renders (not a consent screen, not a crash). The
+  session-present path is covered by Richard's manual connect test (mocking a
+  server-validated Supabase session is disproportionate here).
+- eslint at baseline parity (the 2 pre-existing findings — `process` node-globals
+  gap + the `\s`-in-template escape — unchanged; no new errors).
+
 ## 2026-06-22 (later 2) — AC-155: retrigger production deploy of main HEAD (Path B live)
 
 Docs-only commit to push a fresh commit onto `main` so Vercel deploys main HEAD.

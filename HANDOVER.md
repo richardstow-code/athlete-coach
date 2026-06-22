@@ -1,3 +1,35 @@
+# HANDOVER — AC-156: harden the OAuth consent page (approving account + switch)
+
+- **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `fix/ac-156-oauth-consent-account` (off `origin/main` @ `4032e71`). **File:** `api/oauth/authorize.js` (consent page only). **Type:** UI/auth-flow hardening — no tool/schema/discovery/`vercel.json` changes, no native. CC does **not** self-merge.
+
+## STEP 1 — verify-first findings (actual code on origin/main)
+
+`api/oauth/authorize.js` is a Vercel GET handler returning one HTML page; all auth runs client-side via `@supabase/supabase-js` (esm.sh). Real names confirmed:
+- Supabase client: `const sb = createClient(CFG.url, CFG.anon)` (anon key from `SUPABASE_ANON_KEY` || `VITE_SUPABASE_KEY`).
+- **Session-check line (the bug):** `const { data:{ session } } = await sb.auth.getSession();` in `main()` → `if(!session){ renderLogin(); return; } await renderConsent();`. `getSession()` reads only the **local cache** and the email was never shown ⇒ silent wrong-account approval.
+- `renderLogin()`: `#email`/`#password` → `sb.auth.signInWithPassword(...)` → on success `renderConsent()`; errors into `#err`.
+- `renderConsent()`: `sb.auth.oauth.getAuthorizationDetails(authorizationId)` → "Authorize `<client>`?" + scopes + Approve/Deny; `decide()` calls `approve/denyAuthorization` then redirects to `data.redirect_url`.
+- `authorizationId` is a module-level const read once from the URL — so it survives login↔consent re-renders without being dropped.
+
+## STEP 2 — what changed (consent page only)
+
+- **`currentUser()`** (new): `getSession()` then re-validates with `getUser()`; returns null on stale/missing session ⇒ `main()` falls through to `renderLogin()` instead of a doomed consent screen.
+- **`renderConsent(user)`** now shows **"Signed in as `<email>`"** (in an `.acct` box) above Approve/Deny, plus **"Not you? Use a different account"** (`#switch`) → `sb.auth.signOut()` then `renderLogin()`. Because `authorizationId` is the module const, re-login returns to consent for the **same** authorization request (continuity verified by construction — the query param is never re-read or dropped).
+- **`renderLogin()`** re-validates via `currentUser()` after sign-in before consent.
+- **Styling:** white `#ffffff` / text `#0a0a0a` / teal `#14b8a6` Approve / grey `#f1f1f1` secondary; **no `#e8ff47`** (grep = 0).
+- Scope-split regex preserved exactly as-is (out of scope; its pre-existing `\s`-in-template quirk left untouched).
+
+## STEP 3 — tests
+
+- `tests/e2e/oauth-consent.spec.js`: one `@smoke` — `GET /oauth/authorize?authorization_id=test` with no session renders the **login form** (`#email`/`#password`/`#login`, heading "Sign in to authorize") and **no** `#approve`. Runs against `PREVIEW_URL` (the page is a Vercel function; local Vite `:5173` would 404 — same as `strava-webhook.spec.js`). Session-present path left to Richard's manual connect test (server-validated session mock is disproportionate).
+- `node --check` passes; eslint at **baseline parity** (the 2 pre-existing findings — `process` no-undef + `\s` no-useless-escape — unchanged; no new errors).
+
+## Handback
+
+Branch / SHA / PR# in the chat note. Architect bypass-merges to main (only red expected = chronic `loginAs` e2e flake), confirms the Vercel production deployment-ID flips, and verifies the **live** consent page shows "Signed in as `<email>`" + the account-switch control. Then Richard re-runs the connector connect test — authorizing as the **hotmail athlete** account, not the IBM work account.
+
+---
+
 # HANDOVER — AC-154: reconcile `mcp-oauth` (PR #5) with main (fold in the AC-153 guardrail)
 
 - **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `mcp-oauth` (PR #5). **Type:** server-side history reconciliation — **NOT** EAS/native. CC does **not** self-merge.
