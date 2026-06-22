@@ -72,6 +72,23 @@ The Supabase **service-role key never leaves the server** (Ground Rule 5).
 | `/oauth/authorize` | consent page (requires Supabase login before Approve) |
 | Supabase AS metadata | `https://yjuhzmknabedjklsgbje.supabase.co/.well-known/oauth-authorization-server/auth/v1` (Supabase-hosted) |
 
+> **Consent page shows the approving account + allows switching (AC-156).** The
+> consent screen displays **"Signed in as `<email>`"** above Approve/Deny and
+> offers **"Not you? Use a different account"** (which signs out and returns to
+> the login form for the *same* `authorization_id`). The cached session is also
+> re-validated server-side (`getUser`) before consent, so a stale/expired session
+> can't reach a consent screen that would fail at approve time.
+>
+> **⚠ Multi-account gotcha.** This Supabase project has several real accounts
+> (the **hotmail athlete** account `richardstow@hotmail.co.uk` —
+> `40cfe68e-…02d6`, which **owns the training data**; the **IBM work** account
+> `richard.stow@ibm.com` — `4f0495d9-…0bc0`, which has **none**; and the Sarah
+> test user). You **must authorize as the hotmail athlete account** — the
+> connector is single-user bound to that `sub`. Before AC-156 the page silently
+> approved whichever session was cached on the `…vercel.app` origin (it had
+> wired to the empty IBM account); the "Signed in as" line now makes the
+> identity explicit so this can't happen silently.
+
 ### Required env vars (Vercel)
 
 | Var | Purpose | Status |
