@@ -94,7 +94,7 @@ async function renderConsent(user){
   if(error){ h('<h1>Authorization error</h1><p class="muted">'+esc(error.message)+'</p>'); return; }
   if(data && data.redirect_url && !data.authorization_id){ location.href = data.redirect_url; return; } // already consented
   const name = (data && data.client && data.client.name) || 'An application';
-  const scopes = (data && data.scope ? String(data.scope).split(/\s+/).filter(Boolean) : []);
+  const scopes = (data && data.scope ? String(data.scope).split(' ').filter(Boolean) : []);
   h('<h1>Authorize '+esc(name)+'?</h1>'+
     '<div class="acct">Signed in as <strong>'+esc(user.email)+'</strong><br>'+
       '<a id="switch">Not you? Use a different account</a></div>'+

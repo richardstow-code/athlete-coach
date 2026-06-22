@@ -13,10 +13,14 @@
 
 const PROD_SUPABASE_URL = 'https://yjuhzmknabedjklsgbje.supabase.co';
 
-export function makeSupabaseRest({ baseUrl, serviceKey, fetchImpl } = {}) {
+export function makeSupabaseRest({ baseUrl, serviceKey, fetchImpl, appBaseUrl, regenSecret } = {}) {
   const url = (baseUrl || process.env.SUPABASE_URL || PROD_SUPABASE_URL).replace(/\/$/, '');
   const key = serviceKey || process.env.SUPABASE_SECRET_KEY;
   const doFetch = fetchImpl || fetch;
+  // Phase-3 outbound calls. appBase = this deployment's own origin (for sibling
+  // Vercel API routes); regenSecretResolved = the shared x-analyze-secret.
+  const appBase = (appBaseUrl || process.env.APP_BASE_URL || 'https://athlete-coach-alpha.vercel.app').replace(/\/$/, '');
+  const regenSecretResolved = regenSecret || process.env.ANALYZE_ACTIVITY_SECRET || '';
 
   function headers(extra) {
     return {
@@ -103,7 +107,43 @@ export function makeSupabaseRest({ baseUrl, serviceKey, fetchImpl } = {}) {
     }
   }
 
-  return { url, restGet, callRPC, restPost, restPatch };
+  // Invoke a Supabase Edge Function. The service-role key is itself a valid JWT,
+  // so this satisfies verify_jwt:true functions (e.g. generate-periodised-plan).
+  // Returns { ok, status, data } — never throws (tools surface { error }).
+  async function callEdgeFunction(slug, body) {
+    try {
+      const resp = await doFetch(`${url}/functions/v1/${slug}`, {
+        method: 'POST',
+        headers: headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body || {}),
+      });
+      let data = null;
+      try { data = await resp.json(); } catch { /* non-JSON */ }
+      return { ok: resp.ok, status: resp.status, data };
+    } catch (e) {
+      return { ok: false, status: 0, data: null, error: e.message };
+    }
+  }
+
+  // POST the existing Coach's-Take regen route on THIS Vercel deployment
+  // (api/regenerate-coaching-artifact.js), with the shared x-analyze-secret.
+  // Returns { ok, status, data }.
+  async function regenerateCoachingArtifact(body) {
+    try {
+      const resp = await doFetch(`${appBase}/api/regenerate-coaching-artifact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-analyze-secret': regenSecretResolved },
+        body: JSON.stringify(body || {}),
+      });
+      let data = null;
+      try { data = await resp.json(); } catch { /* non-JSON */ }
+      return { ok: resp.ok, status: resp.status, data };
+    } catch (e) {
+      return { ok: false, status: 0, data: null, error: e.message };
+    }
+  }
+
+  return { url, appBase, restGet, callRPC, restPost, restPatch, callEdgeFunction, regenerateCoachingArtifact };
 }
 
 export { PROD_SUPABASE_URL };

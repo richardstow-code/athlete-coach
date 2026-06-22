@@ -4,8 +4,9 @@ A remote [MCP](https://modelcontextprotocol.io) server that exposes the athlete'
 training data as tools, so any MCP client (e.g. Richard's Claude chat) can pull
 live state and reason over it at full depth.
 
-- **Phase:** 1 (read-only). Phases 2 (nice-to-have reads + first writes) and 3
-  (power tools) are not built yet.
+- **Phase:** 3 built (power / high-blast-radius). Phase 1 (read-only, 7 tools) +
+  Phase 2 (nice-to-have reads + first writes) + Path B (OAuth) + Phase 3 are all
+  on `main`. **20 tools total** (11 read, 9 write).
 - **Scope:** single athlete. Every tool is hard-scoped server-side to
   `ATHLETE_USER_ID = 40cfe68e-faea-491c-b410-0093572f02d6`. No multi-tenant auth.
 
@@ -142,6 +143,7 @@ Coach-Analysis-card divergence we are avoiding).
 | `get_nutrition` | `nutrition_logs` | date range (default 7d) + total `alcohol_units` tally (Phase 2) |
 | `get_weekly_review` | `coaching_memory` `category='weekly_review'` | latest generated weekly review (Phase 2) |
 | `get_routes` | `athlete_routes` + RPC `get_route_coach_context` | list (named locations only); pass `route_id` for that route's coaching context (Phase 2) |
+| `get_athlete_state` | `athlete_state_snapshot` (view) | RHR/HRV/sleep/steps/active calories + active injury; `has_X` = last-known-existence, not freshness (Phase 3) |
 
 ### Writes (Phase 2) — propose-by-default
 
@@ -162,6 +164,32 @@ source — per-activity `compliance_score` is instead surfaced as a field on
 `get_recent_activities` / `get_activity_detail`; the time-weighted/training-only/
 capped aggregate is flagged for a future RPC), `get_weather_context` (net-new
 outbound API), and race/goal profile edits.
+
+### Phase 3 — power tools (high blast radius, AC-157)
+
+One read (`get_athlete_state`) + five writes. Writes stay propose-by-default; the
+three **HIGH-BLAST** mutators additionally require **`confirm: true`** (explicit
+Richard-confirm) on top of `commit: true`, and return the **actual** mutated
+row(s) — never a fabricated confirmation.
+
+| Tool | Risk | Target | Behaviour |
+|------|------|--------|-----------|
+| `get_athlete_state` | R | `athlete_state_snapshot` (view) | thin wrap — RHR/HRV/sleep/steps/active_calories/active-injury; `has_X` are **last-known-existence**, NOT freshness; missing → NOT AVAILABLE |
+| `log_nutrition` | low | INSERT `nutrition_logs` | RAW insert (`meal_type='food'`, `parsed=false`); macros filled by the existing parse pipeline — **never computed/fabricated** here (D1) |
+| `regenerate_coaching_take` | med | POST Vercel `api/regenerate-coaching-artifact.js` | Coach's-Take only (D2); **morning briefing rejected/out of scope** (client-driven); idempotent + rate-limited; returns the **real** `regen_status` read back |
+| `apply_schedule_change` | **HIGH** | `scheduled_sessions` + `schedule_changes` | applies an athlete-approved change per app parity: `reschedule`→move date, `add`→insert `status=planned`, `remove`→`status='cancelled'` (not a delete), `modify`→update fields; then marks the change `applied`/`resolved_by='mcp'`. Refuses `pending`/`dismissed`; idempotent on `applied`. `commit:true`+`confirm:true` |
+| `request_plan_regeneration` | **HIGH** | edge `generate-periodised-plan` | invokes the real function; idempotent + rate-limited; returns its **real** status verbatim. ⚠ The function is currently a **skeleton (501 `design_pending`, ticket `8933a7c4`)** that writes no plan — the tool surfaces that honestly (`plan_written:false`), never a fabricated completion. `commit:true`+`confirm:true` |
+| `log_activity` | **HIGH** | INSERT `activities` (`source='manual'`) | **cross-row dedup BEFORE insert** (same Vienna day + same type case-insensitively + matching distance/duration); on a suspected duplicate **REFUSES + reports** the match (D3 — never merges or blind-inserts). `commit:true`+`confirm:true` |
+
+**Regen targets Vercel, never the dormant edge function.** Coach's-Take regen goes
+to the Vercel route `api/regenerate-coaching-artifact.js` (shared `x-analyze-secret`);
+the `daily-briefing` edge function is dormant in prod and the morning briefing has
+no server trigger (client-driven), so it is out of scope.
+
+**`recalibrate_zones` — DEFERRED.** No calibration function is deployed (the
+`supabase/functions/calibrate-zones/` source exists in-repo but is **not** in the
+live edge-function list, confirmed via `list_edge_functions`). No tool is stubbed
+against a non-existent backend; revisit when a real zone-calibration function ships.
 
 ### `log_session_feedback` — verbatim-only contract (AC-153)
 
