@@ -1,5 +1,74 @@
 # Changelog
 
+## 2026-06-22 (later) — AC-154: reconcile `mcp-oauth` (Path B) with main to fold in the AC-153 guardrail
+
+Branch `mcp-oauth` (PR #5) was cut from the Phase-2 tip (`8e55265`) **before**
+AC-153 merged, so its tool code was the old pre-guardrail version. Merged
+`origin/main` (incl. the AC-153 merge `6d7ef6e`) into `mcp-oauth` so the
+OAuth/Path-B connector path is held to the same verbatim-only standard as the
+Bearer path — merging PR #5 as-is would have silently reintroduced the
+fabrication bug.
+
+- **`api/_mcpTools.js`** — took main's version entirely (the AC-153 guardrail:
+  refuse-when-empty, partial-update, `changed_columns`, verbatim-only). Verified
+  OAuth never touched this file (mcp-oauth's copy was byte-identical to the merge
+  base `8e55265`), so this resolved clean.
+- **`api/mcp.js`** — kept BOTH: the OAuth auth layer (`validateOAuthToken`,
+  `RESOURCE_METADATA_URL`, `authorizeRequest` with shared_secret|oauth, the
+  RFC 9728 `401` + `WWW-Authenticate`) AND main's AC-153 verbatim-only
+  inputSchema descriptions for `rpe`/`feel_legs`/`injury_flag`/`notes` plus
+  the commit-param refusal note. Auto-merged cleanly (the two changes touch
+  different regions); both capabilities verified present by grep.
+- **`vercel.json`**, `api/_oauth.js`, `api/oauth/authorize.js`,
+  `api/well-known-protected-resource.js` — mcp-oauth-only, unchanged.
+- **Tests:** both suites green on the reconciled branch —
+  `tests/api/mcp-phase2.test.js` (AC-153 guardrail) and
+  `tests/api/mcp-oauth.test.js` (token validation + three authorize paths).
+  `node --test` overall green; eslint at baseline parity (no new errors).
+
+History reconciliation only — no tool logic or native code changed. CC did not
+self-merge; the Architect merges to main after Richard's dashboard config and
+verifies the Vercel deploy.
+
+## 2026-06-22 — AC-153: `log_session_feedback` fabrication guardrail (GATE 2 blocker)
+
+Branch `fix/ac-153-log-session-feedback-guardrail` (off `origin/main`). Server-side
+MCP fix in `api/_mcpTools.js` + `api/mcp.js` — **not** an EAS/native change.
+
+**What went wrong (verified live, 22 Jun).** During Gate-2.5, `log_session_feedback`
+was called against a real activity *without* athlete-provided subjective values:
+the calling model invented `rpe=3` and wrote a third-person metrics summary into
+`subjective_notes`, overwriting the athlete's real note. Both were committed; the
+real note was destroyed (since restored by the Architect). The write **plumbing
+was already correct** (correct row, partial payload, `subjective_captured_at` set,
+`subjective_notes` not `notes`, no `updated_at`) — the only defect was the missing
+fabrication guardrail. The fabrication originated in the **caller**, not the server.
+
+**Fix — three properties (`log_session_feedback`):**
+- **Partial update (already correct, now documented + tested):** only caller-supplied
+  fields are written; an omitted field is left untouched (PATCH sends only provided
+  columns), so `rpe`-only preserves an existing `subjective_notes` byte-for-byte.
+- **Refuse-when-empty:** with no athlete-provided subjective field the tool writes
+  nothing (propose *and* commit) and returns `{ committed:false, refused:true,
+  error:"No athlete-provided subjective values supplied…" }`.
+- **Schema/description hardening (the real gap):** the tool description and every
+  subjective param (`rpe`/`feel_legs`/`injury_flag`/`notes`) now carry an explicit
+  verbatim-only / never-infer-from-metrics clause to steer the calling model, for
+  **any** sport. No server-side synthesis existed to remove.
+- **Return contract:** `commit:true` returns the actual mutated row + `changed_columns`.
+  `rpe` stays a raw 1–10 integer (no `feel_score`, no inversion).
+
+**Tests (`tests/api/mcp-phase2.test.js`):** AC-153 TEST 1 (refuse-when-empty, no
+mutation — the regression-catcher), TEST 2 (rpe-only never sends `subjective_notes`;
+live readback preserves the note byte-for-byte), TEST 3 (live happy-path: verbatim
+values, `created_at` unchanged = UPDATE not INSERT, capture stamped), TEST 4 (dry-run
+mutates nothing; `notes`→`subjective_notes`). All 39 phase-2 cases green, incl. the
+gated live-readback layer. No new lint errors (baseline parity).
+
+**Out of scope / flagged:** the unmerged `mcp-oauth` branch carries its own copy of
+this tool and needs the same guardrail before it merges. The `feel` column is not
+currently writable by the tool (not expanded here — a separate decision).
+
 ## 2026-06-21 (later 2) — MCP server Path B: OAuth for the web/mobile connector
 
 Adds OAuth 2.1 discovery + consent so the Claude WEB/MOBILE connector can connect

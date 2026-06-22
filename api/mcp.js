@@ -64,11 +64,37 @@ const SHAPES = {
   // ── Phase 2 writes (propose-by-default; commit:true required to mutate) ──
   log_session_feedback: {
     activity_id: z.number().int().describe('activities.id'),
-    rpe: z.number().int().describe('RAW RPE 1-10 (never a computed feel_score)').optional(),
-    feel_legs: z.string().optional(),
-    injury_flag: z.string().optional(),
-    notes: z.string().optional(),
-    commit: z.boolean().describe('must be true to write; otherwise returns the proposed diff').optional(),
+    rpe: z
+      .number()
+      .int()
+      .describe(
+        "The athlete's OWN raw RPE, integer 1-10 (never a computed feel_score). VERBATIM-ONLY: include only if the athlete stated it. Never infer or estimate it from HR, pace, splits, distance or duration. Omit if not provided."
+      )
+      .optional(),
+    feel_legs: z
+      .string()
+      .describe(
+        "The athlete's OWN words for how their legs felt (e.g. normal / heavy / fresh). VERBATIM-ONLY: never infer from metrics. Omit if the athlete did not say."
+      )
+      .optional(),
+    injury_flag: z
+      .string()
+      .describe(
+        "The athlete's OWN injury report (e.g. nothing / left-knee niggle). VERBATIM-ONLY: never infer from metrics. Omit if the athlete did not say."
+      )
+      .optional(),
+    notes: z
+      .string()
+      .describe(
+        "The athlete's OWN verbatim note about the session, in their words (writes to the subjective_notes column). VERBATIM-ONLY: NEVER summarise the activity or write a third-person metrics recap (distance / pace / HR / 'negative-split finish' etc.). Omit if the athlete gave no note — an omitted note never overwrites the existing one."
+      )
+      .optional(),
+    commit: z
+      .boolean()
+      .describe(
+        'must be true to write; otherwise returns the proposed diff. With no athlete-provided subjective field the tool refuses and writes nothing.'
+      )
+      .optional(),
   },
   propose_schedule_change: {
     change_type: z.string().describe('reschedule|skip|intensity_adjust|add_session|adjust|...'),

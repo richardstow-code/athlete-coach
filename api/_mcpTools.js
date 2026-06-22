@@ -438,7 +438,24 @@ function proposal(table, op, payload, extra) {
   return { committed: false, commit_required: true, proposed: { table, op, payload }, ...(extra || {}) };
 }
 
-// 11. log_session_feedback — PATCH activities (RAW rpe; never a feel_score)
+// 11. log_session_feedback — PATCH activities with the athlete's OWN subjective
+// feedback. VERBATIM-ONLY guardrail (AC-153): this tool records what the ATHLETE
+// actually said/scored. It NEVER derives rpe / feel_legs / injury_flag / notes
+// from activity metrics (pace, HR, splits, distance, duration) for ANY sport,
+// and it NEVER writes a third-person summary of the activity into
+// subjective_notes. Two structural protections back the schema/description
+// steering that lives in mcp.js and the TOOLS description:
+//   (A) Partial update — only fields the caller explicitly supplied are written.
+//       An omitted field is left UNTOUCHED in the DB (never nulled, never
+//       defaulted). This alone preserves an existing note when, e.g., rpe is
+//       sent on its own — PostgREST PATCH only writes the columns we send.
+//   (B) Refuse-when-empty — with no athlete-provided subjective field the tool
+//       writes nothing and returns a refusal, for both propose and commit. The
+//       server never invents a value to fill the call.
+// rpe is a RAW 1-10 integer (never a computed feel_score). `notes` maps to the
+// real column `subjective_notes` (there is no `notes` column). subjective_captured_at
+// is stamped only on a real subjective write. The activities table has no
+// updated_at column, so it is never referenced.
 export async function logSessionFeedback(client, args = {}, opts = {}) {
   const userId = opts.userId || ATHLETE_USER_ID;
   const activityId = args.activity_id;
@@ -448,26 +465,42 @@ export async function logSessionFeedback(client, args = {}, opts = {}) {
       return err('rpe must be a raw integer 1-10 (never a computed feel_score)');
     }
   }
-  // No silent-fill: only fields the caller explicitly supplied.
+  // (A) Partial update / no silent-fill: build the column set from ONLY the
+  // subjective fields the caller explicitly supplied. `notes` → subjective_notes.
   const payload = {};
   if (args.rpe !== undefined) payload.rpe = args.rpe; // RAW passthrough
   if (args.feel_legs !== undefined) payload.feel_legs = args.feel_legs;
   if (args.injury_flag !== undefined) payload.injury_flag = args.injury_flag;
   if (args.notes !== undefined) payload.subjective_notes = args.notes;
+
+  // (B) Refuse-when-empty: never fabricate subjective values to fill the call.
   if (Object.keys(payload).length === 0) {
-    return err('provide at least one of: rpe, feel_legs, injury_flag, notes');
+    return {
+      committed: false,
+      refused: true,
+      error:
+        'No athlete-provided subjective values supplied — nothing to write. ' +
+        'Ask the athlete for their RPE (1-10), how their legs felt, any injury ' +
+        "flag, and their own note, then call again with those exact values. " +
+        'Never infer, estimate, or summarise these from the activity metrics ' +
+        '(pace, HR, splits, distance, duration).',
+    };
   }
+
+  // Real DB column names that this call will change (excludes the timestamp).
+  const changed_columns = Object.keys(payload);
   payload.subjective_captured_at = new Date().toISOString();
 
   if (args.commit !== true) {
     return proposal('activities', `update (PATCH id=${activityId})`, payload, {
-      note: 'raw rpe passed through; no feel_score is computed or sent',
+      changed_columns,
+      note: 'only athlete-supplied fields are written; raw rpe passed through; no feel_score is computed or sent',
     });
   }
   try {
     const rows = await client.restPatch('activities', `id=eq.${activityId}&user_id=eq.${userId}`, payload);
     if (!rows || !rows.length) return err(`activity ${activityId} not found for this athlete`);
-    return { committed: true, row: rows[0] };
+    return { committed: true, row: rows[0], changed_columns };
   } catch (e) {
     return err(`log_session_feedback failed: ${e.message}`);
   }
@@ -631,7 +664,14 @@ export const TOOLS = [
   {
     name: 'log_session_feedback',
     description:
-      'Log subjective feedback on an activity (raw RPE 1-10, leg feel, injury flag, notes). Propose-by-default: requires commit:true to write; returns the mutated row.',
+      "Records the ATHLETE'S OWN subjective feedback on an activity: raw RPE (1-10), how the legs felt, an injury flag, " +
+      "and a free-text note. rpe, feel_legs, injury_flag and notes must be the athlete's verbatim words/values ONLY. " +
+      'NEVER infer, estimate, summarise, or generate them from activity metrics (pace, HR, splits, distance, duration) ' +
+      'for any sport, and NEVER write a third-person summary of the session into the note. If the athlete has not stated ' +
+      'a value, omit that field — do not fill it. Only the fields you supply are written; omitted fields are left ' +
+      'untouched (an absent note never overwrites an existing one). If no athlete-provided subjective field is supplied, ' +
+      'the tool refuses and writes nothing. Propose-by-default: requires commit:true to write; returns the mutated row ' +
+      'plus changed_columns.',
     fn: logSessionFeedback,
   },
   {

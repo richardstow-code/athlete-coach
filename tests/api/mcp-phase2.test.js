@@ -155,6 +155,53 @@ test('log_session_feedback rejects a non-raw rpe (0/11/non-int)', async () => {
   assert.equal(c.calls.patch.length, 0);
 });
 
+// ── AC-153 fabrication guardrail (the regression that destroyed a real note) ──
+// Synthetic activity id (NEVER 362, which is Richard's real run).
+const AC153_ID = 424242;
+
+test('AC-153 TEST 1 — refuse-when-empty: no subjective fields => no write + refusal (propose AND commit)', async () => {
+  const c = mockClient({});
+  // propose (commit:false)
+  const prop = await logSessionFeedback(c, { activity_id: AC153_ID }, { userId: 'u' });
+  assert.equal(prop.committed, false);
+  assert.equal(prop.refused, true);
+  assert.match(prop.error, /No athlete-provided subjective values/);
+  assert.equal(c.calls.patch.length, 0, 'propose with no fields writes nothing');
+  // commit:true with no subjective fields must ALSO be a no-op (this is the regression-catcher)
+  const done = await logSessionFeedback(c, { activity_id: AC153_ID, commit: true }, { userId: 'u' });
+  assert.notEqual(done.committed, true);
+  assert.equal(done.refused, true);
+  assert.equal(c.calls.patch.length, 0, 'commit with no fields still writes nothing');
+});
+
+test('AC-153 TEST 2 — partial update: rpe-only never sends subjective_notes (existing note preserved)', async () => {
+  const c = mockClient({});
+  const done = await logSessionFeedback(c, { activity_id: AC153_ID, rpe: 2, commit: true }, { userId: 'u' });
+  assert.equal(done.committed, true);
+  const body = c.calls.patch[0].body;
+  assert.equal(body.rpe, 2);
+  assert.ok(!('subjective_notes' in body), 'absent note column never sent => PATCH leaves the DB note untouched');
+  assert.ok(!('feel_legs' in body), 'no silent-fill of feel_legs');
+  assert.ok(!('injury_flag' in body), 'no silent-fill of injury_flag');
+  assert.deepEqual(done.changed_columns, ['rpe'], 'reports only the column it changed');
+  assert.ok(body.subjective_captured_at, 'capture timestamp stamped on a real write');
+});
+
+test('AC-153 TEST 4 — dry-run: propose with values mutates nothing; notes maps to subjective_notes', async () => {
+  const c = mockClient({});
+  const prop = await logSessionFeedback(
+    c,
+    { activity_id: AC153_ID, rpe: 2, feel_legs: 'normal', injury_flag: 'nothing', notes: 'Hot day, kept it Z2 and so was ok.' },
+    { userId: 'u' }
+  );
+  assert.equal(prop.committed, false);
+  assert.equal(c.calls.patch.length, 0, 'propose never writes');
+  assert.equal(prop.proposed.payload.subjective_notes, 'Hot day, kept it Z2 and so was ok.', 'notes -> subjective_notes column');
+  assert.ok(!('notes' in prop.proposed.payload), 'never writes a non-existent "notes" column');
+  assert.deepEqual(prop.changed_columns, ['rpe', 'feel_legs', 'injury_flag', 'subjective_notes']);
+  assert.ok(!('updated_at' in prop.proposed.payload), 'activities has no updated_at column');
+});
+
 test('propose_schedule_change: writes a pending schedule_changes row, NEVER scheduled_sessions', async () => {
   const c = mockClient({});
   const base = { change_type: 'reschedule', title: 'Move long run', reasoning: 'travel', new_date: '2026-06-25' };
@@ -251,6 +298,75 @@ test('WRITE+READBACK: log_session_feedback mutates the activity row', { skip }, 
     assert.equal(data.feel_legs, 'good');
     assert.equal(data.subjective_notes, 'felt strong');
     assert.ok(data.subjective_captured_at, 'capture timestamp set');
+  } finally { await d.from('activities').delete().eq('user_id', UID); }
+});
+
+test('AC-153 TEST 3 (live) — happy path: verbatim values, UPDATE not INSERT (created_at unchanged), capture stamped', { skip }, async () => {
+  const d = await db();
+  await d.from('activities').delete().eq('user_id', UID);
+  try {
+    const note = 'Very hot day but kept it zone 2 and so was ok. Legs a touch tired from hiking.';
+    const ins = await d.from('activities')
+      .insert({ user_id: UID, name: 'Test Run', type: 'Run', date: '2026-06-21T08:00:00Z', is_deleted: false })
+      .select('id,created_at').single();
+    assert.equal(ins.error, null, ins.error?.message);
+    const { id, created_at } = ins.data;
+    const done = await logSessionFeedback(
+      client(),
+      { activity_id: id, rpe: 2, feel_legs: 'normal', injury_flag: 'nothing', notes: note, commit: true },
+      { userId: UID }
+    );
+    assert.equal(done.committed, true);
+    assert.deepEqual([...done.changed_columns].sort(), ['feel_legs', 'injury_flag', 'rpe', 'subjective_notes']);
+    const { data } = await d.from('activities')
+      .select('rpe,feel_legs,injury_flag,subjective_notes,subjective_captured_at,created_at').eq('id', id).single();
+    assert.equal(data.rpe, 2);
+    assert.equal(data.feel_legs, 'normal');
+    assert.equal(data.injury_flag, 'nothing');
+    assert.equal(data.subjective_notes, note, 'note stored byte-for-byte — no summarisation/drift');
+    assert.ok(data.subjective_captured_at, 'capture timestamp set');
+    assert.equal(data.created_at, created_at, 'UPDATE not duplicate-INSERT — created_at unchanged');
+  } finally { await d.from('activities').delete().eq('user_id', UID); }
+});
+
+test('AC-153 TEST 2 (live) — rpe-only update preserves an existing note byte-for-byte', { skip }, async () => {
+  const d = await db();
+  await d.from('activities').delete().eq('user_id', UID);
+  try {
+    const realNote = "Very hot day but tried to keep it zone 2 and so was ok. Could tell I'd hiked the last two days but otherwise legs were ok";
+    const ins = await d.from('activities')
+      .insert({ user_id: UID, name: 'Test Run', type: 'Run', date: '2026-06-21T08:00:00Z', is_deleted: false, rpe: 2, feel_legs: 'normal', injury_flag: 'nothing', subjective_notes: realNote })
+      .select('id').single();
+    assert.equal(ins.error, null, ins.error?.message);
+    const id = ins.data.id;
+    // Caller supplies ONLY rpe — the note/feel/injury must survive untouched.
+    const done = await logSessionFeedback(client(), { activity_id: id, rpe: 4, commit: true }, { userId: UID });
+    assert.equal(done.committed, true);
+    assert.deepEqual(done.changed_columns, ['rpe']);
+    const { data } = await d.from('activities').select('rpe,feel_legs,injury_flag,subjective_notes').eq('id', id).single();
+    assert.equal(data.rpe, 4, 'rpe updated');
+    assert.equal(data.subjective_notes, realNote, 'existing note preserved byte-for-byte (the AC-153 regression)');
+    assert.equal(data.feel_legs, 'normal', 'feel_legs preserved');
+    assert.equal(data.injury_flag, 'nothing', 'injury_flag preserved');
+  } finally { await d.from('activities').delete().eq('user_id', UID); }
+});
+
+test('AC-153 TEST 1 (live) — empty feedback call mutates no column', { skip }, async () => {
+  const d = await db();
+  await d.from('activities').delete().eq('user_id', UID);
+  try {
+    const realNote = 'kept it easy, felt fine';
+    const ins = await d.from('activities')
+      .insert({ user_id: UID, name: 'Test Run', type: 'Run', date: '2026-06-21T08:00:00Z', is_deleted: false, rpe: 3, subjective_notes: realNote })
+      .select('id').single();
+    assert.equal(ins.error, null, ins.error?.message);
+    const id = ins.data.id;
+    const before = await d.from('activities').select('rpe,feel_legs,injury_flag,subjective_notes,subjective_captured_at').eq('id', id).single();
+    const res = await logSessionFeedback(client(), { activity_id: id, commit: true }, { userId: UID });
+    assert.notEqual(res.committed, true);
+    assert.equal(res.refused, true);
+    const after = await d.from('activities').select('rpe,feel_legs,injury_flag,subjective_notes,subjective_captured_at').eq('id', id).single();
+    assert.deepEqual(after.data, before.data, 'no column mutated by an empty feedback call');
   } finally { await d.from('activities').delete().eq('user_id', UID); }
 });
 
