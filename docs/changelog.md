@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-06-22 — AC-153: `log_session_feedback` fabrication guardrail (GATE 2 blocker)
+
+Branch `fix/ac-153-log-session-feedback-guardrail` (off `origin/main`). Server-side
+MCP fix in `api/_mcpTools.js` + `api/mcp.js` — **not** an EAS/native change.
+
+**What went wrong (verified live, 22 Jun).** During Gate-2.5, `log_session_feedback`
+was called against a real activity *without* athlete-provided subjective values:
+the calling model invented `rpe=3` and wrote a third-person metrics summary into
+`subjective_notes`, overwriting the athlete's real note. Both were committed; the
+real note was destroyed (since restored by the Architect). The write **plumbing
+was already correct** (correct row, partial payload, `subjective_captured_at` set,
+`subjective_notes` not `notes`, no `updated_at`) — the only defect was the missing
+fabrication guardrail. The fabrication originated in the **caller**, not the server.
+
+**Fix — three properties (`log_session_feedback`):**
+- **Partial update (already correct, now documented + tested):** only caller-supplied
+  fields are written; an omitted field is left untouched (PATCH sends only provided
+  columns), so `rpe`-only preserves an existing `subjective_notes` byte-for-byte.
+- **Refuse-when-empty:** with no athlete-provided subjective field the tool writes
+  nothing (propose *and* commit) and returns `{ committed:false, refused:true,
+  error:"No athlete-provided subjective values supplied…" }`.
+- **Schema/description hardening (the real gap):** the tool description and every
+  subjective param (`rpe`/`feel_legs`/`injury_flag`/`notes`) now carry an explicit
+  verbatim-only / never-infer-from-metrics clause to steer the calling model, for
+  **any** sport. No server-side synthesis existed to remove.
+- **Return contract:** `commit:true` returns the actual mutated row + `changed_columns`.
+  `rpe` stays a raw 1–10 integer (no `feel_score`, no inversion).
+
+**Tests (`tests/api/mcp-phase2.test.js`):** AC-153 TEST 1 (refuse-when-empty, no
+mutation — the regression-catcher), TEST 2 (rpe-only never sends `subjective_notes`;
+live readback preserves the note byte-for-byte), TEST 3 (live happy-path: verbatim
+values, `created_at` unchanged = UPDATE not INSERT, capture stamped), TEST 4 (dry-run
+mutates nothing; `notes`→`subjective_notes`). All 39 phase-2 cases green, incl. the
+gated live-readback layer. No new lint errors (baseline parity).
+
+**Out of scope / flagged:** the unmerged `mcp-oauth` branch carries its own copy of
+this tool and needs the same guardrail before it merges. The `feel` column is not
+currently writable by the tool (not expanded here — a separate decision).
+
 ## 2026-06-21 (later) — MCP server Phase 2 (nice-to-have reads + first writes)
 
 Code complete on branch `mcp-server-phase2` (worktree off origin/main 076941a).
