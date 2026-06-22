@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-22 (later 2) — AC-155: retrigger production deploy of main HEAD (Path B live)
+
+Docs-only commit to push a fresh commit onto `main` so Vercel deploys main HEAD.
+PR #5 (Path B / OAuth) merged as `35f1f9e` and main HEAD correctly carries BOTH the
+OAuth layer (AC-154) and the AC-153 guardrail, but Vercel never created a deployment
+for `35f1f9e` — production is still a manual redeploy of the older AC-153 build
+(`6d7ef6e`), so OAuth/Path B is not live (`/.well-known/oauth-protected-resource`
+404s). This retrigger also doubles as a diagnostic: if it deploys, auto-deploy is
+healthy; if no deployment appears for the new main commit, production auto-deploy is
+paused (Architect to re-enable in the Vercel Git settings). No code, `vercel.json`,
+or MCP files touched.
+
 ## 2026-06-22 (later) — AC-154: reconcile `mcp-oauth` (Path B) with main to fold in the AC-153 guardrail
 
 Branch `mcp-oauth` (PR #5) was cut from the Phase-2 tip (`8e55265`) **before**
