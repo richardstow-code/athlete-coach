@@ -50,6 +50,18 @@ Strava activities (upserted on `strava_id`) and manually logged activities. Sour
 | coach_analysis_model | text | model that produced it, e.g. `claude-haiku-4-5-20251001`. Added 2026-06-09 |
 | coach_analysis_version | int | default 1; incremented on forced regeneration. Added 2026-06-09 |
 | prompt_data_completeness | jsonb | audit of which metrics were present/NOT AVAILABLE for the analysis prompt + `generation_status` (`ok` \| `parse_failed`). Added 2026-06-09 |
+| rpe | integer | athlete's **raw** RPE 1-10 (never a computed feel_score). Subjective — athlete-supplied only |
+| feel | text | athlete's overall feel (often null). Subjective — athlete-supplied only |
+| feel_legs | text | athlete's words for how the legs felt (e.g. `normal` / `heavy`). Subjective — athlete-supplied only |
+| injury_flag | text | athlete's injury report (e.g. `nothing`). Subjective — athlete-supplied only |
+| subjective_notes | text | athlete's **verbatim** free-text note. **This is the note column — there is no `notes` column.** Subjective — athlete-supplied only; never a model-generated summary (AC-153) |
+| subjective_captured_at | timestamptz | when subjective feedback was last written (set by `log_session_feedback`) |
+
+> **No `updated_at` column.** The `activities` table has no `updated_at`; use
+> `created_at` as the UPDATE-vs-duplicate-INSERT canary. The subjective columns
+> (`rpe`, `feel`, `feel_legs`, `injury_flag`, `subjective_notes`) hold the
+> athlete's **own** feedback only — the MCP `log_session_feedback` tool writes
+> them verbatim and never derives them from activity metrics (AC-153 guardrail).
 
 **Actively used**: Yes — main data source for Home, ActivityDetail, Plan, Stats screens.
 

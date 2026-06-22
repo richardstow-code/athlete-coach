@@ -75,7 +75,7 @@ supplied are written).
 
 | Write tool | Target | Guarantees |
 |------------|--------|------------|
-| `log_session_feedback` | PATCH `activities` | writes **raw RPE** (1–10) + feel/injury/notes + `subjective_captured_at`; never computes a `feel_score` |
+| `log_session_feedback` | PATCH `activities` | writes the athlete's **own** subjective feedback: **raw RPE** (1–10) + feel_legs/injury_flag/notes + `subjective_captured_at`; never computes a `feel_score`; **verbatim-only** — never derives values from metrics, partial-update, refuse-when-empty (see below) |
 | `propose_schedule_change` | INSERT `schedule_changes` `status='pending'` | **never mutates `scheduled_sessions`**; `proposed_by='mcp'`; `title`+`reasoning` required (NOT NULL); the architect-owned DB trigger handles regen |
 | `write_coaching_memory` | UPSERT `coaching_memory` | idempotent on `(user_id,date,source)` — re-run merges, never double-inserts |
 | `update_athlete_profile` | UPSERT `athlete_settings` | **only** `weight_kg`, `goal_type`, `health_notes`; unknown/deferred fields are rejected (reported, not written). Race/goal edits live in `athlete_sports` — deferred |
@@ -85,6 +85,40 @@ source — per-activity `compliance_score` is instead surfaced as a field on
 `get_recent_activities` / `get_activity_detail`; the time-weighted/training-only/
 capped aggregate is flagged for a future RPC), `get_weather_context` (net-new
 outbound API), and race/goal profile edits.
+
+### `log_session_feedback` — verbatim-only contract (AC-153)
+
+Subjective feedback flows into `athleteContext` and every coaching surface, so a
+fabricated value poisons context everywhere. This tool therefore records the
+**athlete's own** words/values **only**:
+
+- **Never infer.** The server never derives `rpe` / `feel` / `feel_legs` /
+  `injury_flag` / `subjective_notes` from activity metrics (pace, HR, splits,
+  distance, duration) for **any** sport, and never writes a third-person summary
+  of the session into `subjective_notes`. The tool description and every
+  subjective param's schema description carry this verbatim-only / do-not-infer
+  rule to steer the calling model.
+- **Partial update.** Only the fields the caller explicitly supplied are written.
+  An omitted field is left **untouched** in the DB (never nulled/defaulted) — so
+  sending `rpe` alone preserves an existing `subjective_notes` byte-for-byte.
+- **Refuse-when-empty.** With no athlete-provided subjective field the tool
+  writes nothing (for both propose and commit) and returns
+  `{ committed:false, refused:true, error: "No athlete-provided subjective
+  values supplied…" }`.
+- **Mapping.** `notes` → the `subjective_notes` column (there is **no** `notes`
+  column). `rpe` is a **raw** 1–10 integer (low RPE on an easy/Z2 session is
+  good, never inverted to "poor feel"). `subjective_captured_at` is stamped only
+  on a real write. The `activities` table has **no `updated_at`** column.
+- **Return contract.** On `commit:true` returns `committed:true`, the **actual**
+  mutated DB row, and `changed_columns` (the real column names changed).
+
+> **Origin (AC-153, 22 Jun 2026):** a calling model invoked this tool *without*
+> athlete-provided values — it invented `rpe=3` and wrote a third-person metrics
+> summary into `subjective_notes`, overwriting the athlete's real note on a real
+> activity. The write **plumbing was already correct** (right row, partial
+> payload, `subjective_captured_at` set); the fabrication came from the caller.
+> The guardrail above (verbatim-only schema/description steering + the structural
+> partial-update / refuse-when-empty protections + regression tests) is the fix.
 
 ### Data-sparseness contract (NEVER FABRICATE)
 
