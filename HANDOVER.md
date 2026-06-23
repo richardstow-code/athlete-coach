@@ -1,3 +1,16 @@
+# HANDOVER — analyze-activity v1.2.3 (action dangle) — 2026-06-23
+
+- **Repo:** web. **Branch:** `fix/activity-card-v123` (off `origin/main`). **Vercel-only, NO native, NO eas.** Evidence: id=367 canary under v1.2.2 (`coach_analysis_version 4`) — verdict/labels/cadence all clean; only `action` dangled ("…to settle into a true").
+
+- **3.A action:** prompt makes it ONE short complete next-step; cap **110**; no `;`-joined run-on; no metric dump.
+- **3.B clampText:** ordered fallback — last sentence terminator → last clause punctuation (`, ; :`, drop the trailing partial clause) → word boundary + dangling-word strip + "determiner + content-word" ("a true") strip; **guarantees a terminal `.`** on fallback paths (cap-safe). Applies to all free-text fields.
+- **3.C `SCHEMA_VERSION` → `analyze-activity@v1.2.3`** (shape tag stays `v1.2`).
+- **Tests:** extended `analyze-activity-card-postbuild.test.js` (action ≤110/no-`;`/terminal, the "settle into a true" must-not-occur fixture, determiner-tail drop) — **61/61** across the four suites.
+
+**⚠ DEPLOY (architect):** merge → Vercel; re-fire id=367 canary; verify `action` is a short complete single sentence + nothing else regressed. **ONLY if clean** → run the FULL force-regen backfill (every card → v1.2.3, the single clean regen). THEN native PR #4 rides the EAS build (Richard). No EAS for v1.2.3 itself.
+
+---
+
 # HANDOVER — analyze-activity v1.2.2 (residual text fixes) — 2026-06-23
 
 - **Repo:** web. **Branch:** `fix/activity-card-v122` (off `origin/main`). **Vercel-only, NO native, NO eas.** Evidence: the **id=367 canary** regen under v1.2.1 (`coach_analysis_version 3`); the full backfill is HELD until this lands clean.

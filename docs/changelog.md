@@ -1,5 +1,12 @@
 # Changelog
 
+## analyze-activity v1.2.3 — action dangle (canary-driven) — 2026-06-23
+
+Single residual from the id=367 canary under v1.2.2: `verdict.action` was a semicolon-joined run-on that overran its cap and dangled on "…to settle into a true". Vercel-only.
+- **action** is now ONE short complete next-step: prompt cap lowered to **110**, no `;`-joined two-part instruction, no metric dump.
+- **`clampText`** fallback is robust + ordered: sentence terminator → clause punctuation (`, ; :`, dropping the trailing partial clause) → word boundary with dangling-word + "determiner + content-word" ("a true") strip — and always finishes with a terminal `.` on the fallback paths.
+- **`SCHEMA_VERSION` → `analyze-activity@v1.2.3`** for the regen backfill. Tests: 61/61 across the analyze-activity suites (incl. the "settle into a true" must-not-occur fixture).
+
 ## analyze-activity v1.2.2 — residual text fixes (canary-driven) — 2026-06-23
 
 The id=367 canary regen under v1.2.1 surfaced four residual defects (full backfill held until this lands). No re-architecture.
