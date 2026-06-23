@@ -1,3 +1,32 @@
+# HANDOVER — Analysis card flags resolved injuries as current (9808c786) — 2026-06-23
+
+- **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `fix/analyze-activity-injury-freshness` (worktree off `origin/main` @ `fdd89dd`). **Type:** Vercel (`api/analyze-activity.js`) + a DB-trigger migration — **no EAS**. Architect deploys (Vercel first, then the trigger via Supabase MCP) + behavioural gate.
+
+## STEP 1 — enumeration (verified live)
+
+- **1.1** `api/analyze-activity.js` generates `coach_analysis` **once** via `trg_analyze_activity_on_complete` (`AFTER UPDATE OF enrichment_status → 'complete'`, `WHEN coach_analysis IS NULL`). It reads active injuries at gen time from `injury_reports?status=eq.active` (line 480) and freezes the prose. **No trigger exists on `injury_reports`** (confirmed via `pg_trigger`) → a later resolve never updates the card.
+- **1.2** Canonical injury source = `injury_reports` (status active/resolved). analyze-activity is **already standardised on it** for the active-injury list; `athlete_settings.health_flags` is read as general context only, not the active/resolved decision. So the bug is **staleness, not source-confusion**.
+- **1.3** Native (`app/activity/[id].tsx:532` select → `:1128` render) renders the stored `coach_analysis` **verbatim**, no live injury re-query / no serve-time overlay.
+
+## STEP 2 — decision + fix
+
+**Option (a) (re-query live on render) is ruled out by the brief's own constraints** — the card is client-rendered, so reconciling on render = native change = EAS, but this brief is Vercel/no-EAS. ⇒ **(b) regenerate-on-source-change.** Rulings taken (Richard): regen the *analysed-since-`reported_at`* set; **include zones**; **also harden analyze-activity** (logic in the deploy, not just the trigger).
+
+- **`api/analyze-activity.js`** (Vercel): adds `injuryFingerprint` / `zoneFingerprint` / `stableStringify` / `shouldSkipRegen`; stores an **injury + zone source fingerprint** in `prompt_data_completeness` on every successful generation; on a `force` whose `reason` is `injury_change`/`zone_change`, **skips the LLM when that fingerprint is unchanged** (so the triggers are safe to over-fire). A manual `force` always regenerates; a legacy card with no stored fingerprint regenerates once.
+- **`supabase/migrations/20260623_analyze_activity_regen_on_injury_zone_change.sql`** (architect applies): two triggers mirroring `analyze_activity_on_complete` (SECURITY DEFINER, `search_path=''`, vault `analyze_activity_secret`, same URL/headers): `trg_regen_analysis_on_injury` (`injury_reports` status crosses active↔not-active → POST `force` for activities with `coach_analysis_generated_at >= reported_at`) and `trg_regen_analysis_on_zone` (`athlete_settings.training_zones`/`hr_zones` change → POST `force` for analysed activities in the last 14 days). Single-athlete `WHEN` guard.
+
+Net: a resolved injury drops out of the regenerated card (and its medical-review line) within one regen; the fingerprint guard prevents needless LLM calls / version churn on cards whose injury+zone context is unchanged.
+
+## STEP 3 — test
+
+`tests/api/analyze-activity-injury-freshness.test.js` — **5/5** (node --test): `injuryFingerprint` (none/empty, order-independent, **changes when an injury resolves**), `zoneFingerprint` (key-order stable, prefers hr_zones), `shouldSkipRegen` (skips only when injury AND zone fps unchanged on a trigger force; regenerates on change / manual force / legacy no-fp). Existing `analyze-activity.test.js` still **38/38**. Architect behavioural gate: resolve an active injury → the activity's card regenerates without the active / medical-review language (mirror for a zone change).
+
+**RISK:** coaching-trust / regeneration cost — mitigated by the fingerprint skip-guard (over-firing triggers are cheap no-ops) and bounded activity sets. **No native change.** **Deploy order:** analyze-activity (Vercel) BEFORE the trigger migration (the triggers rely on the new `reason`/fingerprint behaviour). Confirm the Vercel deployment-ID flip.
+
+> Note: this branch and `fix/recovery-data-divergence` (#3) both prepend to `HANDOVER.md`; expect a trivial top-of-file conflict when the second merges.
+
+---
+
 # HANDOVER — Recovery-data divergence fix (coaching-context RPC) — 2026-06-23
 
 - **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `fix/recovery-data-divergence` (worktree off `origin/main` @ `fdd89dd`). **Type:** Supabase RPC (`get_athlete_coaching_context`) — **backend / no EAS**. Architect deploys via Supabase MCP + behavioural gate. CC does not self-merge.
