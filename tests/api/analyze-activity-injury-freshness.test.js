@@ -13,6 +13,7 @@ import {
   zoneFingerprint,
   stableStringify,
   shouldSkipRegen,
+  SCHEMA_VERSION,
 } from '../../api/analyze-activity.js';
 
 test('injuryFingerprint: none when no active injuries; order-independent', () => {
@@ -52,7 +53,7 @@ test('zoneFingerprint: none when absent; stable across key order; prefers hr_zon
 test('shouldSkipRegen: skips a trigger force only when injury AND zone fingerprints are unchanged', () => {
   const injuryFp = 'left_calf|moderate|1';
   const zoneFp = stableStringify({ z1: 110 });
-  const matchAudit = { injury_fingerprint: injuryFp, zone_fingerprint: zoneFp };
+  const matchAudit = { injury_fingerprint: injuryFp, zone_fingerprint: zoneFp, prompt_version: SCHEMA_VERSION };
 
   // unchanged source on a trigger fire → skip the LLM
   assert.equal(shouldSkipRegen({ force: true, regenReason: 'injury_change', prevAudit: matchAudit, injuryFp, zoneFp }), true);

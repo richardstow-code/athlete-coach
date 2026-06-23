@@ -157,7 +157,8 @@ test('@minor buildCompleteness: full run has empty-ish not_available', () => {
   assert.equal(c.has_planned_session, true)
   assert.ok(!c.not_available.includes('hr_zones'))
   assert.ok(!c.not_available.includes('rpe')) // rpe=3 present
-  assert.equal(c.prompt_version, 'analyze-activity@v1.1')
+  assert.ok(c.not_available.includes('fuel')) // no nutrition channel — always NA
+  assert.equal(c.prompt_version, 'analyze-activity@v1.2')
 })
 test('@minor buildCompleteness: missing channels land in not_available', () => {
   const bare = completeRun({ avg_hr: null, max_hr: null, avg_cadence: null, pace_per_km: null, elevation_m: null, splits_metric: null, rpe: null })
@@ -233,7 +234,9 @@ test('@minor buildAnalysisPrompt: names NOT AVAILABLE metrics and forbids fabric
   assert.match(system, /NOT AVAILABLE/)
   assert.match(system, /TAG MISMATCH/)
   assert.match(system, /Output ONLY a single complete, valid JSON object/)
-  assert.match(system, /<= 90 chars/) // brevity caps bound the output size
+  assert.match(system, /"verdict"/)         // v1.2 schema
+  assert.match(system, /metric_blocks/)
+  assert.match(system, /<= 90/)             // brevity caps bound the output size
   assert.ok(user.includes('not_available') || user.includes('DATA COMPLETENESS'))
   // Truncation fix: send aggregates, NOT 140 raw stream samples.
   assert.ok(!user.includes('DOWNSAMPLED STREAM'), 'raw per-sample stream must not be sent to the model')
@@ -275,18 +278,18 @@ test('@minor buildAnalysisPrompt: no injuries → "none active", never invents o
 
 // ── parseAnalysisJSON / coerceAnalysisShape ─────────────────────────────────
 const VALID = JSON.stringify({
-  headline: 'Solid Z2 base run, held the easy line',
   sport: 'run',
-  execution_vs_plan: { planned_session: 'Easy 10k', verdict: 'as_planned', note: 'matched the easy intent' },
-  effort_read: { primary_zone: 'z2', distribution_note: '40min Z2' },
-  key_signals: [{ label: 'RPE', value: '3/10', read: 'good easy execution' }],
+  verdict: { call: 'Solid Z2 base run, held the easy line', plan_verdict: 'as_planned', action: null },
+  type_inference: null,
+  summary: 'Matched the easy intent; HR sat in Z2 throughout.',
+  measured_against: 'Easy 10k',
+  metric_blocks: [{ metric_key: 'hr', label: 'Heart rate', canonical_value: 'Z2 40m', session_line: 'avg 132', plan_line: null, annotation: 'Right in the easy band.', data_available: true }],
   flags: [],
-  coach_note: 'Textbook easy run.',
 })
 test('@minor parseAnalysisJSON: parses clean JSON', () => {
   const r = parseAnalysisJSON(VALID)
   assert.equal(r.ok, true)
-  assert.equal(r.value.execution_vs_plan.verdict, 'as_planned')
+  assert.equal(r.value.verdict.plan_verdict, 'as_planned')
 })
 test('@minor parseAnalysisJSON: strips a markdown fence', () => {
   const r = parseAnalysisJSON('```json\n' + VALID + '\n```')
@@ -298,16 +301,16 @@ test('@minor parseAnalysisJSON: extracts JSON from surrounding prose', () => {
 })
 test('@minor parseAnalysisJSON: fails on garbage and on missing required fields', () => {
   assert.equal(parseAnalysisJSON('not json at all').ok, false)
-  assert.equal(parseAnalysisJSON('{"sport":"run"}').ok, false) // no headline/coach_note
+  assert.equal(parseAnalysisJSON('{"sport":"run"}').ok, false) // no verdict.call/summary
   assert.equal(parseAnalysisJSON('').ok, false)
 })
 test('@minor coerceAnalysisShape: normalises partial objects to the contract', () => {
-  const c = coerceAnalysisShape({ headline: 'x'.repeat(200), coach_note: 'note', flags: [{ type: 't', severity: 'bogus', message: 'm' }] })
-  assert.equal(c.headline.length, 90) // clamped
-  assert.equal(c.execution_vs_plan.verdict, 'no_plan')
-  assert.equal(c.effort_read.primary_zone, 'n/a')
+  const c = coerceAnalysisShape({ verdict: { call: 'x'.repeat(200), plan_verdict: 'bogus' }, summary: 'note', flags: [{ type: 't', severity: 'bogus', message: 'm' }] })
+  assert.equal(c.schema, 'v1.2')
+  assert.equal(c.verdict.call.length, 90) // clamped
+  assert.equal(c.verdict.plan_verdict, 'no_plan') // bogus → no_plan
   assert.equal(c.flags[0].severity, 'info') // bogus → info
-  assert.ok(Array.isArray(c.key_signals))
+  assert.ok(Array.isArray(c.metric_blocks))
 })
 
 // ── viennaDate ──────────────────────────────────────────────────────────────
