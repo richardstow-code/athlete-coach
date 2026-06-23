@@ -1,5 +1,15 @@
 # Changelog
 
+## analyze-activity v1.2.1 — card-quality corrections (post-build) — 2026-06-23
+
+Targeted fixes to the v1.2 coach_analysis after on-device review (evidence: stored card id=367). No re-architecture.
+- **Mid-word truncation killed:** `coerceAnalysisShape` now uses a boundary-safe `clampText` (last sentence end, else last word boundary, no dangling punctuation) instead of a hard `.slice()`. Caps raised to fit complete sentences (call ≤120, action ≤140, summary ≤450, session/plan_line ≤120, annotation ≤220, flag ≤120). Prompt also instructs the model to write complete sentences within each cap.
+- **Internal-term leak killed:** prompt bans naming internal mechanisms ("bucket", "qualitative bucket", "correlation", "coefficient", "model", "schema", "fingerprint"); grade impact is stated as plain terrain language (the "as qualitative bucket confirms" leak).
+- **One-home scope:** a metric finding (decoupling/drift/surge) appears in exactly one place — its own block annotation; summary no longer restates it; flags are terse label-style notes, not prose duplicating an annotation (the decoupling-stated-3× bug).
+- **`SCHEMA_VERSION` → `analyze-activity@v1.2.1`** so the regen fingerprint guard re-generates every stored v1.2 card on the architect's force-regen backfill.
+- Native render correction (rides next EAS build): each metric_block renders inside its graph card (single integrated unit), flags as chips, pace-zone effort label removed; see the native changelog/screens.
+- Tests: `tests/api/analyze-activity-card-postbuild.test.js` (8) + updated v1.2.1 fixtures. 55/55 across the analyze-activity suites.
+
 ## 2026-06-22 (later 4) — AC-157: MCP server Phase 3 (power / high-blast-radius) + consent scope-split fix
 
 Adds 6 tools to the MCP server (now **20 total**: 11 read, 9 write) in
