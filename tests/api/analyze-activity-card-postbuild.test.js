@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { clampText, coerceAnalysisShape, SCHEMA_VERSION, buildAnalysisPrompt } from '../../api/analyze-activity.js';
 
 test('SCHEMA_VERSION bumped so the regen guard re-generates v1.2 cards', () => {
-  assert.equal(SCHEMA_VERSION, 'analyze-activity@v1.2.2');
+  assert.equal(SCHEMA_VERSION, 'analyze-activity@v1.2.3');
 });
 
 test('clampText: returns short strings unchanged', () => {
@@ -27,15 +27,15 @@ test('clampText: cuts at a sentence end when one sits past the halfway point', (
   assert.ok(/[.!?]$/.test(out), 'ends on sentence punctuation');
 });
 
-test('clampText: no sentence end → cuts at the last WORD boundary, never mid-word', () => {
-  assert.equal(clampText('alpha beta gamma delta', 12), 'alpha beta');
-  // a long single clause with an early period (before half) falls back to word boundary
-  const out = clampText('Z1: 6 min. Z2 sixty-three minutes ninety-two percent of the run plus more text', 40);
+test('clampText: no sentence end → word boundary, never mid-word, ends in terminal punctuation (v1.2.3)', () => {
+  assert.equal(clampText('alpha beta gamma delta', 12), 'alpha beta.'); // v1.2.3: completes with a period
+  const src = 'Z1: 6 min. Z2 sixty-three minutes ninety-two percent of the run plus more text';
+  const out = clampText(src, 40);
   assert.ok(out.length <= 40);
-  assert.ok(!/\w$/.test(out) === false, 'ends on a word char (complete word)');
-  // the tail token must be a WHOLE word from the source (no partial like "minu")
-  const lastWord = out.split(/\s+/).pop().replace(/[.!?,;:]+$/, '');
-  assert.ok(('Z1: 6 min. Z2 sixty-three minutes ninety-two percent of the run plus more text').includes(lastWord));
+  assert.ok(/[.!?]$/.test(out), `ends in terminal punctuation: ${JSON.stringify(out)}`);
+  // the last token is a WHOLE word from the source (no partial like "minu")
+  const lastWord = out.replace(/[.!?]+$/, '').split(/\s+/).pop();
+  assert.ok(src.includes(lastWord), `whole word tail: ${lastWord}`);
 });
 
 test('clampText: reproduces the id=367 failures cleanly (no mid-word tail)', () => {
@@ -119,6 +119,29 @@ test('v1.2.2 label: abbreviated before the cap, never mid-word', () => {
 test('v1.2.2 verdict.call cap is 80 (short qualitative call)', () => {
   const c = coerceAnalysisShape({ verdict: { call: 'x'.repeat(200), plan_verdict: 'as_planned' }, summary: 's', flags: [] });
   assert.equal(c.verdict.call.length, 80);
+});
+
+test('v1.2.3 action: ≤110, no ";", ends in terminal punctuation, no dangling fragment', () => {
+  // the live id=367 v4 action — semicolon-joined run-on that dangled on "a true"
+  const c = coerceAnalysisShape({
+    verdict: {
+      call: 'Easy run', plan_verdict: 'as_planned',
+      action: 'Monitor HR creep in closing km on future easy runs; consider pacing slightly more conservatively in the first 2-3 km to settle into a true',
+    },
+    summary: 's', flags: [],
+  });
+  const action = c.verdict.action;
+  assert.ok(action.length <= 110, `len ${action.length}`);
+  assert.ok(!action.includes(';'), 'no semicolon run-on');
+  assert.ok(/[.!?]$/.test(action), 'ends in terminal punctuation');
+  assert.ok(!/settle into a true/i.test(action), 'the "settle into a true" fragment must NOT occur');
+  assert.ok(!/\b(a|an|the|into|to|and|of|with)$/i.test(action.replace(/[.!?]+$/, '')), 'no trailing dangling word');
+});
+
+test('v1.2.3 clampText: drops a trailing "determiner + content word" fragment with no noun', () => {
+  const out = clampText('We need to find a true north star to chase', 24);
+  assert.ok(/[.!?]$/.test(out));
+  assert.ok(!/a true$/i.test(out.replace(/[.!?]+$/, '')), `must not end on "a true": ${JSON.stringify(out)}`);
 });
 
 test('prompt carries the post-build rules (no-internal-terms, one-home scope, complete-sentences)', () => {

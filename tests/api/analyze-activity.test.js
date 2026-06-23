@@ -158,7 +158,7 @@ test('@minor buildCompleteness: full run has empty-ish not_available', () => {
   assert.ok(!c.not_available.includes('hr_zones'))
   assert.ok(!c.not_available.includes('rpe')) // rpe=3 present
   assert.ok(c.not_available.includes('fuel')) // no nutrition channel — always NA
-  assert.equal(c.prompt_version, 'analyze-activity@v1.2.2')
+  assert.equal(c.prompt_version, 'analyze-activity@v1.2.3')
 })
 test('@minor buildCompleteness: missing channels land in not_available', () => {
   const bare = completeRun({ avg_hr: null, max_hr: null, avg_cadence: null, pace_per_km: null, elevation_m: null, splits_metric: null, rpe: null })

@@ -259,7 +259,7 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
 // Schema/prompt version (card redesign). Stored in prompt_data_completeness; the
 // PR #11 fingerprint guard (shouldSkipRegen) includes it, so a deploy regenerates
 // any still-v1.1 card under the new schema on its next (re)invocation.
-export const SCHEMA_VERSION = 'analyze-activity@v1.2.2';
+export const SCHEMA_VERSION = 'analyze-activity@v1.2.3';
 
 // Pace formatter — speed (m/s) → "m:ss" per km, or null when unknown. NEVER feed
 // decimal minutes to the model (the "5:73" bug); always mm:ss.
@@ -339,7 +339,7 @@ ABSOLUTE RULES:
 4. PLAN-FIRST. If a planned session is supplied, set verdict.plan_verdict by comparing actual zone/duration/intensity to it and put the planned brief in measured_against. If none, plan_verdict="no_plan" and measured_against=null.
 5. TAG MISMATCH. If workout_type / the planned session implies intensity (tempo/threshold/interval/hard) but the effort was actually easy (Z1-Z2 / low RPE), surface a flag (type "tag_mismatch") AND set type_inference (e.g. "Logged easy; planned threshold — treating as a swap"). Never ask about it.
 6. INJURY-AWARE. Only surface injuries present in the ACTIVE INJURIES input for THIS analysis — NEVER carry forward a previously-seen injury. If one is listed, acknowledge in one short clause how THIS session interacts with the area; an injury whose follow_up_overdue is true is the MOST important — surface it as a "warn" flag ("follow-up overdue since <date>"). Do not invent injuries.
-7. SCOPE — ONE HOME PER FINDING. Every fact appears in exactly ONE field. verdict.call is the ONLY bottom-line statement AND is a SHORT QUALITATIVE judgement: one complete sentence ≤80 chars, plain language, with NO numbers and NO metric values (pace mm:ss, HR, zone %, RPE, duration) — those live ONLY in metric_blocks + summary. Good: "Easy Z2 run, executed exactly to plan." BAD: "68 min easy Z2 run at 5:32/km with HR 92% in Z2 and RPE 2, matching the…" (metric dump + dangling). A metric-specific finding (aerobic decoupling, HR drift, late surge, fade, cadence loss, etc.) lives in EXACTLY ONE place: its own metric_block annotation (HR findings — incl. decoupling/drift — go in the hr block ONLY). summary may sketch the overall session arc + plan context but MUST NOT restate any block's specific finding or repeat any annotation. Each annotation describes ONLY its own metric; never restate the verdict or summary. A flag may raise a finding INSTEAD of (never in addition to) its annotation.
+7. SCOPE — ONE HOME PER FINDING. Every fact appears in exactly ONE field. verdict.call is the ONLY bottom-line statement AND is a SHORT QUALITATIVE judgement: one complete sentence ≤80 chars, plain language, with NO numbers and NO metric values (pace mm:ss, HR, zone %, RPE, duration) — those live ONLY in metric_blocks + summary. Good: "Easy Z2 run, executed exactly to plan." BAD: "68 min easy Z2 run at 5:32/km with HR 92% in Z2 and RPE 2, matching the…" (metric dump + dangling). A metric-specific finding (aerobic decoupling, HR drift, late surge, fade, cadence loss, etc.) lives in EXACTLY ONE place: its own metric_block annotation (HR findings — incl. decoupling/drift — go in the hr block ONLY). summary may sketch the overall session arc + plan context but MUST NOT restate any block's specific finding or repeat any annotation. Each annotation describes ONLY its own metric; never restate the verdict or summary. A flag may raise a finding INSTEAD of (never in addition to) its annotation. verdict.action (when present) is likewise ONE short, complete next-step sentence (≤110 chars) — a single instruction, NOT two clauses joined by ';', and no metric dump. Good: "Settle into pace over the first 2-3 km on easy runs to limit late HR creep."
 8. NO META / NO QUESTIONS / NO INTERNAL TERMS. Never ask questions, never narrate method, never output raw statistics (r/p values, coefficients) or "Check:" clauses. NEVER name an internal mechanism or data artifact — banned: "bucket", "qualitative bucket", "correlation", "decoupling coefficient", "model", "schema", "fingerprint". State only the plain conclusion (terrain example: write "Flat route — terrain wasn't a factor", NOT "minimal grade impact as the qualitative bucket confirms"). Grade impact is supplied as a qualitative descriptor — express it as plain terrain language, never the mechanism, never a coefficient.
 9. PACE FORMAT. Pace values are supplied pre-formatted as mm:ss. Reproduce them EXACTLY into canonical_value / session_line. NEVER compute or reformat a pace yourself.
 10. FUEL. Do NOT comment on fuelling/hydration unless nutrition data for THIS session is provided (it is in the NOT AVAILABLE list when absent).
@@ -349,7 +349,7 @@ ABSOLUTE RULES:
 OUTPUT: Output ONLY a single complete, valid JSON object matching the schema below — no markdown, no code fence, no prose before or after. Do not wrap it in \`\`\`. Write complete sentences within every cap. Exactly this shape:
 {
   "sport": "${sport}",
-  "verdict": { "call": "string <= 80 — SHORT qualitative bottom-line, ONE complete sentence, NO numbers / NO metric values (pace/HR/zone%/RPE/duration)", "plan_verdict": "as_planned|easier|harder|off_plan|no_plan", "action": "string|null <= 140 — at most ONE next-step line" },
+  "verdict": { "call": "string <= 80 — SHORT qualitative bottom-line, ONE complete sentence, NO numbers / NO metric values (pace/HR/zone%/RPE/duration)", "plan_verdict": "as_planned|easier|harder|off_plan|no_plan", "action": "string|null <= 110 — ONE short complete next-step sentence; a single instruction, NOT two clauses joined by ';'; no metric dump" },
   "type_inference": "string|null <= 120 — only when logged type != planned type; else null",
   "summary": "string <= 450 — holistic session arc + plan context; MUST NOT repeat any annotation or a block's specific finding",
   "measured_against": "string|null — the planned-session brief (not a verdict restatement)",
@@ -433,35 +433,51 @@ const DANGLING_WORDS = new Set([
   'its', 'their', 'his', 'her', 'this', 'no',
 ]);
 
+// Determiners that, with a trailing content word and no noun, leave a fragment
+// ("a true", "the steady") — dropped in the word-boundary fallback (v1.2.3 3.B).
+const DETERMINERS = new Set(['a', 'an', 'the', 'this', 'that', 'its', 'their', 'his', 'her']);
+
 export function clampText(s, max) {
   const str = String(s ?? '').trim();
   if (str.length <= max) return str;
   const slice = str.slice(0, max);
-  // 1) PREFER the last sentence terminator (. ! ?) at/under the cap — cut there.
-  let se = -1;
+  const wordCount = (t) => t.trim().split(/\s+/).filter(Boolean).length;
+  // Guarantee a clean, complete-reading end: strip trailing clause punctuation,
+  // then append a period if there's room and it doesn't already end in . ! ?.
+  const finish = (t) => {
+    const x = t.replace(/[\s,;:—–-]+$/, '').trim();
+    if (!x || /[.!?]$/.test(x)) return x;
+    return x.length < max ? x + '.' : x;
+  };
+
+  // 1) Last sentence terminator (. ! ?) → keep the whole sentence (if non-trivial).
+  let term = -1;
   for (let i = 0; i < slice.length; i++) {
-    if (/[.!?]/.test(slice[i]) && (i + 1 >= slice.length || /\s/.test(slice[i + 1]))) se = i;
+    if (/[.!?]/.test(slice[i]) && (i + 1 >= slice.length || /\s/.test(slice[i + 1]))) term = i;
   }
-  if (se >= Math.floor(max * 0.5)) return slice.slice(0, se + 1).trim();
-  // 2) No usable terminator (a single over-long sentence) → trim at the last word
-  //    boundary, then strip any trailing dangling function word(s) so we never end
-  //    on a hanging word ("…matching the" → "…matching").
+  if (term >= 0) {
+    const cand = slice.slice(0, term + 1).trim();
+    if (wordCount(cand) >= 4) return cand;
+  }
+  // 2) Last CLAUSE punctuation (, ; :) → drop the trailing partial clause entirely
+  //    ("…easy runs; consider … a true" → "…easy runs."). v1.2.2 only used the comma.
+  let clause = -1;
+  for (let i = 0; i < slice.length; i++) if (/[,;:]/.test(slice[i])) clause = i;
+  if (clause >= 0) {
+    const cand = slice.slice(0, clause);
+    if (wordCount(cand) >= 4) return finish(cand);
+  }
+  // 3) No punctuation to lean on → last word boundary, strip trailing dangling
+  //    function word(s), then drop a "determiner + content word" tail with no noun.
   const sp = slice.lastIndexOf(' ');
+  const isDangling = (w) => DANGLING_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, ''));
   let words = (sp > 0 ? slice.slice(0, sp) : slice).replace(/[\s,;:—–-]+$/, '').trim().split(/\s+/);
-  while (words.length > 1 && DANGLING_WORDS.has(words[words.length - 1].toLowerCase().replace(/[^a-z]/g, ''))) {
-    words.pop();
+  while (words.length > 1 && isDangling(words[words.length - 1])) words.pop();
+  if (words.length >= 2 && DETERMINERS.has(words[words.length - 2].toLowerCase().replace(/[^a-z]/g, ''))) {
+    words.splice(words.length - 2, 2);
+    while (words.length > 1 && isDangling(words[words.length - 1])) words.pop();
   }
-  let base = words.join(' ').replace(/[\s,;:—–-]+$/, '').trim();
-  // 3) Still a mid-clause fragment (no terminal punctuation) with a short trailing
-  //    tail after the last comma → drop back to that comma ("…RPE 2, matching" → "…RPE 2").
-  if (!/[.!?]$/.test(base)) {
-    const comma = base.lastIndexOf(',');
-    if (comma > 0) {
-      const trailing = base.slice(comma + 1).trim().split(/\s+/).filter(Boolean);
-      if (trailing.length <= 4) base = base.slice(0, comma);
-    }
-  }
-  return base.replace(/[\s,;:—–-]+$/, '').trim();
+  return finish(words.join(' '));
 }
 
 // Defensive normalisation to the v1.2 contract so the native UI can render without
@@ -493,7 +509,7 @@ export function coerceAnalysisShape(obj) {
     verdict: {
       call: clampText(v.call, 80),                 // v1.2.2: short qualitative call, metric-free
       plan_verdict: PLAN_VERDICTS.includes(v.plan_verdict) ? v.plan_verdict : 'no_plan',
-      action: v.action != null ? clampText(v.action, 140) : null,
+      action: v.action != null ? clampText(v.action, 110) : null, // v1.2.3: one short next-step
     },
     type_inference: obj.type_inference != null ? clampText(obj.type_inference, 120) : null,
     summary: clampText(obj.summary, 450),
