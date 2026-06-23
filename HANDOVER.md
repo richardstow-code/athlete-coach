@@ -1,3 +1,18 @@
+# HANDOVER — Activity card POST-BUILD corrections · Chunk A (analyze-activity v1.2.1) — 2026-06-23
+
+- **Repo:** web. **Branch:** `fix/activity-card-postbuild` (off `origin/main`). **Vercel/no-EAS.** Architect deploys + **re-runs the force-regen backfill** (required — see below).
+
+Targeted fixes (no re-architecture), evidence = stored card **id=367**:
+- **1.A mid-word truncation:** added boundary-safe `clampText` (exported) — last sentence end, else last word boundary, strips dangling punctuation, NEVER mid-word. `coerceAnalysisShape` delegates to it; caps raised (call ≤120, action ≤140, summary ≤450, session/plan_line ≤120, annotation ≤220, flag ≤120). Prompt rule 12 = complete sentences within caps + terse flags.
+- **1.B internal-term leak:** rule 8 bans "bucket"/"qualitative bucket"/"correlation"/"coefficient"/"model"/"schema"/"fingerprint"; grade stated as plain terrain language (the user-prompt GRADE line + rule 8 both fixed — the old "reference the bucket" wording was the leak source).
+- **1.C one-home scope:** rule 7 — a metric finding (decoupling/drift/surge) lives in its block annotation ONLY; summary must not restate it; a flag may raise it *instead*, terse label-style. Kills decoupling-stated-3×.
+- **`SCHEMA_VERSION` → `analyze-activity@v1.2.1`** so `shouldSkipRegen`'s `prompt_version !== SCHEMA_VERSION` gate forces re-gen of every stored v1.2 card.
+- **Tests:** `tests/api/analyze-activity-card-postbuild.test.js` (8) + updated fixtures in `analyze-activity.test.js`. **55/55** across the four analyze-activity suites.
+
+**⚠ DEPLOY (architect):** 1) merge + deploy to Vercel; verify a fresh run — no mid-word cut, no "bucket"/internal terms, decoupling once. 2) **RE-RUN the force-regen backfill** (same A4 DO-block) so all stored cards (incl. 367) adopt v1.2.1 — existing v1.2 cards keep the truncated/leaked/duplicated text until regenerated. Native render correction (Chunk C) ships on the next EAS build.
+
+---
+
 # HANDOVER — Activity card redesign #6 · Chunk A (analyze-activity v1.2) — 2026-06-23
 
 - **Repo:** web. **Branch:** `feat/activity-card-redesign` **stacked on `fix/analyze-activity-injury-freshness` (PR #11)** — PRESERVES #11's force/fingerprint/triggers. **Vercel/no-EAS.** Architect deploys (after #11) + behavioural-gates + runs the one-off backfill.

@@ -259,7 +259,7 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
 // Schema/prompt version (card redesign). Stored in prompt_data_completeness; the
 // PR #11 fingerprint guard (shouldSkipRegen) includes it, so a deploy regenerates
 // any still-v1.1 card under the new schema on its next (re)invocation.
-export const SCHEMA_VERSION = 'analyze-activity@v1.2';
+export const SCHEMA_VERSION = 'analyze-activity@v1.2.1';
 
 // Pace formatter — speed (m/s) → "m:ss" per km, or null when unknown. NEVER feed
 // decimal minutes to the model (the "5:73" bug); always mm:ss.
@@ -339,23 +339,24 @@ ABSOLUTE RULES:
 4. PLAN-FIRST. If a planned session is supplied, set verdict.plan_verdict by comparing actual zone/duration/intensity to it and put the planned brief in measured_against. If none, plan_verdict="no_plan" and measured_against=null.
 5. TAG MISMATCH. If workout_type / the planned session implies intensity (tempo/threshold/interval/hard) but the effort was actually easy (Z1-Z2 / low RPE), surface a flag (type "tag_mismatch") AND set type_inference (e.g. "Logged easy; planned threshold — treating as a swap"). Never ask about it.
 6. INJURY-AWARE. Only surface injuries present in the ACTIVE INJURIES input for THIS analysis — NEVER carry forward a previously-seen injury. If one is listed, acknowledge in one short clause how THIS session interacts with the area; an injury whose follow_up_overdue is true is the MOST important — surface it as a "warn" flag ("follow-up overdue since <date>"). Do not invent injuries.
-7. SCOPE (no repetition). Every fact appears in exactly ONE field. verdict.call is the ONLY bottom-line statement. summary synthesises across metrics + adds plan context but MUST NOT repeat any metric_block annotation. Each annotation describes ONLY its own metric; never restate the verdict or summary inside an annotation.
-8. NO META / NO QUESTIONS. Never ask questions, never narrate method, never output raw statistics (correlation coefficients, r/p values, internal model names) or "Check:" clauses. State conclusions in plain coaching language. Grade impact is supplied as a qualitative bucket — reference the bucket, never a coefficient.
+7. SCOPE — ONE HOME PER FINDING. Every fact appears in exactly ONE field. verdict.call is the ONLY bottom-line statement. A metric-specific finding (aerobic decoupling, HR drift, late surge, fade, cadence loss, etc.) lives in EXACTLY ONE place: its own metric_block annotation (HR findings — incl. decoupling/drift — go in the hr block ONLY). summary may sketch the overall session arc + plan context but MUST NOT restate any block's specific finding or repeat any annotation. Each annotation describes ONLY its own metric; never restate the verdict or summary. A flag may raise a finding INSTEAD of (never in addition to) its annotation.
+8. NO META / NO QUESTIONS / NO INTERNAL TERMS. Never ask questions, never narrate method, never output raw statistics (r/p values, coefficients) or "Check:" clauses. NEVER name an internal mechanism or data artifact — banned: "bucket", "qualitative bucket", "correlation", "decoupling coefficient", "model", "schema", "fingerprint". State only the plain conclusion (terrain example: write "Flat route — terrain wasn't a factor", NOT "minimal grade impact as the qualitative bucket confirms"). Grade impact is supplied as a qualitative descriptor — express it as plain terrain language, never the mechanism, never a coefficient.
 9. PACE FORMAT. Pace values are supplied pre-formatted as mm:ss. Reproduce them EXACTLY into canonical_value / session_line. NEVER compute or reformat a pace yourself.
 10. FUEL. Do NOT comment on fuelling/hydration unless nutrition data for THIS session is provided (it is in the NOT AVAILABLE list when absent).
 11. METRIC BLOCKS. Emit one metric_block per metric the data supports. canonical_value is the ONE headline number (pre-formatted; pace already mm:ss). session_line is a factual readout from the SAME artifact the graph draws from. annotation is MANDATORY and about THIS metric only; if data_available=false the annotation STATES the absence (never null, never a fabricated number).
+12. COMPLETE SENTENCES WITHIN CAPS. Every field must read as FINISHED prose that fits inside its character cap — plan each sentence to fit, do not write past the cap. A field must NEVER end mid-word or on a dangling clause (no "…thou", no "…cumulati"). flags[].message is a TERSE label-style note, not a sentence (e.g. "Aerobic decoupling, final 3 km"); severity drives display.
 
-OUTPUT: Output ONLY a single complete, valid JSON object matching the schema below — no markdown, no code fence, no prose before or after. Do not wrap it in \`\`\`. Keep it COMPACT within the caps. Exactly this shape:
+OUTPUT: Output ONLY a single complete, valid JSON object matching the schema below — no markdown, no code fence, no prose before or after. Do not wrap it in \`\`\`. Write complete sentences within every cap. Exactly this shape:
 {
   "sport": "${sport}",
-  "verdict": { "call": "string <= 90 — the ONE bottom-line, stated once", "plan_verdict": "as_planned|easier|harder|off_plan|no_plan", "action": "string|null <= 120 — at most ONE next-step line" },
+  "verdict": { "call": "string <= 120 — the ONE bottom-line, stated once, a complete sentence", "plan_verdict": "as_planned|easier|harder|off_plan|no_plan", "action": "string|null <= 140 — at most ONE next-step line" },
   "type_inference": "string|null <= 120 — only when logged type != planned type; else null",
-  "summary": "string <= 320 — holistic cross-metric read + plan context; MUST NOT repeat any annotation",
+  "summary": "string <= 450 — holistic session arc + plan context; MUST NOT repeat any annotation or a block's specific finding",
   "measured_against": "string|null — the planned-session brief (not a verdict restatement)",
-  "metric_blocks": [ { "metric_key": "hr|pace|elevation|cadence|power|...", "label": "string <= 24", "canonical_value": "string <= 24", "session_line": "string <= 80", "plan_line": "string|null <= 80", "annotation": "string <= 140 (MANDATORY)", "data_available": true } ],
-  "flags": [ { "type": "string", "severity": "info|warn", "message": "string <= 140" } ]
+  "metric_blocks": [ { "metric_key": "hr|pace|elevation|cadence|power|...", "label": "string <= 24", "canonical_value": "string <= 24", "session_line": "string <= 120", "plan_line": "string|null <= 120", "annotation": "string <= 220 (MANDATORY, complete sentences)", "data_available": true } ],
+  "flags": [ { "type": "string", "severity": "info|warn", "message": "string <= 120, terse label-style" } ]
 }
-metric_blocks: one per supported metric, any order (the app sorts by a fixed priority). flags: [] if nothing notable. Respect every cap — a complete object matters more than verbosity.`;
+metric_blocks: one per supported metric, any order (the app sorts by a fixed priority). flags: [] if nothing notable. Respect every cap and finish every sentence — a complete, well-scoped object matters more than verbosity.`;
 
   const user = `ACTIVITY (summary):
 ${JSON.stringify({
@@ -368,7 +369,7 @@ ${JSON.stringify({
 
 HR ZONE DISTRIBUTION: ${zoneDistribution}
 CADENCE STATS (avg + 5-seg trend): ${JSON.stringify(streams?.cadence_stats ?? null)}
-GRADE IMPACT (qualitative bucket — reference this, NEVER a coefficient): ${gradeImpactBucket(activity.elevation_m, streams?.grade_correlation)}
+GRADE IMPACT (express as plain terrain language — NEVER name a "bucket"/mechanism, NEVER a coefficient): ${gradeImpactBucket(activity.elevation_m, streams?.grade_correlation)}
 SPLITS (${activity.splits_source ?? 'none'}): ${splitsSummary ? splitsSummary.join(' | ') : 'none'}
 
 PLANNED SESSION for ${viennaDate(activity.date)} (null = off-plan / unplanned):
@@ -418,9 +419,31 @@ export function parseAnalysisJSON(text) {
 
 const PLAN_VERDICTS = ['as_planned', 'easier', 'harder', 'off_plan', 'no_plan'];
 
+// Boundary-safe length clamp (post-build fix 1.A): NEVER cut a coaching field
+// mid-word. The prompt instructs the model to write complete sentences within
+// each cap; this is the safety net if a field still overruns. Trim to the last
+// sentence end within the cap (when it isn't pathologically short), else the last
+// word boundary, stripping any dangling clause punctuation. The result always
+// ends on a complete word / sentence — never a partial token like "cumulati".
+export function clampText(s, max) {
+  const str = String(s ?? '').trim();
+  if (str.length <= max) return str;
+  const slice = str.slice(0, max);
+  // last sentence-ending punctuation followed by whitespace or end-of-slice
+  let se = -1;
+  for (let i = 0; i < slice.length; i++) {
+    if (/[.!?]/.test(slice[i]) && (i + 1 >= slice.length || /\s/.test(slice[i + 1]))) se = i;
+  }
+  if (se >= Math.floor(max * 0.5)) return slice.slice(0, se + 1).trim();
+  const sp = slice.lastIndexOf(' ');
+  const base = sp > 0 ? slice.slice(0, sp) : slice;
+  return base.replace(/[\s,;:—–-]+$/, '').trim();
+}
+
 // Defensive normalisation to the v1.2 contract so the native UI can render without
 // per-field guards. `schema:'v1.2'` lets the render distinguish new cards from
-// stored v1 cards (which lack metric_blocks) and degrade gracefully.
+// stored v1 cards (which lack metric_blocks) and degrade gracefully. Caps are
+// boundary-safe (clampText) and sized to fit a complete coaching sentence (fix 1.A).
 export function coerceAnalysisShape(obj) {
   const arr = (v) => (Array.isArray(v) ? v : []);
   const v = obj.verdict || {};
@@ -428,26 +451,26 @@ export function coerceAnalysisShape(obj) {
     schema: 'v1.2',
     sport: obj.sport || 'other',
     verdict: {
-      call: String(v.call ?? '').slice(0, 90),
+      call: clampText(v.call, 120),
       plan_verdict: PLAN_VERDICTS.includes(v.plan_verdict) ? v.plan_verdict : 'no_plan',
-      action: v.action != null ? String(v.action).slice(0, 120) : null,
+      action: v.action != null ? clampText(v.action, 140) : null,
     },
-    type_inference: obj.type_inference != null ? String(obj.type_inference).slice(0, 120) : null,
-    summary: String(obj.summary ?? '').slice(0, 320),
+    type_inference: obj.type_inference != null ? clampText(obj.type_inference, 120) : null,
+    summary: clampText(obj.summary, 450),
     measured_against: obj.measured_against != null ? String(obj.measured_against) : null,
     metric_blocks: arr(obj.metric_blocks).map(b => ({
       metric_key: String(b?.metric_key ?? 'other'),
-      label: String(b?.label ?? '').slice(0, 24),
-      canonical_value: String(b?.canonical_value ?? '').slice(0, 24),
-      session_line: String(b?.session_line ?? '').slice(0, 80),
-      plan_line: b?.plan_line != null ? String(b.plan_line).slice(0, 80) : null,
-      annotation: String(b?.annotation ?? '').slice(0, 140), // MANDATORY — always a string
+      label: String(b?.label ?? '').slice(0, 24),          // short identifier, not prose
+      canonical_value: String(b?.canonical_value ?? '').slice(0, 24), // a value token
+      session_line: clampText(b?.session_line, 120),
+      plan_line: b?.plan_line != null ? clampText(b.plan_line, 120) : null,
+      annotation: clampText(b?.annotation, 220),           // MANDATORY — always a string
       data_available: b?.data_available !== false,
     })),
     flags: arr(obj.flags).map(f => ({
       type: String(f?.type ?? 'info'),
       severity: f?.severity === 'warn' ? 'warn' : 'info',
-      message: String(f?.message ?? '').slice(0, 140),
+      message: clampText(f?.message, 120),                 // TERSE label-style, not prose
     })),
   };
 }

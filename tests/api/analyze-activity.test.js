@@ -158,7 +158,7 @@ test('@minor buildCompleteness: full run has empty-ish not_available', () => {
   assert.ok(!c.not_available.includes('hr_zones'))
   assert.ok(!c.not_available.includes('rpe')) // rpe=3 present
   assert.ok(c.not_available.includes('fuel')) // no nutrition channel — always NA
-  assert.equal(c.prompt_version, 'analyze-activity@v1.2')
+  assert.equal(c.prompt_version, 'analyze-activity@v1.2.1')
 })
 test('@minor buildCompleteness: missing channels land in not_available', () => {
   const bare = completeRun({ avg_hr: null, max_hr: null, avg_cadence: null, pace_per_km: null, elevation_m: null, splits_metric: null, rpe: null })
@@ -236,7 +236,7 @@ test('@minor buildAnalysisPrompt: names NOT AVAILABLE metrics and forbids fabric
   assert.match(system, /Output ONLY a single complete, valid JSON object/)
   assert.match(system, /"verdict"/)         // v1.2 schema
   assert.match(system, /metric_blocks/)
-  assert.match(system, /<= 90/)             // brevity caps bound the output size
+  assert.match(system, /<= 120/)            // brevity caps bound the output size (post-build: raised, boundary-safe)
   assert.ok(user.includes('not_available') || user.includes('DATA COMPLETENESS'))
   // Truncation fix: send aggregates, NOT 140 raw stream samples.
   assert.ok(!user.includes('DOWNSAMPLED STREAM'), 'raw per-sample stream must not be sent to the model')
@@ -307,7 +307,7 @@ test('@minor parseAnalysisJSON: fails on garbage and on missing required fields'
 test('@minor coerceAnalysisShape: normalises partial objects to the contract', () => {
   const c = coerceAnalysisShape({ verdict: { call: 'x'.repeat(200), plan_verdict: 'bogus' }, summary: 'note', flags: [{ type: 't', severity: 'bogus', message: 'm' }] })
   assert.equal(c.schema, 'v1.2')
-  assert.equal(c.verdict.call.length, 90) // clamped
+  assert.equal(c.verdict.call.length, 120) // clamped to the raised cap (post-build fix 1.A)
   assert.equal(c.verdict.plan_verdict, 'no_plan') // bogus → no_plan
   assert.equal(c.flags[0].severity, 'info') // bogus → info
   assert.ok(Array.isArray(c.metric_blocks))
