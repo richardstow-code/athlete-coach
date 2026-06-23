@@ -418,6 +418,45 @@ export function coerceAnalysisShape(obj) {
   };
 }
 
+// ── Source-freshness fingerprints (ticket 9808c786) ──────────────────
+// A stored coach_analysis bakes in the ACTIVE-injury set and the zone definitions
+// at generation time. The injury/zone-change DB triggers POST force:true broadly;
+// these fingerprints let a force regen detect that the injury set + zones an
+// activity actually depends on are UNCHANGED and skip the LLM (no needless regen
+// or version churn), while a real change (e.g. an injury resolved) regenerates.
+
+// Deterministic JSON (sorted keys) so equal zone objects always fingerprint equal.
+export function stableStringify(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
+  if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
+  return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + stableStringify(v[k])).join(',') + '}';
+}
+
+export function injuryFingerprint(injuries) {
+  if (!Array.isArray(injuries) || injuries.length === 0) return 'none';
+  return injuries
+    .map(i => `${i.body_location ?? ''}|${i.severity ?? ''}|${i.follow_up_overdue ? 1 : 0}`)
+    .sort()
+    .join(';');
+}
+
+export function zoneFingerprint(settings) {
+  const z = settings?.hr_zones ?? settings?.training_zones ?? null;
+  return z == null ? 'none' : stableStringify(z);
+}
+
+// True when a TRIGGER-driven force regen can be skipped because the injury set AND
+// zones this activity's stored analysis baked in are unchanged. A manual force
+// (no/'manual' reason) always regenerates; a card with no stored fingerprint
+// (legacy) always regenerates once.
+export function shouldSkipRegen({ force, regenReason, prevAudit, injuryFp, zoneFp }) {
+  if (force !== true) return false;
+  if (regenReason !== 'injury_change' && regenReason !== 'zone_change') return false;
+  const a = (prevAudit && typeof prevAudit === 'object') ? prevAudit : {};
+  if (a.injury_fingerprint === undefined || a.zone_fingerprint === undefined) return false;
+  return a.injury_fingerprint === injuryFp && a.zone_fingerprint === zoneFp;
+}
+
 // ── Handler ──────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   corsHeaders(res);
@@ -430,11 +469,11 @@ export default async function handler(req, res) {
     return res.status(401).json({ ok: false, error: 'unauthorized' });
   }
 
-  const { activity_id, force } = req.body || {};
+  const { activity_id, force, reason: regenReason } = req.body || {};
   if (activity_id == null) return res.status(400).json({ ok: false, error: 'activity_id required' });
 
   // 1. Activity row (summary + audit fields).
-  const cols = 'id,strava_id,user_id,date,type,workout_type,source,distance_km,duration_min,avg_hr,max_hr,avg_cadence,elevation_m,pace_per_km,splits_metric,splits_source,zone_data,enrichment_status,rpe,feel,feel_legs,injury_flag,coach_analysis,coach_analysis_version';
+  const cols = 'id,strava_id,user_id,date,type,workout_type,source,distance_km,duration_min,avg_hr,max_hr,avg_cadence,elevation_m,pace_per_km,splits_metric,splits_source,zone_data,enrichment_status,rpe,feel,feel_legs,injury_flag,coach_analysis,coach_analysis_version,prompt_data_completeness';
   const rows = await restGet(`activities?id=eq.${activity_id}&select=${cols}`);
   const activity = rows[0];
   if (!activity) return res.status(404).json({ ok: false, error: 'activity not found' });
@@ -491,6 +530,15 @@ export default async function handler(req, res) {
     follow_up_overdue: inj.follow_up_due_date != null && String(inj.follow_up_due_date) < todayVienna,
   }));
 
+  // Source fingerprints for the injury/zone-change regen triggers (9808c786).
+  const injuryFp = injuryFingerprint(injuries);
+  const zoneFp = zoneFingerprint(settings);
+  // A trigger fired force:true, but if this activity's baked-in injury set AND
+  // zones are unchanged, skip the LLM entirely (no regen / no version churn).
+  if (shouldSkipRegen({ force, regenReason, prevAudit: activity.prompt_data_completeness, injuryFp, zoneFp })) {
+    return res.status(200).json({ ok: true, activity_id: activity.id, skipped: 'source_unchanged', reason: regenReason });
+  }
+
   const completeness = buildCompleteness({ activity, sport, streams, splits, plannedSession, trend, injuries });
   const { system, user } = buildAnalysisPrompt({
     activity, sport, streams, splits, plannedSession, settings, sports, trend, injuries, completeness,
@@ -537,7 +585,7 @@ export default async function handler(req, res) {
     coach_analysis_generated_at: new Date().toISOString(),
     coach_analysis_model: DEFAULT_MODEL,
     coach_analysis_version: version,
-    prompt_data_completeness: { ...completeness, generation_status: 'ok' },
+    prompt_data_completeness: { ...completeness, generation_status: 'ok', injury_fingerprint: injuryFp, zone_fingerprint: zoneFp },
   });
   if (patchStatus >= 300) {
     return res.status(500).json({ ok: false, activity_id: activity.id, error: `write-back failed: ${patchStatus}` });
