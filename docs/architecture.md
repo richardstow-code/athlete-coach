@@ -88,6 +88,27 @@ from `training_zones`, never `hr_zones`); the rest are plain PostgREST reads via
 Bearer` = `MCP_SHARED_SECRET` or a valid Supabase JWT; the service-role key never
 leaves the server. Full catalogue, sources, and limitations: `docs/mcp.md`.
 
+### Coaching-context recovery completeness — absent / stale / present
+
+`get_athlete_coaching_context` computes recovery completeness from
+`athlete_state_snapshot` against freshness thresholds (resting HR 24h, HRV 24h,
+sleep 36h). It exposes **three distinct states** per metric so the guardrail can
+treat them differently (recovery-divergence fix, 2026-06-23):
+
+- `core.data_completeness.has_sleep|has_hrv|has_resting_hr` = **present** (ever
+  recorded) — same axis as `athlete_state_snapshot.has_X` (the names no longer
+  carry opposite meanings).
+- `…has_sleep_fresh|…` + `…_age_hours` + `freshness_thresholds_h` = **freshness**.
+- `missing_metrics` = **absent-only**; `stale_metrics` = present-but-not-fresh.
+- `surface_extras.morning_metrics` surfaces present values (incl. stale, with
+  `*_stale` + `*_age_hours` + per-metric dates), **not nulled** when merely stale.
+
+`api/claude-proxy.js` builds the NEVER-FABRICATE list from `missing_metrics`, so
+making it absent-only means the coach is forbidden from inventing **absent**
+metrics but is **no longer gagged on stale-but-real** recovery data — it can cite
+it (ideally with a "from N hours ago" caveat, available via `stale_metrics` /
+`*_age_hours`).
+
 ## Automatic Per-Activity Analysis (Path A)
 
 When an activity finishes enrichment, a structured multi-sport coaching read is generated server-side and stored on the activity, so a detailed per-activity analysis is available in-app without opening a chat. (Productised fix for `f76506ac`: `buildContext` feeds the coach summary-only activity data and never queries `activity_streams`/`splits_metric`.)

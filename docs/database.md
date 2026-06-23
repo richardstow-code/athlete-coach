@@ -277,7 +277,9 @@ Daily food and alcohol entries.
 ### `athlete_state_snapshot` (VIEW)
 Read-only **view** — the athlete's latest recovery/state snapshot. Wrapped by MCP `get_recovery` (subset) and `get_athlete_state` (full). Columns (all nullable): `user_id`, `snapshot_date`, `resting_hr`(+`resting_hr_date`), `hrv_ms`(+`hrv_date`), `sleep_hours`(+`sleep_date`), `sleep_quality`, `steps`, `active_calories`, `has_resting_hr`/`has_hrv`/`has_sleep`/`has_steps`, `snapshot_sources`(jsonb), and active-injury fields (`injury_id`, `injury_body_location`, `injury_severity`, `injury_follow_up_due_date`, `injury_follow_up_overdue`, `injury_days_since_reported`, `injury_follow_up_count`).
 
-> **`has_X` = last-known-EXISTENCE, not freshness.** These flags mean "this metric has ever been recorded", NOT recency. They are intentionally distinct from the `get_athlete_coaching_context` `data_completeness` freshness flags (a known pre-existing divergence); freshness is never recomputed in the MCP server.
+> **`has_X` = last-known-EXISTENCE, not freshness.** On this view these flags mean "this metric has ever been recorded", NOT recency.
+>
+> **Recovery divergence resolved (2026-06-23).** `get_athlete_coaching_context`'s `data_completeness` previously reused the SAME names (`has_sleep`/`has_hrv`/`has_resting_hr`) to mean **fresh** (within 24/24/36h) — the opposite axis — and built `missing_metrics` + nulled `morning_metrics` from those fresh flags, so a present-but-STALE metric was marked NOT AVAILABLE and suppressed (the claude-proxy NEVER-FABRICATE guardrail then gagged the coach on data it actually had). Now `data_completeness.has_X` means **present** (existence) — **consistent with this view** — with a separate `has_X_fresh`, `<metric>_age_hours`, and a `stale_metrics[]` list; `missing_metrics` is **absent-only**, and stale-but-present values are surfaced (with `*_stale` flags) instead of nulled. Three states are now distinct: **absent** (`missing_metrics`) / **stale** (`stale_metrics`, value still surfaced) / **fresh** (`has_X_fresh`). Freshness is still never recomputed in the MCP server.
 
 **Actively used**: Yes — MCP `get_recovery`, `get_athlete_state`.
 

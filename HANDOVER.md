@@ -1,3 +1,36 @@
+# HANDOVER — Recovery-data divergence fix (coaching-context RPC) — 2026-06-23
+
+- **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `fix/recovery-data-divergence` (worktree off `origin/main` @ `fdd89dd`). **Type:** Supabase RPC (`get_athlete_coaching_context`) — **backend / no EAS**. Architect deploys via Supabase MCP + behavioural gate. CC does not self-merge.
+
+## STEP 1 — enumeration (verified against the live DB)
+
+- **1.1 The overload.** In `get_athlete_coaching_context` the SAME flag names mean opposite things in the output `core`:
+  - `core.data_completeness.has_sleep|has_hrv|has_resting_hr` = **FRESH** (`v_has_*_fresh` = snapshot `has_X` AND date present AND age ≤ 24/24/36h; RPC lines 43–51, 146–148).
+  - `core.athlete_state_snapshot.has_sleep|...` (`to_jsonb(v_state_snap)`, line 384) = **EXISTENCE** (the view's `has_X` = ever recorded).
+- **1.2 Where the guardrail consumes it.** `api/claude-proxy.js` builds the NEVER-FABRICATE list from `dc.missing_metrics` (lines 105–109, 168–184: "the word 'sleep' may appear ONLY if sleep is NOT in the NOT AVAILABLE list"). `missing_metrics` is built from the **fresh** flags (RPC lines 141–143, 150), and `surface_extras.morning_metrics` **nulls** any non-fresh value (lines 166–168).
+- **1.3 The failure.** A present-but-stale metric (e.g. sleep recorded 3 days ago > 36h threshold) → `data_completeness.has_sleep=false`, `missing_metrics=['sleep']`, `morning_metrics.sleep_hours=NULL` — **yet** `athlete_state_snapshot.has_sleep=true` with `sleep_hours=7.2` and `sleep_date` 3 days ago. The guardrail then forbids the coach from mentioning sleep → it withholds/contradicts recovery data it actually has. (View source confirmed: `athlete_state_snapshot` = `health_snapshots` ⟕ `health_metrics`.)
+
+## STEP 2 — fix (disambiguate; suppress only genuinely-absent data)
+
+`supabase/migrations/20260623_coaching_context_recovery_divergence.sql` — patches the RPC so:
+- `data_completeness.has_X` now means **present** (existence) → consistent with `athlete_state_snapshot.has_X` (overload removed).
+- adds `has_X_fresh`, `<metric>_age_hours`, `freshness_thresholds_h`, and a `stale_metrics[]` list.
+- `missing_metrics` = **absent-only** (present-but-stale is no longer suppressed → the NEVER-FABRICATE guardrail stops gagging real data).
+- `morning_metrics` surfaces **present** values (not nulled when stale) + `*_stale` flags + per-metric dates.
+- Three states now distinct: **absent** / **stale** (value still surfaced) / **fresh**.
+
+**Delivery mechanism:** the migration patches the LIVE `pg_get_functiondef` with 5 asserted `replace()`s and `EXECUTE`s the result (the other ~250 lines reproduced byte-for-byte; aborts with no partial patch if the body has drifted). **I validated read-only against prod that all 5 snippets match the live body and the old overloaded form is removed — no `EXECUTE` was run, nothing was written.**
+
+## STEP 3 — gate
+
+`supabase/migrations/20260623_coaching_context_recovery_divergence_gate.sql` — transactional (ROLLBACK), real athlete UID for full context: deletes-then-restores recovery rows to build a fixture, asserts (a) **absent** → `missing_metrics` has sleep, `has_sleep=false`; (b) **present-but-stale** → sleep NOT in `missing_metrics`, IS in `stale_metrics`, `has_sleep=true`, `has_sleep_fresh=false`, `morning_metrics.sleep_hours` non-null, `sleep_stale=true`. Architect runs it after applying the migration, plus a fresh real coaching output.
+
+**RISK:** coaching-correctness — mitigated: absent-only suppression is provable (gate), and the live-def patch can't silently half-apply (assertions). **No native change.**
+
+**Follow-up flagged (Vercel, optional):** `api/claude-proxy.js` could read `stale_metrics`/`*_age_hours` to instruct the coach to cite stale recovery WITH a "from N hours ago" caveat. The RPC now exposes everything needed; the prompt tweak is a separate Vercel change (could ride #4). Not required to fix the suppression bug.
+
+---
+
 # HANDOVER — AC-157: MCP server Phase 3 (power / high blast radius)
 
 - **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `feat/ac-157-mcp-phase3` (worktree off `origin/main` @ `fe09163`, PR #8 merge). **Type:** server-side (`api/_mcpTools.js`, `api/mcp.js`, `api/_supabaseRest.js`, `api/oauth/authorize.js`) — **no EAS, no native**. CC does **not** self-merge. STOP at GATE 3.
