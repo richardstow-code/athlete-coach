@@ -1,3 +1,19 @@
+# HANDOVER — analyze-activity v1.2.2 (residual text fixes) — 2026-06-23
+
+- **Repo:** web. **Branch:** `fix/activity-card-v122` (off `origin/main`). **Vercel-only, NO native, NO eas.** Evidence: the **id=367 canary** regen under v1.2.1 (`coach_analysis_version 3`); the full backfill is HELD until this lands clean.
+
+Four residual defects fixed (no re-architecture):
+- **2.A verdict.call:** prompt makes it a SHORT QUALITATIVE call — no numbers / no metric values (pace/HR/zone%/RPE/duration); cap lowered to **80**. Fixes the metric-stuffed, dangling "…matching the".
+- **2.B clampText:** prefer sentence terminator; else word boundary + strip trailing dangling function words (`DANGLING_WORDS`) + short-tail comma fallback. Fixes "…and no" / "…matching the".
+- **2.C labels:** `LABEL_MAP` (`Rate of Perceived Exertion`→`RPE`) applied BEFORE the cap, then word-boundary trim. Fixes "Rate of Perceived Exerti".
+- **2.D cadence unit:** `coerceAnalysisShape` rewrites `bpm`→`spm` on the cadence block; prompt states the rule.
+- **2.E `SCHEMA_VERSION` → `analyze-activity@v1.2.2`** (shape tag stays `v1.2`).
+- **Tests:** `analyze-activity-card-postbuild.test.js` extended (dangling/cadence-spm/label-abbrev/call-80) — **59/59** across the four suites.
+
+**⚠ DEPLOY (architect):** merge → Vercel; confirm deploy ID flips; re-fire the **id=367 canary**; verify verdict.call is a short metric-free call, nothing dangles, label intact, cadence in spm. **ONLY if clean** → run the FULL force-regen backfill (all activities, `force:true`). THEN native PR #4 rides the EAS build (Richard). This Vercel patch needs no EAS.
+
+---
+
 # HANDOVER — Activity card POST-BUILD corrections · Chunk A (analyze-activity v1.2.1) — 2026-06-23
 
 - **Repo:** web. **Branch:** `fix/activity-card-postbuild` (off `origin/main`). **Vercel/no-EAS.** Architect deploys + **re-runs the force-regen backfill** (required — see below).

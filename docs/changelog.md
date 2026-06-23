@@ -1,5 +1,14 @@
 # Changelog
 
+## analyze-activity v1.2.2 — residual text fixes (canary-driven) — 2026-06-23
+
+The id=367 canary regen under v1.2.1 surfaced four residual defects (full backfill held until this lands). No re-architecture.
+- **verdict.call** is now a short qualitative call: prompt forbids numbers/metric values (they live in blocks + summary), cap lowered to **80** — fixes the metric-stuffed, dangling "…matching the" verdict.
+- **`clampText` never dangles:** after a word-boundary trim it strips trailing function words (the/a/and/of/with/no/…) and falls back to the last comma when a short fragment remains — fixes "…and no" (cadence) and "…matching the".
+- **Labels** mapped to canonical abbreviations (`Rate of Perceived Exertion`→`RPE`) before the cap, then word-boundary trimmed — fixes the "Rate of Perceived Exerti" mid-word cut.
+- **Cadence unit guard:** a cadence block emitting `bpm` is rewritten to `spm`; prompt states cadence is spm, never bpm.
+- **`SCHEMA_VERSION` → `analyze-activity@v1.2.2`** so the regen guard re-generates every still-v1.2.1 card on the backfill. Tests: 59/59 across the analyze-activity suites.
+
 ## analyze-activity v1.2.1 — card-quality corrections (post-build) — 2026-06-23
 
 Targeted fixes to the v1.2 coach_analysis after on-device review (evidence: stored card id=367). No re-architecture.
