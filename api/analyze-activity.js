@@ -259,7 +259,7 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
 // Schema/prompt version (card redesign). Stored in prompt_data_completeness; the
 // PR #11 fingerprint guard (shouldSkipRegen) includes it, so a deploy regenerates
 // any still-v1.1 card under the new schema on its next (re)invocation.
-export const SCHEMA_VERSION = 'analyze-activity@v1.2.1';
+export const SCHEMA_VERSION = 'analyze-activity@v1.2.2';
 
 // Pace formatter — speed (m/s) → "m:ss" per km, or null when unknown. NEVER feed
 // decimal minutes to the model (the "5:73" bug); always mm:ss.
@@ -339,21 +339,21 @@ ABSOLUTE RULES:
 4. PLAN-FIRST. If a planned session is supplied, set verdict.plan_verdict by comparing actual zone/duration/intensity to it and put the planned brief in measured_against. If none, plan_verdict="no_plan" and measured_against=null.
 5. TAG MISMATCH. If workout_type / the planned session implies intensity (tempo/threshold/interval/hard) but the effort was actually easy (Z1-Z2 / low RPE), surface a flag (type "tag_mismatch") AND set type_inference (e.g. "Logged easy; planned threshold — treating as a swap"). Never ask about it.
 6. INJURY-AWARE. Only surface injuries present in the ACTIVE INJURIES input for THIS analysis — NEVER carry forward a previously-seen injury. If one is listed, acknowledge in one short clause how THIS session interacts with the area; an injury whose follow_up_overdue is true is the MOST important — surface it as a "warn" flag ("follow-up overdue since <date>"). Do not invent injuries.
-7. SCOPE — ONE HOME PER FINDING. Every fact appears in exactly ONE field. verdict.call is the ONLY bottom-line statement. A metric-specific finding (aerobic decoupling, HR drift, late surge, fade, cadence loss, etc.) lives in EXACTLY ONE place: its own metric_block annotation (HR findings — incl. decoupling/drift — go in the hr block ONLY). summary may sketch the overall session arc + plan context but MUST NOT restate any block's specific finding or repeat any annotation. Each annotation describes ONLY its own metric; never restate the verdict or summary. A flag may raise a finding INSTEAD of (never in addition to) its annotation.
+7. SCOPE — ONE HOME PER FINDING. Every fact appears in exactly ONE field. verdict.call is the ONLY bottom-line statement AND is a SHORT QUALITATIVE judgement: one complete sentence ≤80 chars, plain language, with NO numbers and NO metric values (pace mm:ss, HR, zone %, RPE, duration) — those live ONLY in metric_blocks + summary. Good: "Easy Z2 run, executed exactly to plan." BAD: "68 min easy Z2 run at 5:32/km with HR 92% in Z2 and RPE 2, matching the…" (metric dump + dangling). A metric-specific finding (aerobic decoupling, HR drift, late surge, fade, cadence loss, etc.) lives in EXACTLY ONE place: its own metric_block annotation (HR findings — incl. decoupling/drift — go in the hr block ONLY). summary may sketch the overall session arc + plan context but MUST NOT restate any block's specific finding or repeat any annotation. Each annotation describes ONLY its own metric; never restate the verdict or summary. A flag may raise a finding INSTEAD of (never in addition to) its annotation.
 8. NO META / NO QUESTIONS / NO INTERNAL TERMS. Never ask questions, never narrate method, never output raw statistics (r/p values, coefficients) or "Check:" clauses. NEVER name an internal mechanism or data artifact — banned: "bucket", "qualitative bucket", "correlation", "decoupling coefficient", "model", "schema", "fingerprint". State only the plain conclusion (terrain example: write "Flat route — terrain wasn't a factor", NOT "minimal grade impact as the qualitative bucket confirms"). Grade impact is supplied as a qualitative descriptor — express it as plain terrain language, never the mechanism, never a coefficient.
 9. PACE FORMAT. Pace values are supplied pre-formatted as mm:ss. Reproduce them EXACTLY into canonical_value / session_line. NEVER compute or reformat a pace yourself.
 10. FUEL. Do NOT comment on fuelling/hydration unless nutrition data for THIS session is provided (it is in the NOT AVAILABLE list when absent).
-11. METRIC BLOCKS. Emit one metric_block per metric the data supports. canonical_value is the ONE headline number (pre-formatted; pace already mm:ss). session_line is a factual readout from the SAME artifact the graph draws from. annotation is MANDATORY and about THIS metric only; if data_available=false the annotation STATES the absence (never null, never a fabricated number).
+11. METRIC BLOCKS. Emit one metric_block per metric the data supports. canonical_value is the ONE headline number (pre-formatted; pace already mm:ss). session_line is a factual readout from the SAME artifact the graph draws from. annotation is MANDATORY and about THIS metric only; if data_available=false the annotation STATES the absence (never null, never a fabricated number). label is ≤3 words — use a standard abbreviation (RPE, HR, Pace, Cadence, Terrain, Power), never a long phrase. UNITS: cadence is reported in **spm** (steps per minute), NEVER bpm.
 12. COMPLETE SENTENCES WITHIN CAPS. Every field must read as FINISHED prose that fits inside its character cap — plan each sentence to fit, do not write past the cap. A field must NEVER end mid-word or on a dangling clause (no "…thou", no "…cumulati"). flags[].message is a TERSE label-style note, not a sentence (e.g. "Aerobic decoupling, final 3 km"); severity drives display.
 
 OUTPUT: Output ONLY a single complete, valid JSON object matching the schema below — no markdown, no code fence, no prose before or after. Do not wrap it in \`\`\`. Write complete sentences within every cap. Exactly this shape:
 {
   "sport": "${sport}",
-  "verdict": { "call": "string <= 120 — the ONE bottom-line, stated once, a complete sentence", "plan_verdict": "as_planned|easier|harder|off_plan|no_plan", "action": "string|null <= 140 — at most ONE next-step line" },
+  "verdict": { "call": "string <= 80 — SHORT qualitative bottom-line, ONE complete sentence, NO numbers / NO metric values (pace/HR/zone%/RPE/duration)", "plan_verdict": "as_planned|easier|harder|off_plan|no_plan", "action": "string|null <= 140 — at most ONE next-step line" },
   "type_inference": "string|null <= 120 — only when logged type != planned type; else null",
   "summary": "string <= 450 — holistic session arc + plan context; MUST NOT repeat any annotation or a block's specific finding",
   "measured_against": "string|null — the planned-session brief (not a verdict restatement)",
-  "metric_blocks": [ { "metric_key": "hr|pace|elevation|cadence|power|...", "label": "string <= 24", "canonical_value": "string <= 24", "session_line": "string <= 120", "plan_line": "string|null <= 120", "annotation": "string <= 220 (MANDATORY, complete sentences)", "data_available": true } ],
+  "metric_blocks": [ { "metric_key": "hr|pace|elevation|cadence|power|...", "label": "string <= 24, <=3 words / standard abbreviation (RPE, HR, Pace, Cadence, Terrain, Power)", "canonical_value": "string <= 24 (cadence in spm, never bpm)", "session_line": "string <= 120", "plan_line": "string|null <= 120", "annotation": "string <= 220 (MANDATORY, complete sentences)", "data_available": true } ],
   "flags": [ { "type": "string", "severity": "info|warn", "message": "string <= 120, terse label-style" } ]
 }
 metric_blocks: one per supported metric, any order (the app sorts by a fixed priority). flags: [] if nothing notable. Respect every cap and finish every sentence — a complete, well-scoped object matters more than verbosity.`;
@@ -425,18 +425,42 @@ const PLAN_VERDICTS = ['as_planned', 'easier', 'harder', 'off_plan', 'no_plan'];
 // sentence end within the cap (when it isn't pathologically short), else the last
 // word boundary, stripping any dangling clause punctuation. The result always
 // ends on a complete word / sentence — never a partial token like "cumulati".
+// Function words that must never be the LAST token of a trimmed field (the
+// "…matching the", "…and no" dangling-clause bug, v1.2.2 fix 2.B).
+const DANGLING_WORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'to', 'with', 'in', 'for', 'at', 'on',
+  'that', 'while', 'despite', 'as', 'but', 'by', 'from', 'into', 'than', 'then',
+  'its', 'their', 'his', 'her', 'this', 'no',
+]);
+
 export function clampText(s, max) {
   const str = String(s ?? '').trim();
   if (str.length <= max) return str;
   const slice = str.slice(0, max);
-  // last sentence-ending punctuation followed by whitespace or end-of-slice
+  // 1) PREFER the last sentence terminator (. ! ?) at/under the cap — cut there.
   let se = -1;
   for (let i = 0; i < slice.length; i++) {
     if (/[.!?]/.test(slice[i]) && (i + 1 >= slice.length || /\s/.test(slice[i + 1]))) se = i;
   }
   if (se >= Math.floor(max * 0.5)) return slice.slice(0, se + 1).trim();
+  // 2) No usable terminator (a single over-long sentence) → trim at the last word
+  //    boundary, then strip any trailing dangling function word(s) so we never end
+  //    on a hanging word ("…matching the" → "…matching").
   const sp = slice.lastIndexOf(' ');
-  const base = sp > 0 ? slice.slice(0, sp) : slice;
+  let words = (sp > 0 ? slice.slice(0, sp) : slice).replace(/[\s,;:—–-]+$/, '').trim().split(/\s+/);
+  while (words.length > 1 && DANGLING_WORDS.has(words[words.length - 1].toLowerCase().replace(/[^a-z]/g, ''))) {
+    words.pop();
+  }
+  let base = words.join(' ').replace(/[\s,;:—–-]+$/, '').trim();
+  // 3) Still a mid-clause fragment (no terminal punctuation) with a short trailing
+  //    tail after the last comma → drop back to that comma ("…RPE 2, matching" → "…RPE 2").
+  if (!/[.!?]$/.test(base)) {
+    const comma = base.lastIndexOf(',');
+    if (comma > 0) {
+      const trailing = base.slice(comma + 1).trim().split(/\s+/).filter(Boolean);
+      if (trailing.length <= 4) base = base.slice(0, comma);
+    }
+  }
   return base.replace(/[\s,;:—–-]+$/, '').trim();
 }
 
@@ -444,6 +468,22 @@ export function clampText(s, max) {
 // per-field guards. `schema:'v1.2'` lets the render distinguish new cards from
 // stored v1 cards (which lack metric_blocks) and degrade gracefully. Caps are
 // boundary-safe (clampText) and sized to fit a complete coaching sentence (fix 1.A).
+// Canonical short labels — applied BEFORE the cap so a long label is abbreviated,
+// never mid-word cut (v1.2.2 fix 2.C: "Rate of Perceived Exerti").
+const LABEL_MAP = {
+  'rate of perceived exertion': 'RPE', 'perceived exertion': 'RPE', 'rpe': 'RPE',
+  'heart rate': 'Heart Rate', 'hr': 'HR', 'pace': 'Pace', 'cadence': 'Cadence',
+  'elevation': 'Elevation', 'terrain': 'Terrain', 'power': 'Power',
+};
+function normLabel(s) {
+  const raw = String(s ?? '').trim();
+  const mapped = LABEL_MAP[raw.toLowerCase()];
+  if (mapped) return mapped;
+  if (raw.length <= 24) return raw;
+  const sp = raw.slice(0, 24).lastIndexOf(' ');   // word boundary, never mid-word
+  return (sp > 0 ? raw.slice(0, sp) : raw.slice(0, 24)).trim();
+}
+
 export function coerceAnalysisShape(obj) {
   const arr = (v) => (Array.isArray(v) ? v : []);
   const v = obj.verdict || {};
@@ -451,22 +491,27 @@ export function coerceAnalysisShape(obj) {
     schema: 'v1.2',
     sport: obj.sport || 'other',
     verdict: {
-      call: clampText(v.call, 120),
+      call: clampText(v.call, 80),                 // v1.2.2: short qualitative call, metric-free
       plan_verdict: PLAN_VERDICTS.includes(v.plan_verdict) ? v.plan_verdict : 'no_plan',
       action: v.action != null ? clampText(v.action, 140) : null,
     },
     type_inference: obj.type_inference != null ? clampText(obj.type_inference, 120) : null,
     summary: clampText(obj.summary, 450),
     measured_against: obj.measured_against != null ? String(obj.measured_against) : null,
-    metric_blocks: arr(obj.metric_blocks).map(b => ({
-      metric_key: String(b?.metric_key ?? 'other'),
-      label: String(b?.label ?? '').slice(0, 24),          // short identifier, not prose
-      canonical_value: String(b?.canonical_value ?? '').slice(0, 24), // a value token
-      session_line: clampText(b?.session_line, 120),
-      plan_line: b?.plan_line != null ? clampText(b.plan_line, 120) : null,
-      annotation: clampText(b?.annotation, 220),           // MANDATORY — always a string
-      data_available: b?.data_available !== false,
-    })),
+    metric_blocks: arr(obj.metric_blocks).map(b => {
+      const key = String(b?.metric_key ?? 'other');
+      // Cadence is steps-per-minute — never bpm (v1.2.2 fix 2.D).
+      const fixUnit = (s) => (key === 'cadence' && s != null ? String(s).replace(/\bbpm\b/gi, 'spm') : s);
+      return {
+        metric_key: key,
+        label: normLabel(b?.label),
+        canonical_value: String(fixUnit(b?.canonical_value) ?? '').slice(0, 24),
+        session_line: clampText(fixUnit(b?.session_line), 120),
+        plan_line: b?.plan_line != null ? clampText(fixUnit(b.plan_line), 120) : null,
+        annotation: clampText(fixUnit(b?.annotation), 220),   // MANDATORY — always a string
+        data_available: b?.data_available !== false,
+      };
+    }),
     flags: arr(obj.flags).map(f => ({
       type: String(f?.type ?? 'info'),
       severity: f?.severity === 'warn' ? 'warn' : 'info',
