@@ -1,3 +1,21 @@
+# HANDOVER — Activity card redesign #6 · Chunk A (analyze-activity v1.2) — 2026-06-23
+
+- **Repo:** web. **Branch:** `feat/activity-card-redesign` **stacked on `fix/analyze-activity-injury-freshness` (PR #11)** — PRESERVES #11's force/fingerprint/triggers. **Vercel/no-EAS.** Architect deploys (after #11) + behavioural-gates + runs the one-off backfill.
+
+**Chunk A (this PR) — analyze-activity schema/prompt/pace, v1.2:**
+- **2.A new schema:** replaced v1 (`headline/coach_note/effort_read/key_signals/execution_vs_plan`) with `{ sport, verdict{call,plan_verdict,action}, type_inference, summary, measured_against, metric_blocks[]{metric_key,label,canonical_value,session_line,plan_line,annotation,data_available}, flags[] }`. `coerceAnalysisShape` emits `schema:'v1.2'` so the native render can detect old vs new cards (defensive 2.D).
+- **2.B prompt:** kept NEVER-FABRICATE/RPE/HR-quality/PLAN-FIRST; added SCOPE (no repetition — verdict once), NO-META/NO-QUESTIONS (no coefficients/method), PACE-FORMAT (reproduce mm:ss, never compute), FUEL (in NA when no nutrition), GRADE bucket only, INJURY compose rule ("only surface injuries in THIS input; never carry forward" — composes with #11's resolve-triggers).
+- **2.C pace:** `fmtPace(m/s)→mm:ss`; splits summary + the pace block use it. Kills "5:73".
+- **grade:** `gradeImpactBucket(elev,|r|)→minimal|moderate|significant`; the raw `grade_correlation` no longer reaches the prompt.
+- **fuel:** `'fuel'` always in `not_available` (no nutrition channel) → no fabricated fuelling.
+- **v1.2 / #11 compose:** `SCHEMA_VERSION='analyze-activity@v1.2'` is `prompt_version` in `prompt_data_completeness`; `shouldSkipRegen` now also requires `prompt_version===SCHEMA_VERSION`, so a trigger-driven force on a still-v1.1 card regenerates under the new schema (manual force always regenerates). #11's mechanism intact.
+
+**Tests:** `tests/api/analyze-activity-card-redesign.test.js` (fmtPace incl. the `/\d:[6-9]\d/` guard, grade bucket, v1.2 normalize, schema-version skip) + updated `analyze-activity.test.js` v1.2 fixtures + #11's freshness test fixture. **48/48** across the three analyze-activity suites. `node --check` clean.
+
+**Deferred to later chunks (per the brief):** Chunk B = `intervals_data.activity_id` migration + `lib/intervalsSync.ts` writer (Supabase/Phase-A). Chunk C = native card render (2.D/2.E: verdict/summary/fixed-order metric_blocks + mandatory annotations; HR zones from `activities.zone_data`; `Load (est.)` from avg_hr/LTHR; defensive v1 fallback) + docs (screens/database/architecture/changelog). The **AI-eval rubric** (verdict-once / no-meta / no-coefficient / no-fuel / pace mm:ss / zone==graph) is the architect's behavioural gate (DEPLOY step 1) — deterministic parts are covered by the 48 tests.
+
+---
+
 # HANDOVER — Analysis card flags resolved injuries as current (9808c786) — 2026-06-23
 
 - **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `fix/analyze-activity-injury-freshness` (worktree off `origin/main` @ `fdd89dd`). **Type:** Vercel (`api/analyze-activity.js`) + a DB-trigger migration — **no EAS**. Architect deploys (Vercel first, then the trigger via Supabase MCP) + behavioural gate.

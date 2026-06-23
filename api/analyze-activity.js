@@ -238,9 +238,10 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
   if (!has.has_splits) not_available.push('splits');
   if (sport === 'ride') not_available.push('power', 'intensity_factor');
   if (!has.has_rpe) not_available.push('rpe');
+  not_available.push('fuel'); // analyze-activity has no nutrition channel — never comment on fuelling
 
   return {
-    prompt_version: 'analyze-activity@v1.1',
+    prompt_version: SCHEMA_VERSION,
     sport,
     model: DEFAULT_MODEL,
     sample_count: samples.length,
@@ -253,6 +254,29 @@ export function buildCompleteness({ activity, sport, streams, splits, plannedSes
     ...has,
     not_available,
   };
+}
+
+// Schema/prompt version (card redesign). Stored in prompt_data_completeness; the
+// PR #11 fingerprint guard (shouldSkipRegen) includes it, so a deploy regenerates
+// any still-v1.1 card under the new schema on its next (re)invocation.
+export const SCHEMA_VERSION = 'analyze-activity@v1.2';
+
+// Pace formatter — speed (m/s) → "m:ss" per km, or null when unknown. NEVER feed
+// decimal minutes to the model (the "5:73" bug); always mm:ss.
+export function fmtPace(speed_mps) {
+  if (!(speed_mps > 0)) return null;
+  const s = Math.round(1000 / speed_mps); // sec per km
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// Qualitative grade-impact bucket from elevation + |grade_correlation|. The model
+// only ever sees the bucket — never the raw coefficient (the "-0.183" method leak).
+export function gradeImpactBucket(elevation_m, grade_correlation) {
+  const r = Math.abs(Number(grade_correlation) || 0);
+  const elev = Number(elevation_m) || 0;
+  if (elev >= 150 || r >= 0.3) return 'significant';
+  if (elev >= 60 || r >= 0.15) return 'moderate';
+  return 'minimal';
 }
 
 // Assemble the multi-sport system + user prompt. Returns { system, user }.
@@ -277,8 +301,8 @@ export function buildAnalysisPrompt({ activity, sport, streams, splits, plannedS
   const splitsSummary = Array.isArray(splits)
     ? splits.slice(0, 16).map(s => {
         const km = (Number(s.distance_m) / 1000).toFixed(2);
-        const pace = s.avg_speed_mps > 0 ? (1000 / s.avg_speed_mps / 60).toFixed(2) : '?';
-        return `#${s.idx}: ${km}km @ ${pace}min/km${s.avg_hr != null ? `, HR ${s.avg_hr}` : ''}`;
+        const pace = fmtPace(s.avg_speed_mps); // mm:ss — never decimal minutes
+        return `#${s.idx}: ${km}km${pace ? ` @ ${pace}/km` : ''}${s.avg_hr != null ? `, HR ${s.avg_hr}` : ''}`;
       })
     : null;
 
@@ -309,25 +333,29 @@ export function buildAnalysisPrompt({ activity, sport, streams, splits, plannedS
 ${SPORT_GUIDE[sport] || SPORT_GUIDE.other}
 
 ABSOLUTE RULES:
-1. NEVER FABRICATE. ${naLine} In particular, effort_read.primary_zone MUST be "n/a" whenever HR-zone data is NOT AVAILABLE — do NOT infer a training zone from pace, RPE, or the planned session. You may reference the PLANNED zone in a note, but never assert a measured zone the data does not contain.
-2. RAW RPE. Athlete RPE is raw on a 1-10 scale (NOT a feel score). Interpret it against the planned session's intended intensity: a low RPE on a planned easy/Z2 session is GOOD execution; a high RPE on an easy session is a fatigue/heat/drift signal; a low RPE on a planned hard session is under-execution. Never invert RPE into a valenced "feel".
+1. NEVER FABRICATE. ${naLine} Never assert a measured HR zone when HR-zone data is NOT AVAILABLE — you may reference the PLANNED zone, but never claim a measured zone the data lacks.
+2. RAW RPE. Athlete RPE is raw 1-10 (NOT a feel score). Interpret against the planned intensity: low RPE on a planned easy/Z2 session is GOOD; high RPE on an easy session is a fatigue/heat/drift signal; low RPE on a planned hard session is under-execution. Never invert RPE into a valenced "feel".
 3. ${hrGuard || 'Use only HR-zone values actually present in the data.'}
-4. PLAN-FIRST. If a planned session is supplied, execution_vs_plan MUST compare actual zone/duration/intensity to it. If none, verdict is "no_plan".
-5. TAG MISMATCH. If the activity's workout_type / planned session implies intensity (tempo / threshold / interval / hard) but the effort was actually predominantly easy (Z1-Z2 / low RPE), SURFACE this as a flag (type "tag_mismatch"). This is high-value — do not smooth it over.
-6. INJURY-AWARE. If ACTIVE INJURIES are listed, you MUST acknowledge in one short clause how THIS session interacts with the injured area (load/aggravation risk). An active injury whose follow_up_overdue is true is the MOST important to surface — never omit it; note "follow-up overdue since <follow_up_due>" and surface it as a flag (severity "warn"). Do not invent injuries that are not listed.
-7. Use only values present below (subjective rpe/feel/feel_legs are RAW — never compute a feel score). Reference specific numbers; no boilerplate, no motivational sign-offs.
+4. PLAN-FIRST. If a planned session is supplied, set verdict.plan_verdict by comparing actual zone/duration/intensity to it and put the planned brief in measured_against. If none, plan_verdict="no_plan" and measured_against=null.
+5. TAG MISMATCH. If workout_type / the planned session implies intensity (tempo/threshold/interval/hard) but the effort was actually easy (Z1-Z2 / low RPE), surface a flag (type "tag_mismatch") AND set type_inference (e.g. "Logged easy; planned threshold — treating as a swap"). Never ask about it.
+6. INJURY-AWARE. Only surface injuries present in the ACTIVE INJURIES input for THIS analysis — NEVER carry forward a previously-seen injury. If one is listed, acknowledge in one short clause how THIS session interacts with the area; an injury whose follow_up_overdue is true is the MOST important — surface it as a "warn" flag ("follow-up overdue since <date>"). Do not invent injuries.
+7. SCOPE (no repetition). Every fact appears in exactly ONE field. verdict.call is the ONLY bottom-line statement. summary synthesises across metrics + adds plan context but MUST NOT repeat any metric_block annotation. Each annotation describes ONLY its own metric; never restate the verdict or summary inside an annotation.
+8. NO META / NO QUESTIONS. Never ask questions, never narrate method, never output raw statistics (correlation coefficients, r/p values, internal model names) or "Check:" clauses. State conclusions in plain coaching language. Grade impact is supplied as a qualitative bucket — reference the bucket, never a coefficient.
+9. PACE FORMAT. Pace values are supplied pre-formatted as mm:ss. Reproduce them EXACTLY into canonical_value / session_line. NEVER compute or reformat a pace yourself.
+10. FUEL. Do NOT comment on fuelling/hydration unless nutrition data for THIS session is provided (it is in the NOT AVAILABLE list when absent).
+11. METRIC BLOCKS. Emit one metric_block per metric the data supports. canonical_value is the ONE headline number (pre-formatted; pace already mm:ss). session_line is a factual readout from the SAME artifact the graph draws from. annotation is MANDATORY and about THIS metric only; if data_available=false the annotation STATES the absence (never null, never a fabricated number).
 
-OUTPUT: Output ONLY a single complete, valid JSON object matching the schema below — no markdown, no code fence, no prose before or after. Do not wrap it in \`\`\`. Keep it COMPACT so the whole object fits: stay within the length caps. Exactly this shape:
+OUTPUT: Output ONLY a single complete, valid JSON object matching the schema below — no markdown, no code fence, no prose before or after. Do not wrap it in \`\`\`. Keep it COMPACT within the caps. Exactly this shape:
 {
-  "headline": "string, <= 90 chars",
   "sport": "${sport}",
-  "execution_vs_plan": { "planned_session": "string|null", "verdict": "as_planned|easier|harder|off_plan|no_plan", "note": "string, <= 160 chars" },
-  "effort_read": { "primary_zone": "z1|z2|z3|z4|z5|n/a", "distribution_note": "string, <= 160 chars" },
-  "key_signals": [ { "label": "string, <= 24 chars", "value": "string, <= 24 chars", "read": "string, <= 120 chars" } ],
-  "flags": [ { "type": "string", "severity": "info|warn", "message": "string, <= 140 chars" } ],
-  "coach_note": "1-3 short sentences in your coaching voice, <= 320 chars"
+  "verdict": { "call": "string <= 90 — the ONE bottom-line, stated once", "plan_verdict": "as_planned|easier|harder|off_plan|no_plan", "action": "string|null <= 120 — at most ONE next-step line" },
+  "type_inference": "string|null <= 120 — only when logged type != planned type; else null",
+  "summary": "string <= 320 — holistic cross-metric read + plan context; MUST NOT repeat any annotation",
+  "measured_against": "string|null — the planned-session brief (not a verdict restatement)",
+  "metric_blocks": [ { "metric_key": "hr|pace|elevation|cadence|power|...", "label": "string <= 24", "canonical_value": "string <= 24", "session_line": "string <= 80", "plan_line": "string|null <= 80", "annotation": "string <= 140 (MANDATORY)", "data_available": true } ],
+  "flags": [ { "type": "string", "severity": "info|warn", "message": "string <= 140" } ]
 }
-key_signals: 2-4 items grounded in real numbers. flags: empty array [] if nothing notable. Respect every character cap — a complete object matters more than verbosity.`;
+metric_blocks: one per supported metric, any order (the app sorts by a fixed priority). flags: [] if nothing notable. Respect every cap — a complete object matters more than verbosity.`;
 
   const user = `ACTIVITY (summary):
 ${JSON.stringify({
@@ -340,7 +368,7 @@ ${JSON.stringify({
 
 HR ZONE DISTRIBUTION: ${zoneDistribution}
 CADENCE STATS (avg + 5-seg trend): ${JSON.stringify(streams?.cadence_stats ?? null)}
-GRADE CORRELATION: ${JSON.stringify(streams?.grade_correlation ?? null)}
+GRADE IMPACT (qualitative bucket — reference this, NEVER a coefficient): ${gradeImpactBucket(activity.elevation_m, streams?.grade_correlation)}
 SPLITS (${activity.splits_source ?? 'none'}): ${splitsSummary ? splitsSummary.join(' | ') : 'none'}
 
 PLANNED SESSION for ${viennaDate(activity.date)} (null = off-plan / unplanned):
@@ -382,39 +410,45 @@ export function parseAnalysisJSON(text) {
   }
   const obj = res.obj;
   if (!obj || typeof obj !== 'object') return { ok: false, error: 'parsed value is not an object' };
-  if (typeof obj.headline !== 'string' || typeof obj.coach_note !== 'string') {
-    return { ok: false, error: 'missing required headline/coach_note' };
+  if (!obj.verdict || typeof obj.verdict.call !== 'string' || typeof obj.summary !== 'string') {
+    return { ok: false, error: 'missing required verdict.call/summary' };
   }
   return { ok: true, value: coerceAnalysisShape(obj) };
 }
 
-// Defensive normalisation to the STEP 2 contract so the native UI can render
-// without per-field guards.
+const PLAN_VERDICTS = ['as_planned', 'easier', 'harder', 'off_plan', 'no_plan'];
+
+// Defensive normalisation to the v1.2 contract so the native UI can render without
+// per-field guards. `schema:'v1.2'` lets the render distinguish new cards from
+// stored v1 cards (which lack metric_blocks) and degrade gracefully.
 export function coerceAnalysisShape(obj) {
   const arr = (v) => (Array.isArray(v) ? v : []);
-  const evp = obj.execution_vs_plan || {};
-  const er = obj.effort_read || {};
+  const v = obj.verdict || {};
   return {
-    headline: String(obj.headline).slice(0, 90),
+    schema: 'v1.2',
     sport: obj.sport || 'other',
-    execution_vs_plan: {
-      planned_session: evp.planned_session ?? null,
-      verdict: evp.verdict || 'no_plan',
-      note: evp.note || '',
+    verdict: {
+      call: String(v.call ?? '').slice(0, 90),
+      plan_verdict: PLAN_VERDICTS.includes(v.plan_verdict) ? v.plan_verdict : 'no_plan',
+      action: v.action != null ? String(v.action).slice(0, 120) : null,
     },
-    effort_read: {
-      primary_zone: er.primary_zone || 'n/a',
-      distribution_note: er.distribution_note || '',
-    },
-    key_signals: arr(obj.key_signals).map(s => ({
-      label: String(s?.label ?? ''), value: String(s?.value ?? ''), read: String(s?.read ?? ''),
+    type_inference: obj.type_inference != null ? String(obj.type_inference).slice(0, 120) : null,
+    summary: String(obj.summary ?? '').slice(0, 320),
+    measured_against: obj.measured_against != null ? String(obj.measured_against) : null,
+    metric_blocks: arr(obj.metric_blocks).map(b => ({
+      metric_key: String(b?.metric_key ?? 'other'),
+      label: String(b?.label ?? '').slice(0, 24),
+      canonical_value: String(b?.canonical_value ?? '').slice(0, 24),
+      session_line: String(b?.session_line ?? '').slice(0, 80),
+      plan_line: b?.plan_line != null ? String(b.plan_line).slice(0, 80) : null,
+      annotation: String(b?.annotation ?? '').slice(0, 140), // MANDATORY — always a string
+      data_available: b?.data_available !== false,
     })),
     flags: arr(obj.flags).map(f => ({
       type: String(f?.type ?? 'info'),
       severity: f?.severity === 'warn' ? 'warn' : 'info',
-      message: String(f?.message ?? ''),
+      message: String(f?.message ?? '').slice(0, 140),
     })),
-    coach_note: String(obj.coach_note),
   };
 }
 
@@ -454,6 +488,9 @@ export function shouldSkipRegen({ force, regenReason, prevAudit, injuryFp, zoneF
   if (regenReason !== 'injury_change' && regenReason !== 'zone_change') return false;
   const a = (prevAudit && typeof prevAudit === 'object') ? prevAudit : {};
   if (a.injury_fingerprint === undefined || a.zone_fingerprint === undefined) return false;
+  // Schema bump (v1.2 card redesign): a card stored under an older prompt_version
+  // must regenerate even if injury+zone are unchanged. PRESERVES #11's guard.
+  if (a.prompt_version !== SCHEMA_VERSION) return false;
   return a.injury_fingerprint === injuryFp && a.zone_fingerprint === zoneFp;
 }
 
