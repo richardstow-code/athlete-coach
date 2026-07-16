@@ -298,6 +298,7 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
   // ── Sports / AI ───────────────────────────────────────────
   const [showSports, setShowSports] = useState(false)
   const [inferState, setInferState] = useState(null)
+  const [activeSports, setActiveSports] = useState([])
 
   // ── Delete account ────────────────────────────────────────
   const [deleteAccountStep, setDeleteAccountStep] = useState(0)
@@ -312,15 +313,17 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
       setUserId(uid)
       setEmail(userData?.user?.email ?? '')
       if (!uid) return
-      const [{ data: settingsData }, { data: stravaData }] = await Promise.all([
+      const [{ data: settingsData }, { data: stravaData }, { data: sportsData }] = await Promise.all([
         supabase.from('athlete_settings').select('*').eq('user_id', uid).maybeSingle(),
         supabase.from('strava_tokens').select('athlete_id, athlete_name').eq('user_id', uid).maybeSingle(),
+        supabase.from('athlete_sports').select('sport_raw,priority,is_active').eq('is_active', true).order('created_at'),
       ])
       if (settingsData) {
         setSettings(s => ({ ...s, ...settingsData, races: settingsData.races || [] }))
         setZones({ ...DEFAULT_ZONES, ...(settingsData.training_zones || {}) })
         setHealthFlags(settingsData.health_flags || [])
       }
+      setActiveSports(sportsData || [])
       setStravaToken(stravaData || false)
     }
     load()
@@ -576,6 +579,11 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
 
   const coachingSummary = `Tone ${settings.tone ?? 50} · Detail ${settings.detail_level ?? 50} · Reach ${settings.coaching_reach ?? 50}`
 
+  const primaryActiveSport = activeSports.find(s => s.priority === 'primary')
+  const sportsSummary = primaryActiveSport
+    ? `Primary: ${primaryActiveSport.sport_raw}${activeSports.length > 1 ? ` +${activeSports.length - 1} more` : ''}`
+    : activeSports.length > 0 ? `${activeSports.length} sport${activeSports.length > 1 ? 's' : ''} active` : 'Set your sports'
+
   const stravaSummary = stravaToken ? 'Strava connected' : stravaToken === false ? 'Strava not connected' : '...'
 
   const tierLabels = { founder: 'Founder', free: 'Free', pro: 'Pro' }
@@ -645,7 +653,11 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
         body="Set your training zones, health flags, and coaching tone here. Your coach reads this data live — updating your shoulder status or zones immediately affects coaching advice. Connected Services links your Strava account."
         position="bottom"
       />
-      {showSports && <SportsPriorities onClose={() => setShowSports(false)} />}
+      {showSports && <SportsPriorities onClose={async () => {
+        setShowSports(false)
+        const { data } = await supabase.from('athlete_sports').select('sport_raw,priority,is_active').eq('is_active', true).order('created_at')
+        setActiveSports(data || [])
+      }} />}
 
       {cancelModal && (
         <CancelRaceModal
@@ -733,6 +745,32 @@ export default function Settings({ onClose, stravaConnectError, onLogout, onOpen
                   Reset onboarding hints
                 </button>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── SECTION 1.5: SPORT PREFERENCES ── */}
+        <div style={sectionStyle('sport_prefs')}>
+          <SectionHeader title="Sport Preferences" summary={sportsSummary} isOpen={openSection === 'sport_prefs'} onToggle={() => toggleSection('sport_prefs')} />
+          {openSection === 'sport_prefs' && (
+            <div style={sectionBody}>
+              <div style={{ fontSize: 12, color: Z.muted, marginBottom: 16, lineHeight: 1.5 }}>Edit your sports, priorities, and training focus.</div>
+              {activeSports.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  {activeSports.map(s => (
+                    <div key={s.sport_raw} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, border: `1px solid ${Z.border}`, marginBottom: 6 }}>
+                      <span style={{ fontSize: 13, color: Z.text }}>{s.sport_raw}</span>
+                      <span style={{ fontSize: 10, color: Z.muted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '2px 8px', background: 'rgba(255,255,255,0.08)', borderRadius: 4 }}>{s.priority}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => setShowSports(true)}
+                style={{ background: 'rgba(232,255,71,0.1)', border: '1px solid rgba(232,255,71,0.3)', borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontSize: 12, color: Z.accent, fontFamily: "'DM Mono', monospace" }}
+              >
+                Edit sports &amp; priorities
+              </button>
             </div>
           )}
         </div>

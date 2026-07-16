@@ -247,6 +247,44 @@ Focus on: (1) Zone discipline — was the effort appropriate for the intent? (2)
   return data.content?.[0]?.text || ''
 }
 
+// ── AC-095: Session status evaluation (Deno port of lib/sessionStatus.ts) ─────
+
+function activityMatchesSessionType(activityType: string, sessionType: string): boolean {
+  const a = activityType.toLowerCase()
+  const s = sessionType.toLowerCase()
+  if (a === s) return true
+  if (s === 'run' && (a === 'run' || a === 'running' || a === 'trailrun' || a.includes('run'))) return true
+  if (s === 'trailrun' && (a === 'trailrun' || a.includes('trail'))) return true
+  if (s === 'strength' && (a === 'workout' || a === 'weighttraining' || a === 'strength')) return true
+  if (s === 'cycling' && (a === 'ride' || a === 'virtualride' || a.includes('ride') || a.includes('cycl'))) return true
+  if (s === 'swim' && (a === 'swim' || a === 'openwaterswim' || a.includes('swim'))) return true
+  return false
+}
+
+type ActivityInput = { id: string; type: string; name?: string; duration_min: number; created_at: string }
+type SessionInput = { id: string; planned_date: string; session_type: string; status: string; completed_at: string | null }
+
+function evaluateSessionStatus(
+  session: SessionInput,
+  activitiesOnDate: ActivityInput[],
+  todayVienna: string
+): { status: string; completed_at: string | null; notes_append?: string } {
+  if (session.planned_date > todayVienna) return { status: 'planned', completed_at: null }
+  if (session.session_type === 'rest') return { status: 'rest_observed', completed_at: null }
+  if (activitiesOnDate.length === 0) return { status: 'missed', completed_at: null }
+  const matched = activitiesOnDate.find(a => activityMatchesSessionType(a.type, session.session_type))
+  if (matched) return { status: 'completed', completed_at: matched.created_at }
+  const first = activitiesOnDate[0]
+  const summary = activitiesOnDate
+    .map(a => `${a.name ?? a.type} (${a.type}, ${Math.round(a.duration_min)}m)`)
+    .join('; ')
+  return {
+    status: 'completed_different',
+    completed_at: first.created_at,
+    notes_append: `\n\nCompleted different session on ${session.planned_date}: ${summary}`,
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -264,8 +302,8 @@ serve(async (req) => {
     return new Response('Bad request', { status: 400 })
   }
 
-  // Only handle INSERT events
-  if (payload.type !== 'INSERT') {
+  // Handle INSERT and UPDATE events (upsert fires UPDATE on conflict)
+  if (payload.type !== 'INSERT' && payload.type !== 'UPDATE') {
     return new Response('OK', { status: 200 })
   }
 
@@ -396,6 +434,57 @@ serve(async (req) => {
     }
   } catch (err) {
     console.error('[enrich-activity] Coaching feedback failed (streams still saved):', err.message)
+  }
+
+  // AC-095: Evaluate session status for this activity's date
+  try {
+    const activityDate = (date || new Date().toISOString()).slice(0, 10)
+    const activityType = record.type ?? ''
+    const activityDurationMin = record.elapsed_time ? record.elapsed_time / 60 : 0
+
+    // Find planned session for this date
+    const { data: plannedSessions } = await supabase
+      .from('scheduled_sessions')
+      .select('id, planned_date, session_type, status, completed_at')
+      .eq('user_id', userId)
+      .eq('planned_date', activityDate)
+      .in('status', ['planned', 'missed'])
+
+    if (plannedSessions?.length) {
+      // Get all activities for this date (excluding the soft-deleted ones)
+      const { data: dayActivities } = await supabase
+        .from('activities')
+        .select('id, type, name, duration_min, created_at')
+        .eq('user_id', userId)
+        .neq('is_deleted', true)
+        .gte('date', activityDate + 'T00:00:00Z')
+        .lte('date', activityDate + 'T23:59:59Z')
+
+      // Evaluate and update each session
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' })
+      for (const session of plannedSessions) {
+        const activities = (dayActivities ?? []).map((a: any) => ({
+          id: String(a.id),
+          type: a.type ?? '',
+          name: a.name ?? undefined,
+          duration_min: a.duration_min ?? 0,
+          created_at: a.created_at,
+        }))
+
+        const result = evaluateSessionStatus(session as any, activities, today)
+        if (result.status !== session.status) {
+          const updatePayload: Record<string, any> = { status: result.status }
+          if (result.completed_at) updatePayload.completed_at = result.completed_at
+          if (result.notes_append && session.session_type !== 'rest') {
+            updatePayload.notes = (session as any).notes ? (session as any).notes + result.notes_append : result.notes_append
+          }
+          await supabase.from('scheduled_sessions').update(updatePayload).eq('id', session.id)
+          console.log(`[enrich-activity] Session ${session.id} status → ${result.status}`)
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[enrich-activity] Session status eval failed (non-fatal):', err.message)
   }
 
   // Auto-trigger zone calibration every 10th activity

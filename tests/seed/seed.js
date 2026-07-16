@@ -411,6 +411,44 @@ export async function seedAll() {
     enrichment_status: 'complete',
   })))
 
+  // ── 4.5. activity_streams ──
+  // Seed minimal stream data for all run/ride activities so Test 1 (integrity check) passes.
+  // Sample points are synthetic but structurally valid (5 points per activity).
+  console.log('  Seeding activity_streams...')
+  const { data: streamable } = await supabase
+    .from('activities')
+    .select('id, duration_min, avg_hr, distance_km, type')
+    .in('user_id', ALL_IDS)
+    .in('type', ['run', 'ride'])
+    .eq('enrichment_status', 'complete')
+
+  if (streamable?.length) {
+    await ins('activity_streams', streamable.map(a => {
+      const durationSec = Math.round((a.duration_min || 30) * 60)
+      const avgHr = a.avg_hr || 140
+      const distM = Math.round((a.distance_km || 5) * 1000)
+      return {
+        activity_id: a.id,
+        samples: [
+          { time: 0,                              hr: Math.round(avgHr * 0.88), pace: 380, distance: 0,                         altitude: 100 },
+          { time: Math.round(durationSec * 0.25), hr: Math.round(avgHr * 0.97), pace: 360, distance: Math.round(distM * 0.25), altitude: 103 },
+          { time: Math.round(durationSec * 0.5),  hr: avgHr,                    pace: 355, distance: Math.round(distM * 0.5),  altitude: 108 },
+          { time: Math.round(durationSec * 0.75), hr: Math.round(avgHr * 1.03), pace: 358, distance: Math.round(distM * 0.75), altitude: 106 },
+          { time: durationSec,                    hr: Math.round(avgHr * 0.96), pace: 365, distance: distM,                    altitude: 101 },
+        ],
+        zone_seconds: {
+          z1: Math.round(durationSec * 0.05),
+          z2: Math.round(durationSec * 0.50),
+          z3: Math.round(durationSec * 0.25),
+          z4: Math.round(durationSec * 0.15),
+          z5: Math.round(durationSec * 0.05),
+        },
+        cadence_stats: { avg: a.type === 'ride' ? 88 : 172, max: a.type === 'ride' ? 98 : 185 },
+        grade_correlation: 0.25,
+      }
+    }))
+  }
+
   // ── 5. scheduled_sessions ──
   console.log('  Seeding scheduled_sessions...')
 
@@ -577,6 +615,7 @@ export async function seedAll() {
   console.log('  elite_taper:  Anna Kowalski  (elite, 5 weeks to London Marathon)')
   console.log('  struggling:   Dave Thornton  (marathon, low adherence, nutrition issues)')
   console.log('  multisport:   Lena Fischer   (Ironman 70.3, run/ride/swim)')
+  console.log(`  activity_streams: ${streamable?.length ?? 0} rows (run/ride activities)`)
 }
 
 // Run when called directly
