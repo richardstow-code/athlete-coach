@@ -1,3 +1,23 @@
+# INVESTIGATION — PR #10 "Run Tests (major)" red (run #57): flake/env, NOT a #10 regression — 2026-06-23
+
+**VERDICT: PR #10 is SAFE TO MERGE.** Both red clusters are flake/env and unrelated to its RPC change.
+
+**Decisive structural fact:** PR #10 changes **only** `supabase/migrations/20260623_coaching_context_recovery_divergence.sql` (+ its gate) + `docs/architecture.md` + `docs/database.md` + `HANDOVER.md` (confirmed via `gh pr view 10 --files`). **No app, e2e, test, or strava code.** And `.github/workflows/test.yml` has **no migration-apply step** — a `^supabase/migrations/` change only *triggers the MAJOR tier*; the e2e then run against a Vercel **PREVIEW_URL** (fallback prod) whose Supabase is the **already-deployed** RPC. So #10's RPC rewrite is **not in the path the tests exercise** — it cannot break the home screen or the strava handshake.
+
+**Cluster 1 (home-screen never renders — chat/smoke×6/settings/progress time out on `[data-testid="home-screen"]`): FLAKE/ENV, not #10.**
+- 1.1 Signature == the chronic `loginAs` e2e flake (login fails → home never loads → every home-dependent test times out). This check is chronically red on this repo from login timeouts; the node/API tier is the real gate, and the convention is merge via `--rebase --admin`. (Architect can confirm in one glance: a recent **main** "Run Tests (major)" shows the same home-screen timeouts.)
+- 1.2 RPC health: the **deployed** `get_athlete_coaching_context('40cfe68e…','chat',…)` runs clean and returns a valid `core.data_completeness` object (`has_resting_hr:true`, `missing_metrics:['sleep','hrv']`, `has_plan_for_today:true`, `has_zone_data_today:true`) — old schema (no `stale_metrics`/`has_X_fresh`), confirming #10 is NOT applied to the DB the preview hits. #10's migration patch was separately validated read-only (all 5 `replace()` snippets match the live def); its correctness is gated at **A2** (the `_gate.sql` present-but-stale check), not by these e2e.
+- 1.3 Trace: not opened (CI artifact; not needed for the verdict). If the architect wants belt-and-braces, one failed home-load trace will show **stuck on the login screen** (flake), not past-login/blank (RPC). The verdict does not depend on it — the RPC isn't in the test path.
+
+**Cluster 2 (strava-webhook GET handshake: valid token → 403): BENIGN preview-env token artifact, not #10.**
+- #10 touches **nothing** in `strava-webhook` (file list above) — it cannot regress this regardless.
+- 2.1 The POST tests pass (200) and "wrong verify token → 403" passes, so the endpoint is reachable and the compare logic works; only the *valid-handshake* compare 403s → the **preview env lacks the matching `STRAVA_VERIFY_TOKEN`** the test sends (no such secret is injected in `test.yml`). Env mismatch, benign.
+- 2.2 Prod intact: Strava activities are flowing → the prod subscription/handshake works; the handshake code path is unchanged on this branch.
+
+**Recommendation:** merge #10 via the established chronic-flake path (`--rebase --admin`) — architect's action, not CC's. The RPC change itself is verified at A2 (apply + `_gate.sql` + a fresh coaching output), which is where it belongs. No merge/deploy/eas performed here.
+
+---
+
 # HANDOVER — Recovery-data divergence fix (coaching-context RPC) — 2026-06-23
 
 - **Repo:** `richardstow-code/athlete-coach` (web). **Branch:** `fix/recovery-data-divergence` (worktree off `origin/main` @ `fdd89dd`). **Type:** Supabase RPC (`get_athlete_coaching_context`) — **backend / no EAS**. Architect deploys via Supabase MCP + behavioural gate. CC does not self-merge.
