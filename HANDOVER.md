@@ -1,3 +1,22 @@
+# HANDOVER — Suunto Integration Phase 1 (OAuth + token lifecycle) — 2026-07-16
+
+- **Repo:** web (`richardstow-code/athlete-coach`). **Branch:** `feature/suunto-oauth` (off clean `origin/main`). **Vercel serverless (Node, ESM), NO native, NO eas.** Architect merges + verifies (behavioural gate: tokens land in `athlete_settings` after a real connect).
+
+## STEP 1 — surface enumeration (before writing code)
+
+**1a. Files under `api/`** (12): `_mcpTools.js`, `_oauth.js`, `_supabaseRest.js`, `agentic-chat.js`, `analyze-activity.js`, `claude-proxy.js`, `mcp.js`, `oauth/authorize.js`, `regenerate-coaching-artifact.js`, `route-planner.js`, `strava-webhook.js`, `well-known-protected-resource.js`.
+  - **Signature/export style:** `export default function handler(req, res)` (or `async`). Vercel Node runtime — `req.query`, `req.body` (auto-parsed), `res.status().json()/.send()`. Optional `export const config = { maxDuration }`. HTML pages: `res.setHeader('Content-Type','text/html; charset=utf-8')` then `res.status(200).send(\`<!doctype html>…\`)` with **inline** system-ui styles, white bg, teal `#14b8a6` accent (ref: `api/oauth/authorize.js`).
+
+**1b. Supabase service-role client:** the repo does **NOT** use `@supabase/supabase-js` for data access in `api/` — it uses **direct Supabase REST over `fetch`**. `strava-webhook.js` inlines it (`SUPABASE_URL` const + `supabaseHeaders()` = `apikey` + `Authorization: Bearer` both = `process.env.SUPABASE_SECRET_KEY`; PATCH via `?col=eq.val`). The shared, injectable version is **`api/_supabaseRest.js` → `makeSupabaseRest({ baseUrl, serviceKey, fetchImpl })`** exposing `restGet` / `restPatch` (sets `Prefer: return=representation`, so an update returns the affected rows → I can detect 0-rows). **I will use `makeSupabaseRest` (restGet + restPatch)** — it IS the established convention and its `fetchImpl` injection is exactly what the STEP-5 unit tests need. NOTE: the brief's STEP 3e wrote `.update().eq()` (supabase-js syntax); I'm honouring the higher-level instruction "do not introduce a new helper convention" and using the repo's REST helper instead — a single-user PATCH by `user_id`, NOT an upsert, 0-rows-returned ⇒ error. Flagging for review.
+
+**1c. Module system:** **ESM** — `package.json "type": "module"`; all `api/` files use `import`/`export default`.
+
+**1d. Node version / test runner:** No `engines` pin in `package.json` (Vercel default Node used). Test runner = Node built-in `node --test` (`"test:api": "node --test tests/api/*.test.js"`), assertions via `node:assert`. New unit tests → `tests/api/suunto-*.test.js`, mocking `fetch` through `makeSupabaseRest`'s `fetchImpl` and a global fetch stub for the token endpoint.
+
+**Planned new files:** `api/suunto-auth.js` (STEP 2), `api/suunto-callback.js` (STEP 3), `lib/suunto/tokens.js` (STEP 4 — `lib/` does not exist yet, will create), `tests/api/suunto-*.test.js` (STEP 5), `docs/suunto-integration.md` + doc updates (STEP 6).
+
+---
+
 # HANDOVER — analyze-activity v1.2.3 (action dangle) — 2026-06-23
 
 - **Repo:** web. **Branch:** `fix/activity-card-v123` (off `origin/main`). **Vercel-only, NO native, NO eas.** Evidence: id=367 canary under v1.2.2 (`coach_analysis_version 4`) — verdict/labels/cadence all clean; only `action` dangled ("…to settle into a true").

@@ -1,5 +1,13 @@
 # Changelog
 
+## Suunto Phase 1 — OAuth connect + token refresh — 2026-07-16
+
+First slice of the Suunto Cloud API integration (partner access). Backend I/O only — Vercel serverless, no native, no EAS. Migration for the `suunto_*` columns on `athlete_settings` was applied separately by the Architect.
+- **`api/suunto-auth.js`** — "Connect Suunto" entry point: mints a CSRF `state` into an httpOnly/Secure/SameSite=Lax cookie and 302-redirects to Suunto's authorize endpoint.
+- **`api/suunto-callback.js`** — validates `state`, exchanges the code for tokens (Basic-auth POST), decodes the access_token JWT `user` claim → `suunto_username`, and PATCHes `athlete_settings` for the single athlete (not upsert; 0 rows ⇒ error). Tokens go to Supabase only — never logged, never in the URL/HTML.
+- **`lib/suunto/tokens.js`** — `getValidSuuntoAccessToken(userId)` refreshes within 5 min of expiry (persisting a rotated refresh token if returned), else returns the stored token; throws `SUUNTO_RECONNECT_REQUIRED` when not connected / refresh rejected. `suuntoApiHeaders()` builds the two-header auth (Bearer JWT + `Ocp-Apim-Subscription-Key`). Foundation for Phase 3 ingest — not yet called. `lib/suunto/jwt.js` decodes the JWT payload without verifying the signature.
+- **Tests**: 14 unit tests across `tests/api/suunto-{jwt,tokens,callback}.test.js` — fetch fully mocked, no live Suunto calls.
+
 ## analyze-activity v1.2.3 — action dangle (canary-driven) — 2026-06-23
 
 Single residual from the id=367 canary under v1.2.2: `verdict.action` was a semicolon-joined run-on that overran its cap and dangled on "…to settle into a true". Vercel-only.

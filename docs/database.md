@@ -127,6 +127,13 @@ One row per user. Stores all athlete profile, preferences, and inferred fields.
 | health_flags | jsonb | array of `{id, label, status, notes, updated_date}` — added 2026-03-21 |
 | hints_dismissed | jsonb | `{hint_id: "YYYY-MM-DD"}` — added 2026-03-21 |
 | last_seen_version | text | last release notes version seen — added 2026-03-21 |
+| suunto_username | text | Suunto App username, from the access_token JWT `user` claim — added 2026-07-16 (Suunto Phase 1). Intended multi-user routing key for future Suunto webhooks |
+| suunto_access_token | text | Suunto Cloud API access token (JWT, ~24h TTL) — added 2026-07-16 |
+| suunto_refresh_token | text | Suunto refresh token (rotated on refresh if a new one is returned) — added 2026-07-16 |
+| suunto_token_expires_at | timestamptz | access token expiry (now + `expires_in`s at connect/refresh) — added 2026-07-16 |
+| suunto_connected_at | timestamptz | when Suunto was connected — added 2026-07-16 |
+| suunto_last_workout_sync_at | timestamptz | last Suunto workout ingest (unused until Phase 3) — added 2026-07-16 |
+| suunto_last_health_sync_at | timestamptz | last Suunto health ingest (unused until Phase 3) — added 2026-07-16 |
 | updated_at | timestamptz | |
 
 **Actively used**: Yes — read by virtually every screen via `useSettings()` hook.
@@ -525,6 +532,7 @@ Workouts recorded natively via Polar H10 BLE + GPS.
 
 | Column | Table | Added | Purpose |
 |--------|-------|-------|---------|
+| `suunto_*` columns (`suunto_username`, `suunto_access_token`, `suunto_refresh_token`, `suunto_token_expires_at`, `suunto_connected_at`, `suunto_last_workout_sync_at`, `suunto_last_health_sync_at`) | athlete_settings | 2026-07-16 | Suunto Phase 1 — OAuth connect + token lifecycle. Written by `api/suunto-callback.js` (connect) and `lib/suunto/tokens.js` (refresh). `_last_*_sync_at` unused until Phase 3 ingest. See `docs/suunto-integration.md` |
 | `coach_analysis` (+ `_generated_at`, `_model`, `_version`, `prompt_data_completeness`) | activities | 2026-06-09 | Path A — automatic structured per-activity AI analysis generated server-side on enrichment completion via `trigger_analyze_activity` → `/api/analyze-activity` |
 | `healthkit_sync_enabled` | athlete_settings | 2026-04-05 | Boolean — true once first HealthKit sync completes |
 | `healthkit_last_synced_at` | athlete_settings | 2026-04-05 | Timestamp of last successful `runHealthKitSync()` call |

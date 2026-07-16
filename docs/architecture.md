@@ -192,6 +192,46 @@ Stage 2 — Supabase (enrich-activity edge function):
   - Generates coaching feedback via Claude Haiku → coaching_memory
 ```
 
+## Suunto integration
+
+Phase 1 (2026-07-16) — OAuth connect + token lifecycle. Suunto Cloud API partner
+access; single-user like the rest of the app. Three Vercel serverless endpoints
+plus a token helper library; no native code (backend I/O only).
+
+```
+Connect flow (browser):
+  GET /api/suunto-auth
+    - mints a random `state`, sets it in an httpOnly/Secure/SameSite=Lax
+      cookie (suunto_oauth_state, 10 min), 302 → Suunto authorize endpoint
+  ── user approves at cloudapi-oauth.suunto.com ──
+  GET /api/suunto-callback?code=&state=
+    - validates `state` vs the cookie (CSRF), clears the cookie
+    - POST {OAUTH_HOST}/oauth/token (Basic auth, grant_type=authorization_code)
+    - decodes the access_token JWT payload → custom "user" claim = Suunto username
+    - PATCH athlete_settings (by user_id, NOT upsert) with the 5 suunto_* columns
+    - renders a plain success page (no tokens in URL/HTML, never logged)
+```
+
+- **Endpoints**: `api/suunto-auth.js` (start), `api/suunto-callback.js` (exchange + persist).
+- **Token helper**: `lib/suunto/tokens.js` — `getValidSuuntoAccessToken(userId)` reads
+  the stored tokens, returns the current access token if >5 min from expiry, else
+  refreshes (`grant_type=refresh_token`), persisting the new access token, expiry, and
+  a rotated refresh token if one is returned. Throws a `SUUNTO_RECONNECT_REQUIRED`
+  error if not connected or the refresh is rejected. Not called by anything yet — it is
+  the foundation Phase 3 (ingest) will use. `lib/suunto/jwt.js` holds the signature-less
+  JWT payload decoder.
+- **Two-header auth model**: Suunto Cloud API requests carry BOTH an
+  `Authorization: Bearer <access_token>` header AND an
+  `Ocp-Apim-Subscription-Key: <SUUNTO_SUBSCRIPTION_KEY>` (Azure APIM) header —
+  built by `suuntoApiHeaders()`.
+- **User-claim → `suunto_username`**: the JWT `user` claim is the Suunto App username.
+  Stored now as the account label; it is the intended **multi-user routing key** for
+  future Suunto webhooks (analogous to Strava `owner_id` → `strava_tokens`).
+- **Supabase access**: the REST helper `api/_supabaseRest.js` (`restGet`/`restPatch`,
+  service-role key), same convention as `strava-webhook.js` — not `@supabase/supabase-js`.
+
+See `docs/suunto-integration.md` for the full protocol facts, redirect URI, and env vars.
+
 ## Key Patterns
 
 - **Timezone**: All date comparisons use `timeZone: 'Europe/Vienna'` explicitly. Helper: `new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Vienna' })`
