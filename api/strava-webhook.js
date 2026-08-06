@@ -101,6 +101,94 @@ async function fetchActivity(activityId, token) {
   return res.json()
 }
 
+// ── AC-157 CAPTURE: start instant, location, timezone, device temperature ─────
+//
+// Before this, start time / coordinates / temperature were all discarded at
+// ingest, so a 14:12 session in 31C was indistinguishable from an 07:30 one.
+// These helpers are exported for tests (T4).
+
+/**
+ * Strava sends `timezone` as "(GMT+01:00) Europe/Vienna". Pull out the IANA part.
+ * Returns null on anything that doesn't look like an IANA zone, rather than
+ * storing the display string.
+ */
+export function parseStravaTimezone(tz) {
+  if (typeof tz !== 'string') return null
+  const m = /\)\s*(.+)$/.exec(tz.trim())
+  const iana = (m ? m[1] : tz).trim()
+  // Region/City, optionally Region/Sub/City. Never "GMT+01:00".
+  return /^[A-Za-z_]+\/[A-Za-z_+\-]+(\/[A-Za-z_+\-]+)?$/.test(iana) ? iana : null
+}
+
+/**
+ * The true local start INSTANT.
+ *
+ * Strava's `start_date` is already the exact UTC instant, so we prefer it — no
+ * timezone arithmetic, nothing to get wrong. `start_date_local` is the same
+ * moment rendered in the activity's local zone but misleadingly suffixed 'Z',
+ * so it is only a fallback, and then only combined with the parsed IANA zone.
+ */
+export function deriveStartedAt(activity) {
+  if (activity?.start_date) {
+    const d = new Date(activity.start_date)
+    if (!Number.isNaN(d.getTime())) return d.toISOString()
+  }
+  const local = activity?.start_date_local
+  const tz = parseStravaTimezone(activity?.timezone)
+  if (typeof local !== 'string' || !tz) return null
+
+  // Interpret the naive local wall-clock in `tz`.
+  const naive = new Date(local.endsWith('Z') ? local : `${local}Z`)
+  if (Number.isNaN(naive.getTime())) return null
+  const offsetMin = tzOffsetMinutes(naive, tz)
+  return new Date(naive.getTime() - offsetMin * 60_000).toISOString()
+}
+
+/** Minutes `tz` is ahead of UTC at `at`. */
+function tzOffsetMinutes(at, tz) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).formatToParts(at).reduce((acc, p) => {
+      if (p.type !== 'literal') acc[p.type] = p.value
+      return acc
+    }, {})
+    const asUtc = Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour === '24' ? '00' : parts.hour), Number(parts.minute), Number(parts.second),
+    )
+    return Math.round((asUtc - at.getTime()) / 60_000)
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Device temperature, validated against the activities_temp_c_check bound
+ * (-60..60). An out-of-range or non-numeric reading is DROPPED, not written:
+ * a rejected CHECK would fail the whole upsert and lose the activity outright.
+ * Returns { temp_c, weather_source } — both null when there is no usable value.
+ */
+export function deriveDeviceTemp(activity) {
+  const t = activity?.average_temp
+  if (typeof t !== 'number' || !Number.isFinite(t)) return { temp_c: null, weather_source: null }
+  if (t < -60 || t > 60) return { temp_c: null, weather_source: null }
+  return { temp_c: t, weather_source: 'strava_device' }
+}
+
+/** start_latlng → { start_lat, start_lng }, or nulls. */
+export function deriveStartLatLng(activity) {
+  const ll = activity?.start_latlng
+  if (!Array.isArray(ll) || ll.length < 2) return { start_lat: null, start_lng: null }
+  const [lat, lng] = ll
+  if (typeof lat !== 'number' || typeof lng !== 'number') return { start_lat: null, start_lng: null }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { start_lat: null, start_lng: null }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return { start_lat: null, start_lng: null }
+  return { start_lat: lat, start_lng: lng }
+}
+
 // ── Build activity row for DB ─────────────────────────────────────────────────
 
 function buildActivityRow(activity, userId) {
@@ -145,6 +233,15 @@ function buildActivityRow(activity, userId) {
       workout_type: workoutType,
     },
     enrichment_status: 'pending',
+
+    // AC-157 CAPTURE. Additive only — `date` above keeps its existing
+    // semantics and is NOT repurposed. started_at is the real time anchor.
+    started_at: deriveStartedAt(activity),
+    timezone: parseStravaTimezone(activity.timezone),
+    ...deriveStartLatLng(activity),
+    ...deriveDeviceTemp(activity),
+    // humidity is not in the Strava payload; enrich-activity fills it when a
+    // forecast source is available, otherwise it stays null.
   }
 }
 
