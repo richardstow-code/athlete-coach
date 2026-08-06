@@ -78,6 +78,28 @@ export async function persistCoachTake({ userId, activityId, content, audit }) {
 
   // Stash the audit on activities.raw_data so detect_coach_take_hallucinations
   // has a single place to look. (We avoid adding a new column.)
+  //
+  // AC-157 FIX: this used to PATCH `raw_data: { coach_take_audit: audit }`
+  // directly. PostgREST REPLACES a jsonb column on PATCH — it does not merge —
+  // so that call destroyed splits_metric, laps and pace_variation on every
+  // activity it touched. Activity 418 (1 Aug 2026) lost its raw_data that way
+  // and enrich-activity's recompute_splits path can no longer run on it.
+  //
+  // Read → merge in JS → write back, the same shape patchTakeFreshness() in
+  // regenerate-coaching-artifact.js already used correctly.
+  const existing = await fetch(
+    `${SUPABASE_URL}/rest/v1/activities?id=eq.${activityId}&select=raw_data`,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: process.env.SUPABASE_SECRET_KEY,
+        Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+      },
+    }
+  ).then(r => (r.ok ? r.json() : null)).catch(() => null);
+
+  const currentRawData = Array.isArray(existing) && existing.length ? existing[0].raw_data : null;
+
   await fetch(
     `${SUPABASE_URL}/rest/v1/activities?id=eq.${activityId}`,
     {
@@ -89,11 +111,25 @@ export async function persistCoachTake({ userId, activityId, content, audit }) {
         Prefer: 'return=minimal',
       },
       body: JSON.stringify({
-        // raw_data is jsonb — merge an audit subfield.
-        raw_data: { coach_take_audit: audit },
+        raw_data: mergeRawData(currentRawData, { coach_take_audit: audit }),
       }),
     }
   ).catch(() => {});
+}
+
+/**
+ * Merge audit fields into an existing raw_data object without destroying it.
+ * Exported for the AC-157 regression test.
+ *
+ * A null/absent/non-object current value is treated as an empty object — the
+ * incoming fields are still written, so a first-time audit is never dropped.
+ */
+export function mergeRawData(currentRawData, fields) {
+  const base =
+    currentRawData && typeof currentRawData === 'object' && !Array.isArray(currentRawData)
+      ? currentRawData
+      : {};
+  return { ...base, ...fields };
 }
 
 // Build 27 T3: canonical Coach's-Take system prompt.
