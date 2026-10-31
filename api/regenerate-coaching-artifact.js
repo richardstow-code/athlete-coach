@@ -23,6 +23,7 @@
 // bookkeeping (fingerprint / regen_status / regenerated_at, stored on
 // activities.raw_data) is added here.
 
+import { serviceKeyHeaders } from './_serviceKey.js';
 import {
   callRPC,
   buildCoachTakeSystemPrompt,
@@ -38,8 +39,7 @@ const ANTHROPIC_VERSION = '2023-06-01';
 function sbHeaders(extra) {
   return {
     'Content-Type': 'application/json',
-    apikey: process.env.SUPABASE_SECRET_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+    ...serviceKeyHeaders(),
     ...(extra || {}),
   };
 }

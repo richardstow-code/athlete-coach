@@ -22,6 +22,7 @@
 // downsampling, prompt assembly, JSON parsing) is factored into exported
 // pure helpers so it is unit-testable without a seeded DB.
 
+import { serviceKeyHeaders } from './_serviceKey.js';
 export const config = { maxDuration: 60 };
 
 const SUPABASE_URL = 'https://yjuhzmknabedjklsgbje.supabase.co';
@@ -38,8 +39,7 @@ function corsHeaders(res) {
 
 function svcHeaders(extra) {
   return {
-    apikey: process.env.SUPABASE_SECRET_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+    ...serviceKeyHeaders(),
     ...(extra || {}),
   };
 }
