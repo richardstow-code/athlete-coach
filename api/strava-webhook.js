@@ -1,3 +1,4 @@
+import { serviceKeyHeaders } from './_serviceKey.js';
 /**
  * Vercel Serverless Function — Strava Webhook Handler (Stage 1)
  *
@@ -22,8 +23,7 @@ function viennaDate(ts) {
 function supabaseHeaders() {
   return {
     'Content-Type': 'application/json',
-    'apikey': process.env.SUPABASE_SECRET_KEY,
-    'Authorization': `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+    ...serviceKeyHeaders(),
   }
 }
 

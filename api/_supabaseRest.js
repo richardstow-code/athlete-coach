@@ -11,6 +11,8 @@
 //   - restGet THROWS on a non-2xx response (with .status/.body) so tools can
 //     surface a structured { error } instead of silently returning [].
 
+import { serviceKeyHeaders } from './_serviceKey.js';
+
 const PROD_SUPABASE_URL = 'https://yjuhzmknabedjklsgbje.supabase.co';
 
 export function makeSupabaseRest({ baseUrl, serviceKey, fetchImpl, appBaseUrl, regenSecret } = {}) {
@@ -24,8 +26,7 @@ export function makeSupabaseRest({ baseUrl, serviceKey, fetchImpl, appBaseUrl, r
 
   function headers(extra) {
     return {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+      ...serviceKeyHeaders(key),
       ...(extra || {}),
     };
   }
@@ -107,8 +108,9 @@ export function makeSupabaseRest({ baseUrl, serviceKey, fetchImpl, appBaseUrl, r
     }
   }
 
-  // Invoke a Supabase Edge Function. The service-role key is itself a valid JWT,
-  // so this satisfies verify_jwt:true functions (e.g. generate-periodised-plan).
+  // Invoke a Supabase Edge Function. The gateway accepts the server key on
+  // apikey (legacy JWT also on Bearer) for verify_jwt:true functions too
+  // (e.g. generate-periodised-plan); checked 31 Oct 2026.
   // Returns { ok, status, data } — never throws (tools surface { error }).
   async function callEdgeFunction(slug, body) {
     try {

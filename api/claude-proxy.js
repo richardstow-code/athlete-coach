@@ -14,6 +14,7 @@
 // proxy doesn't enrich) keep behaving as the lean pass-through —
 // preserving the briefing path that AC-144 P2 / Build 26 rely on.
 
+import { serviceKeyHeaders } from './_serviceKey.js';
 export const config = { maxDuration: 30 };
 
 const SUPABASE_URL = 'https://yjuhzmknabedjklsgbje.supabase.co';
@@ -45,8 +46,7 @@ export async function callRPC(fnName, body) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: process.env.SUPABASE_SECRET_KEY,
-      Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+      ...serviceKeyHeaders(),
     },
     body: JSON.stringify(body),
   });
@@ -61,8 +61,7 @@ export async function persistCoachTake({ userId, activityId, content, audit }) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: process.env.SUPABASE_SECRET_KEY,
-      Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+      ...serviceKeyHeaders(),
       Prefer: 'return=minimal',
     },
     body: JSON.stringify({
@@ -84,8 +83,7 @@ export async function persistCoachTake({ userId, activityId, content, audit }) {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        apikey: process.env.SUPABASE_SECRET_KEY,
-        Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+        ...serviceKeyHeaders(),
         Prefer: 'return=minimal',
       },
       body: JSON.stringify({

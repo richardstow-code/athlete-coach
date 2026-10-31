@@ -18,6 +18,7 @@
 // agentic-chat owns the loop, the canonical context fetch, and the
 // side-effect surface.
 
+import { serviceKeyHeaders } from './_serviceKey.js';
 export const config = { maxDuration: 60 };
 
 const SUPABASE_URL = 'https://yjuhzmknabedjklsgbje.supabase.co';
@@ -128,8 +129,7 @@ async function callRPC(fnName, body) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: process.env.SUPABASE_SECRET_KEY,
-      Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+      ...serviceKeyHeaders(),
     },
     body: JSON.stringify(body),
   });
@@ -168,8 +168,7 @@ async function persistTurn({ userId, threadId, role, content, turnIndex }) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: process.env.SUPABASE_SECRET_KEY,
-      Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+      ...serviceKeyHeaders(),
       Prefer: 'return=minimal',
     },
     body: JSON.stringify({
@@ -192,7 +191,7 @@ async function nextTurnIndex(threadId) {
   try {
     const resp = await fetch(
       `${SUPABASE_URL}/rest/v1/coaching_memory?thread_id=eq.${threadId}&select=turn_index&order=turn_index.desc&limit=1`,
-      { headers: { apikey: process.env.SUPABASE_SECRET_KEY, Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}` } },
+      { headers: serviceKeyHeaders() },
     );
     if (!resp.ok) return 0;
     const rows = await resp.json();
@@ -212,8 +211,7 @@ async function updateThreadCounters(threadId, turnCount) {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
-      apikey: process.env.SUPABASE_SECRET_KEY,
-      Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}`,
+      ...serviceKeyHeaders(),
       Prefer: 'return=minimal',
     },
     body: JSON.stringify({ turn_count: turnCount, last_turn_at: new Date().toISOString() }),
